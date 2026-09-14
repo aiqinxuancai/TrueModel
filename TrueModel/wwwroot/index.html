@@ -99,6 +99,7 @@
                     <th>状态</th>
                     <th>HTTP</th>
                     <th>耗时</th>
+                    <th>失败原因</th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -225,9 +226,97 @@
       </div>
       <div id="detailBody"></div>
     </dialog>
+    <dialog id="modelPicker" aria-labelledby="modelPickerTitle">
+      <div class="heading">
+        <h2 id="modelPickerTitle">添加模型</h2>
+        <button
+          id="closeModelPicker"
+          class="icon-button"
+          title="关闭"
+          aria-label="关闭"
+        >
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="picker-body">
+        <p id="modelPickerContext" class="muted"></p>
+        <div class="picker-modes" role="tablist" aria-label="添加方式">
+          <button
+            id="discoverMode"
+            role="tab"
+            aria-selected="true"
+            aria-controls="discoveredPanel"
+          >
+            从站点获取</button
+          ><button
+            id="manualMode"
+            role="tab"
+            aria-selected="false"
+            aria-controls="manualPanel"
+            tabindex="-1"
+          >
+            手动输入
+          </button>
+        </div>
+        <div
+          id="discoveredPanel"
+          role="tabpanel"
+          aria-labelledby="discoverMode"
+        >
+          <div class="picker-search">
+            <input
+              id="modelPickerSearch"
+              type="search"
+              placeholder="搜索模型 ID"
+              aria-label="搜索可用模型"
+            /><button
+              id="reloadModels"
+              class="icon-button"
+              aria-label="重新获取模型"
+              title="重新获取模型"
+            >
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
+          <div class="picker-selection">
+            <label
+              ><input
+                id="selectVisibleModels"
+                type="checkbox"
+              />全选当前结果</label
+            ><span id="availableModelCount" class="muted"></span>
+          </div>
+          <div id="availableModels" aria-busy="false"></div>
+        </div>
+        <div
+          id="manualPanel"
+          role="tabpanel"
+          aria-labelledby="manualMode"
+          hidden
+        >
+          <form id="manualModelForm">
+            <label
+              >模型 ID<input
+                id="manualModelName"
+                name="name"
+                autocomplete="off"
+                required /></label
+            ><button class="primary">添加模型</button>
+          </form>
+        </div>
+        <p id="modelPickerMessage" role="status" aria-live="polite"></p>
+      </div>
+      <div id="modelPickerFooter" class="picker-footer">
+        <span id="selectedModelCount">已选 0 个</span
+        ><button id="addSelectedModels" class="primary" disabled>
+          添加所选模型
+        </button>
+      </div>
+    </dialog>
     <script src="/vendor/lucide.min.js"></script>
     <script src="/app.js"></script>
     <script src="/notifications.js"></script>
     <script src="/ui.js"></script>
+    <script src="/models.js"></script>
   </body>
 </html>

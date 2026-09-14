@@ -186,7 +186,15 @@ document.addEventListener(
 );
 const baseRender = render;
 render = function () {
+  const expandedReasons = new Set(
+    [...document.querySelectorAll(".failure-reason[open]")].map(
+      (el) => el.dataset.reasonId,
+    ),
+  );
   baseRender();
+  document.querySelectorAll(".failure-reason").forEach((el) => {
+    el.open = expandedReasons.has(el.dataset.reasonId);
+  });
   const statIcons = [
     "network",
     "key-round",

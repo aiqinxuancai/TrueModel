@@ -37,6 +37,8 @@ builder.Services.AddAuthorization();
 builder.Services.AddHttpClient("probe", c => { c.Timeout = Timeout.InfiniteTimeSpan; c.MaxResponseContentBufferSize = 1_000_000; }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHostedService<DetectionWorker>();
 builder.Services.AddHttpClient<ModelTraceClient>(c => c.Timeout = Timeout.InfiniteTimeSpan);
+builder.Services.AddHttpClient<ModelDiscovery>(c => { c.Timeout = TimeSpan.FromSeconds(20); c.MaxResponseContentBufferSize = 2_000_000; })
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false }).RemoveAllLoggers();
 builder.Services.AddHttpClient<NotificationService>(c => { c.Timeout = TimeSpan.FromSeconds(15); c.MaxResponseContentBufferSize = 1_000_000; })
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false }).RemoveAllLoggers();
 builder.Services.AddAntiforgery(o => o.HeaderName = "X-CSRF-TOKEN");
@@ -170,13 +172,53 @@ api.MapPost("/keys/{id:int}/models", async (int id, ModelInput input, AppDb db) 
     var model = new MonitoredModel { SiteKeyId = id, Name = input.Name.Trim() }; db.Models.Add(model); await db.SaveChangesAsync(); return Results.Ok(new { model.Id });
 });
 api.MapDelete("/keys/{id:int}", async (int id, AppDb db) => { await db.Keys.Where(k => k.Id == id).ExecuteDeleteAsync(); return Results.NoContent(); });
+api.MapPost("/keys/{id:int}/discover-models", async (int id, AppDb db, IDataProtectionProvider protection, ModelDiscovery discovery, HttpContext context, CancellationToken token) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    var key = await db.Keys.AsNoTracking().SingleOrDefaultAsync(k => k.Id == id, token);
+    if (key is null) return Results.NotFound(new { error = "Key 不存在" });
+    var site = await db.Sites.AsNoTracking().SingleAsync(s => s.Id == key.SiteId, token);
+    try
+    {
+        var value = protection.CreateProtector("ApiKeys.v1").Unprotect(key.ProtectedValue);
+        return Results.Ok(new { models = await discovery.Fetch(site.BaseUrl, value, token) });
+    }
+    catch (ModelDiscoveryException e) { return Results.Json(new { error = e.Message }, statusCode: 502); }
+    catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
+});
+api.MapPost("/keys/{id:int}/models/batch", async (int id, ModelBatchInput input, AppDb db, CancellationToken token) =>
+{
+    if (input.Names is null || input.Names.Length is < 1 or > 500 || input.Names.Any(string.IsNullOrWhiteSpace))
+        return Results.BadRequest(new { error = "请选择 1–500 个模型" });
+    await using var transaction = await db.Database.BeginTransactionAsync(token);
+    if (!await db.Keys.AnyAsync(k => k.Id == id, token)) return Results.NotFound(new { error = "Key 不存在" });
+    var names = input.Names.Select(n => n.Trim()).Distinct(StringComparer.Ordinal).ToArray();
+    var existing = await db.Models.Where(m => m.SiteKeyId == id).Select(m => m.Name).ToArrayAsync(token);
+    var additions = names.Except(existing, StringComparer.Ordinal).Select(name => new MonitoredModel { SiteKeyId = id, Name = name }).ToArray();
+    db.Models.AddRange(additions);
+    await db.SaveChangesAsync(token);
+    await transaction.CommitAsync(token);
+    return Results.Ok(new { added = additions.Length, skipped = names.Length - additions.Length });
+});
 api.MapDelete("/models/{id:int}", async (int id, AppDb db) => { await db.Models.Where(m => m.Id == id).ExecuteDeleteAsync(); return Results.NoContent(); });
 api.MapPost("/detect", async (DetectionScope input, AppDb db) =>
 {
     try { var run = await DetectionJobs.Enqueue(db, input, "Manual"); return Results.Accepted($"/api/runs/{run.Id}", new { run.Id }); }
     catch (InvalidOperationException e) { return Results.Conflict(new { error = e.Message }); }
 });
-api.MapGet("/runs", async (AppDb db) => await db.Runs.OrderByDescending(r => r.Id).Take(100).Select(r => new { r.Id, r.StartedAt, r.CompletedAt, r.Status, r.Source, r.Total, r.Completed, r.BankId }).ToArrayAsync());
+api.MapGet("/runs", async (AppDb db, CancellationToken token) =>
+{
+    var runs = await db.Runs.AsNoTracking().OrderByDescending(r => r.Id).Take(100).Select(r => new { r.Id, r.StartedAt, r.CompletedAt, r.Status, r.Source, r.Total, r.Completed, r.BankId }).ToArrayAsync(token);
+    var ids = runs.Select(r => r.Id).ToArray();
+    var failures = await db.Results.AsNoTracking().Where(r => ids.Contains(r.RunId) && (r.Status == "Failed" || r.Status == "Timeout" || r.Status == "Cancelled" || r.Status == "Interrupted"))
+        .OrderByDescending(r => r.Id).Select(r => new { r.Id, r.RunId, r.SiteName, r.KeyName, r.ModelName, r.Status, r.StatusCode, r.Error, r.ResponsesJson }).ToArrayAsync(token);
+    var lookup = failures.ToLookup(r => r.RunId);
+    return Results.Ok(runs.Select(run => new
+    {
+        run.Id, run.StartedAt, run.CompletedAt, run.Status, run.Source, run.Total, run.Completed, run.BankId,
+        Failures = lookup[run.Id].Select(r => new { r.Id, r.SiteName, r.KeyName, r.ModelName, Reason = FailureReasons.Describe(r.Status, r.StatusCode, r.Error, r.ResponsesJson) })
+    }));
+});
 api.MapPost("/runs/{id:int}/cancel", async (int id, AppDb db) => { await db.Runs.Where(r => r.Id == id && (r.Status == "Running" || r.Status == "Queued")).ExecuteUpdateAsync(s => s.SetProperty(r => r.CancelRequested, true)); return Results.NoContent(); });
 api.MapGet("/results", async (int? runId, int? modelId, AppDb db) => await db.Results.Where(r => (runId == null || r.RunId == runId) && (modelId == null || r.ModelId == modelId)).OrderByDescending(r => r.Id).Take(200).ToArrayAsync());
 api.MapGet("/banks", async (AppDb db) => await db.Banks.Select(b => new { b.Id, b.Name, b.Sha256, b.ImportedAt, b.Active }).ToArrayAsync());
@@ -220,5 +262,6 @@ record LoginRequest(string Username, string Password);
 record SiteInput(string Name, string BaseUrl, bool Enabled = true);
 record KeyInput(string Name, string Value);
 record ModelInput(string Name);
+record ModelBatchInput(string[]? Names);
 public partial class Program { }
 
