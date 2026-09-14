@@ -78,6 +78,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: TrueModel-*
           path: artifacts
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
