@@ -1,30 +1,233 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TrueModel · 模型检测</title><link rel="stylesheet" href="/app.css"></head>
-<body><nav id="sidebar" hidden><div class="logo"><div class="logo-title">TrueModel</div><div class="logo-subtitle">模型检测与归因</div></div><button data-tab="overview" data-icon="📊" class="selected">总览</button><button data-tab="configuration" data-icon="🌐">站点配置</button><button data-tab="history" data-icon="📝">检测历史</button><button data-tab="banks" data-icon="🗂️">指纹库</button><button data-tab="settings" data-icon="⚙️">设置</button><button data-tab="notifications" data-icon="🔔">通知</button></nav>
-<div style="flex: 1; display: flex; flex-direction: column;">
-<header><strong>TrueModel</strong><span>模型检测与归因</span><button id="logout" hidden>退出登录</button></header>
-<main><section id="login"><h1>管理员登录</h1><form id="loginForm"><label>用户名<input name="username" autocomplete="username" value="admin" required></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button>登录</button></form></section>
-<div id="application" hidden>
-<section id="overview" class="view"><div class="heading"><h1>检测总览</h1><button data-detect="all">开始全量检测</button></div><div id="stats"></div><div class="heading"><h2>模型状态</h2><input id="search" placeholder="搜索站点、Key、模型" aria-label="搜索模型"></div><div class="table-wrap"><table><thead><tr><th>站点</th><th>Key</th><th>模型</th><th>状态</th><th>耗时</th><th>归因模型</th><th>候选概率</th><th>最近检测</th><th>操作</th></tr></thead><tbody id="modelRows"></tbody></table></div><h2>任务</h2><div id="runRows"></div></section>
-<section id="configuration" class="view" hidden><div class="heading"><h1>站点配置</h1><button id="addSite">添加站点</button></div><div id="siteRows"></div></section>
-<section id="history" class="view" hidden><h1>检测历史</h1><div class="table-wrap"><table><thead><tr><th>时间</th><th>批次</th><th>站点 / Key</th><th>模型</th><th>状态</th><th>HTTP</th><th>耗时</th><th>操作</th></tr></thead><tbody id="resultRows"></tbody></table></div></section>
-<section id="banks" class="view" hidden><div class="heading"><h1>指纹库</h1><button id="importBank">导入指纹库</button></div><p class="notice">归因概率仅在当前候选库内比较，不代表模型身份已得到独立验证。</p><div id="bankRows"></div></section>
-<section id="settings" class="view" hidden><h1>检测设置</h1><form id="settingsForm"><label>每次挑战题目数（3–6）<input name="challengeCount" type="number" min="3" max="6" required></label><label>定时间隔（分钟，0 为关闭）<input name="intervalMinutes" type="number" min="0" max="525600" required></label><label>并发模型数<input name="maxConcurrency" type="number" min="1" max="16" required></label><label>ModelTrace 单次请求超时（固定 240 秒）<input name="timeoutSeconds" type="number" value="240" readonly></label><button>保存设置</button></form><p id="nextRun"></p></section>
-<section id="notifications" class="view" hidden><h1>结果通知</h1>
-<p>检测批次结束后发送摘要，包含模型状态、归因候选和耗时。</p>
-<form id="notificationForm">
-<label><input name="webhookEnabled" type="checkbox">启用 Webhook</label>
-<label>Webhook URL<input name="webhookUrl" type="password" autocomplete="new-password" placeholder="留空保留已保存地址"></label>
-<label><input name="clearWebhook" type="checkbox">清除已保存 Webhook 地址</label>
-<label><input name="pushDeerEnabled" type="checkbox">启用 PushDeer</label>
-<label>PushDeer 推送接口<input name="pushDeerEndpoint" type="url" value="https://api2.pushdeer.com/message/push" required></label>
-<label>PushKey<input name="pushKey" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥"></label>
-<label><input name="clearPushKey" type="checkbox">清除已保存 PushKey</label>
-<label><input name="onlyFailures" type="checkbox">仅失败或取消时通知</label>
-<button>保存通知设置</button><button id="testNotification" type="button">发送测试通知</button>
-</form><p id="notificationConfig"></p><h2>最近发送记录</h2><div id="deliveryRows"></div></section>
-</div><p id="message" role="status"></p></main>
-</div>
-<dialog id="editor"><form id="editorForm"><div class="heading"><h2 id="editorTitle"></h2><button type="button" id="closeEditor" aria-label="关闭">×</button></div><div id="editorFields"></div><button>保存</button></form></dialog>
-<dialog id="detail"><div class="heading"><h2>检测详情</h2><button id="closeDetail" aria-label="关闭">×</button></div><div id="detailBody"></div></dialog>
-<script src="/app.js"></script><script src="/notifications.js"></script></body></html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>TrueModel · 模型检测</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <nav id="sidebar" hidden>
+      <div class="logo">
+        <div class="logo-title">TrueModel</div>
+        <div class="logo-subtitle">模型检测与归因</div>
+      </div>
+      <button data-tab="overview" data-icon="📊" class="selected">总览</button
+      ><button data-tab="configuration" data-icon="🌐">站点配置</button
+      ><button data-tab="history" data-icon="📝">检测历史</button
+      ><button data-tab="banks" data-icon="🗂️">指纹库</button
+      ><button data-tab="settings" data-icon="⚙️">设置</button
+      ><button data-tab="notifications" data-icon="🔔">通知</button>
+    </nav>
+    <div style="flex: 1; display: flex; flex-direction: column">
+      <header>
+        <strong>TrueModel</strong><span>模型检测与归因</span
+        ><button id="logout" hidden>退出登录</button>
+      </header>
+      <main>
+        <section id="login">
+          <h1>管理员登录</h1>
+          <form id="loginForm">
+            <label
+              >用户名<input
+                name="username"
+                autocomplete="username"
+                value="admin"
+                required /></label
+            ><label
+              >密码<input
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                required /></label
+            ><button>登录</button>
+          </form>
+        </section>
+        <div id="application" hidden>
+          <section id="overview" class="view">
+            <div class="heading">
+              <h1>检测总览</h1>
+              <button data-detect="all">开始全量检测</button>
+            </div>
+            <div id="stats"></div>
+            <div class="heading">
+              <h2>模型状态</h2>
+              <input
+                id="search"
+                placeholder="搜索站点、Key、模型"
+                aria-label="搜索模型"
+              />
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>站点</th>
+                    <th>Key</th>
+                    <th>模型</th>
+                    <th>状态</th>
+                    <th>耗时</th>
+                    <th>归因模型</th>
+                    <th>候选概率</th>
+                    <th>最近检测</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="modelRows"></tbody>
+              </table>
+            </div>
+            <h2>任务</h2>
+            <div id="runRows"></div>
+          </section>
+          <section id="configuration" class="view" hidden>
+            <div class="heading">
+              <h1>站点配置</h1>
+              <button id="addSite">添加站点</button>
+            </div>
+            <div id="siteRows"></div>
+          </section>
+          <section id="history" class="view" hidden>
+            <h1>检测历史</h1>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>批次</th>
+                    <th>站点 / Key</th>
+                    <th>模型</th>
+                    <th>状态</th>
+                    <th>HTTP</th>
+                    <th>耗时</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="resultRows"></tbody>
+              </table>
+            </div>
+          </section>
+          <section id="banks" class="view" hidden>
+            <div class="heading">
+              <h1>指纹库</h1>
+              <button id="importBank">导入指纹库</button>
+            </div>
+            <p class="notice">
+              归因概率仅在当前候选库内比较，不代表模型身份已得到独立验证。
+            </p>
+            <div id="bankRows"></div>
+          </section>
+          <section id="settings" class="view" hidden>
+            <h1>检测设置</h1>
+            <form id="settingsForm">
+              <label
+                >每次挑战题目数（3–6）<input
+                  name="challengeCount"
+                  type="number"
+                  min="3"
+                  max="6"
+                  required /></label
+              ><label
+                >定时间隔（分钟，0 为关闭）<input
+                  name="intervalMinutes"
+                  type="number"
+                  min="0"
+                  max="525600"
+                  required /></label
+              ><label
+                >并发模型数<input
+                  name="maxConcurrency"
+                  type="number"
+                  min="1"
+                  max="16"
+                  required /></label
+              ><label
+                >ModelTrace 单次请求超时（固定 240 秒）<input
+                  name="timeoutSeconds"
+                  type="number"
+                  value="240"
+                  readonly /></label
+              ><button>保存设置</button>
+            </form>
+            <p id="nextRun"></p>
+          </section>
+          <section id="notifications" class="view" hidden>
+            <h1>结果通知</h1>
+            <p>检测批次结束后发送摘要，包含模型状态、归因候选和耗时。</p>
+            <form id="notificationForm">
+              <label
+                ><input name="webhookEnabled" type="checkbox" />启用
+                Webhook</label
+              >
+              <label
+                >Webhook URL<input
+                  name="webhookUrl"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="留空保留已保存地址"
+              /></label>
+              <label
+                ><input name="clearWebhook" type="checkbox" />清除已保存 Webhook
+                地址</label
+              >
+              <label
+                ><input name="pushDeerEnabled" type="checkbox" />启用
+                PushDeer</label
+              >
+              <label
+                >PushDeer 推送接口<input
+                  name="pushDeerEndpoint"
+                  type="url"
+                  value="https://api2.pushdeer.com/message/push"
+                  required
+              /></label>
+              <label
+                >PushKey<input
+                  name="pushKey"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="留空保留已保存密钥"
+              /></label>
+              <label
+                ><input name="clearPushKey" type="checkbox" />清除已保存
+                PushKey</label
+              >
+              <label
+                ><input
+                  name="onlyFailures"
+                  type="checkbox"
+                />仅失败或取消时通知</label
+              >
+              <button>保存通知设置</button
+              ><button id="testNotification" type="button">发送测试通知</button>
+            </form>
+            <p id="notificationConfig"></p>
+            <h2>最近发送记录</h2>
+            <div id="deliveryRows"></div>
+          </section>
+        </div>
+        <p id="message" role="status"></p>
+      </main>
+    </div>
+    <dialog id="editor">
+      <form id="editorForm">
+        <div class="heading">
+          <h2 id="editorTitle"></h2>
+          <button type="button" id="closeEditor" aria-label="关闭">×</button>
+        </div>
+        <div id="editorFields"></div>
+        <button>保存</button>
+      </form>
+    </dialog>
+    <dialog id="detail">
+      <div class="heading">
+        <h2>检测详情</h2>
+        <button id="closeDetail" aria-label="关闭">×</button>
+      </div>
+      <div id="detailBody"></div>
+    </dialog>
+    <script src="/vendor/lucide.min.js"></script>
+    <script src="/app.js"></script>
+    <script src="/notifications.js"></script>
+    <script src="/ui.js"></script>
+  </body>
+</html>
