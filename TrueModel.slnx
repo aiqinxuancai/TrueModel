@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="TrueModel.Tests/TrueModel.Tests.csproj" />
+  <Project Path="TrueModel/TrueModel.csproj" />
+</Solution>

@@ -1,0 +1,17 @@
+**/bin/
+**/obj/
+**/data/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+.env
+node_modules/
+testdata/
+artifacts/
+**/__pycache__/
+
+# Visual Studio local caches and per-user settings
+.vs/
+*.suo
+*.user
+*.sln.docstates

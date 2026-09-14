@@ -1,0 +1,12 @@
+services:
+  truemodel:
+    build: .
+    ports: ["8080:8080"]
+    volumes: ["truemodel-data:/data"]
+    environment:
+      DataDirectory: /data
+      Admin__Username: ${ADMIN_USERNAME:-admin}
+      Admin__Password: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD with at least 12 characters}
+    restart: unless-stopped
+volumes:
+  truemodel-data:
