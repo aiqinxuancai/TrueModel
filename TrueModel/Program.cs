@@ -210,12 +210,16 @@ api.MapGet("/runs", async (AppDb db, CancellationToken token) =>
 {
     var runs = await db.Runs.AsNoTracking().OrderByDescending(r => r.Id).Take(100).Select(r => new { r.Id, r.StartedAt, r.CompletedAt, r.Status, r.Source, r.Total, r.Completed, r.BankId, r.TargetsJson }).ToArrayAsync(token);
     var ids = runs.Select(r => r.Id).ToArray();
+    var completedTargets = await db.Results.AsNoTracking().Where(r => ids.Contains(r.RunId))
+        .Select(r => new { r.RunId, r.ModelId }).ToArrayAsync(token);
+    var completedLookup = completedTargets.ToLookup(r => r.RunId, r => r.ModelId);
     var failures = await db.Results.AsNoTracking().Where(r => ids.Contains(r.RunId) && (r.Status == "Failed" || r.Status == "Timeout" || r.Status == "Cancelled" || r.Status == "Interrupted"))
         .OrderByDescending(r => r.Id).Select(r => new { r.Id, r.RunId, r.SiteName, r.KeyName, r.ModelName, r.Status, r.StatusCode, r.Error, r.ResponsesJson }).ToArrayAsync(token);
     var lookup = failures.ToLookup(r => r.RunId);
     return Results.Ok(runs.Select(run => new
     {
         run.Id, run.StartedAt, run.CompletedAt, run.Status, run.Source, run.Total, run.Completed, run.BankId,
+        CompletedModelIds = completedLookup[run.Id].Distinct(),
         Targets = System.Text.Json.JsonSerializer.Deserialize<Target[]>(run.TargetsJson)?.Select(t => new { t.ModelId, t.ModelName, t.KeyName, t.SiteName }),
         Failures = lookup[run.Id].Select(r => new { r.Id, r.SiteName, r.KeyName, r.ModelName, Reason = FailureReasons.Describe(r.Status, r.StatusCode, r.Error, r.ResponsesJson) })
     }));

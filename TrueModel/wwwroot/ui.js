@@ -73,7 +73,7 @@ filters.append(searchWrap);
 searchWrap.append($("search"));
 filters.insertAdjacentHTML(
   "beforeend",
-  '<select id="statusFilter" aria-label="筛选模型状态"><option value="all">全部状态</option><option value="Success">成功</option><option value="failure">异常</option><option value="Pending">待检测</option></select>',
+  '<select id="statusFilter" aria-label="筛选模型状态"><option value="all">全部状态</option><option value="Running">运行中</option><option value="Queued">排队中</option><option value="Success">成功</option><option value="failure">异常</option><option value="Pending">待检测</option></select>',
 );
 $("search")
   .closest(".heading")
