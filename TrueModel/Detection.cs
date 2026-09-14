@@ -16,7 +16,6 @@ public static class DetectionJobs
             where m.Enabled && k.Enabled && s.Enabled && (scope.SiteId == null || s.Id == scope.SiteId) && (scope.KeyId == null || k.Id == scope.KeyId) && (scope.ModelId == null || m.Id == scope.ModelId)
             select new Target(m.Id, m.Name, k.Name, s.Name, s.BaseUrl, k.ProtectedValue)).ToArrayAsync();
         if (targets.Length == 0) throw new InvalidOperationException("No enabled models in this scope.");
-        if (await db.Runs.AnyAsync(r => r.Status == "Queued" || r.Status == "Running")) throw new InvalidOperationException("A detection batch is already active.");
         var run = new DetectionRun { Total = targets.Length, BankId = bank.Id, TargetsJson = JsonSerializer.Serialize(targets), Source = source };
         db.Runs.Add(run); await db.SaveChangesAsync(); return run;
     }
