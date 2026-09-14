@@ -187,12 +187,12 @@ document.addEventListener(
 const baseRender = render;
 render = function () {
   const expandedReasons = new Set(
-    [...document.querySelectorAll(".failure-reason[open]")].map(
+    [...document.querySelectorAll("[data-reason-id][open]")].map(
       (el) => el.dataset.reasonId,
     ),
   );
   baseRender();
-  document.querySelectorAll(".failure-reason").forEach((el) => {
+  document.querySelectorAll("[data-reason-id]").forEach((el) => {
     el.open = expandedReasons.has(el.dataset.reasonId);
   });
   const statIcons = [

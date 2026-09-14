@@ -39,7 +39,8 @@ public class FailureReasonTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDb>();
-            var run = new DetectionRun { Status = "Completed", Total = 206, Completed = 206, CompletedAt = DateTime.UtcNow };
+            var run = new DetectionRun { Status = "Completed", Total = 206, Completed = 206, CompletedAt = DateTime.UtcNow,
+                TargetsJson = JsonSerializer.Serialize(new[] { new Target(123, "snapshot-model", "snapshot-key", "snapshot-site", "https://private-upstream.test", "private-encrypted-key") }) };
             db.Runs.Add(run); await db.SaveChangesAsync();
             db.Results.Add(new DetectionResult { RunId = run.Id, Status = "Failed", SiteName = "site", KeyName = "key", ModelName = "failed-model", Error = "有效回答不足", ResponsesJson = """[{"Error":"HTTP 401: invalid key"}]""" });
             await db.SaveChangesAsync();
@@ -51,6 +52,13 @@ public class FailureReasonTests
         await client.PostAsJsonAsync("/api/login", new { username = "admin", password = "test-password-123!" });
         var runs = await client.GetFromJsonAsync<JsonElement>("/api/runs");
         var failures = runs[0].GetProperty("failures");
+        var target = runs[0].GetProperty("targets")[0];
+        Assert.Equal("snapshot-model", target.GetProperty("modelName").GetString());
+        Assert.Equal("snapshot-key", target.GetProperty("keyName").GetString());
+        Assert.Equal("snapshot-site", target.GetProperty("siteName").GetString());
+        Assert.False(target.TryGetProperty("protectedKey", out _));
+        Assert.DoesNotContain("private-encrypted-key", runs.GetRawText());
+        Assert.DoesNotContain("private-upstream.test", runs.GetRawText());
         Assert.Equal(1, failures.GetArrayLength());
         Assert.Equal("failed-model", failures[0].GetProperty("modelName").GetString());
         Assert.Contains("HTTP 401", failures[0].GetProperty("reason").GetString());
