@@ -252,6 +252,7 @@ main {
 .recent-model-cell { min-width: 160px; }
 .recent-model-time { display: block; white-space: nowrap; font-size: 11px; }
 .recent-dot { position: relative; flex-shrink: 0; }
+.recent-dot:hover, .recent-dot:focus, .recent-dot:focus-within { z-index: 30; }
 .recent-tooltip { display: none; position: absolute; top: 20px; right: 0; z-index: 20; width: 270px; max-height: 220px; overflow: auto; padding: 10px 12px; border-radius: 6px; background: #303c4f; color: white; font-size: 12px; line-height: 1.7; white-space: pre-wrap; text-align: left; box-shadow: 0 4px 16px #202b4330; }
 .recent-dot:hover .recent-tooltip, .recent-dot:focus .recent-tooltip { display: block; }
 .recent-empty { color: var(--muted); font-size: 12px; }
