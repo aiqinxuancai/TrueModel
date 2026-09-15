@@ -65,5 +65,17 @@ public class FailureReasonTests
         var history = await client.GetFromJsonAsync<JsonElement>("/api/results");
         Assert.Equal(200, history.GetArrayLength());
         Assert.All(history.EnumerateArray(), item => Assert.Equal("Success", item.GetProperty("status").GetString()));
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDb>();
+            var site = new Site { Keys = [new SiteKey { Models = [new MonitoredModel { Name = "first" }, new MonitoredModel { Name = "second" }] }] };
+            db.Sites.Add(site); await db.SaveChangesAsync();
+            foreach (var model in site.Keys[0].Models)
+                db.Results.AddRange(Enumerable.Range(0, 7).Select(i => new DetectionResult { ModelId = model.Id, ModelName = model.Name, Status = "Success" }));
+            await db.SaveChangesAsync();
+        }
+        var recent = await client.GetFromJsonAsync<JsonElement>("/api/results?perModel=true");
+        Assert.Equal(10, recent.GetArrayLength());
+        Assert.All(recent.EnumerateArray().GroupBy(r => r.GetProperty("modelId").GetInt32()), group => Assert.Equal(5, group.Count()));
     }
 }

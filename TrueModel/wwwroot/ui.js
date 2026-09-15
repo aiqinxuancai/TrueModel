@@ -195,7 +195,7 @@ render = function () {
   document.querySelectorAll("[data-reason-id]").forEach((el) => {
     el.open = expandedReasons.has(el.dataset.reasonId);
   });
-  const statIcons = ["network", "key-round", "box", "activity", "bar-chart-3"];
+  const statIcons = ["network", "key-round", "box", "circle-check", "triangle-alert"];
   document
     .querySelectorAll(".stat")
     .forEach((el, i) =>
