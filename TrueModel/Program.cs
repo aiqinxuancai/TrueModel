@@ -36,6 +36,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 builder.Services.AddHttpClient("probe", c => { c.Timeout = Timeout.InfiniteTimeSpan; c.MaxResponseContentBufferSize = 1_000_000; }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHostedService<DetectionWorker>();
+builder.Services.AddSingleton<DetectionControl>();
 builder.Services.AddHttpClient<ModelTraceClient>(c => c.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddHttpClient<ModelDiscovery>(c => { c.Timeout = TimeSpan.FromSeconds(20); c.MaxResponseContentBufferSize = 2_000_000; })
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false }).RemoveAllLoggers();
@@ -156,7 +157,7 @@ api.MapPost("/sites", async (SiteInput input, AppDb db) =>
     var site = new Site { Name = input.Name.Trim(), BaseUrl = input.BaseUrl.TrimEnd('/'), Enabled = input.Enabled };
     db.Sites.Add(site); await db.SaveChangesAsync(); return Results.Ok(new { site.Id });
 });
-api.MapDelete("/sites/{id:int}", async (int id, AppDb db) => { await db.Sites.Where(s => s.Id == id).ExecuteDeleteAsync(); return Results.NoContent(); });
+api.MapDelete("/sites/{id:int}", async (int id, AppDb db, DetectionControl control) => { await control.Delete(db, siteId: id); return Results.NoContent(); });
 api.MapPost("/sites/{id:int}/keys", async (int id, KeyInput input, AppDb db, IDataProtectionProvider protection) =>
 {
     if (!await db.Sites.AnyAsync(s => s.Id == id)) return Results.NotFound();
@@ -171,7 +172,7 @@ api.MapPost("/keys/{id:int}/models", async (int id, ModelInput input, AppDb db) 
     if (await db.Models.AnyAsync(m => m.SiteKeyId == id && m.Name == input.Name.Trim())) return Results.Conflict();
     var model = new MonitoredModel { SiteKeyId = id, Name = input.Name.Trim() }; db.Models.Add(model); await db.SaveChangesAsync(); return Results.Ok(new { model.Id });
 });
-api.MapDelete("/keys/{id:int}", async (int id, AppDb db) => { await db.Keys.Where(k => k.Id == id).ExecuteDeleteAsync(); return Results.NoContent(); });
+api.MapDelete("/keys/{id:int}", async (int id, AppDb db, DetectionControl control) => { await control.Delete(db, keyId: id); return Results.NoContent(); });
 api.MapPost("/keys/{id:int}/discover-models", async (int id, AppDb db, IDataProtectionProvider protection, ModelDiscovery discovery, HttpContext context, CancellationToken token) =>
 {
     context.Response.Headers.CacheControl = "no-store";
@@ -200,11 +201,13 @@ api.MapPost("/keys/{id:int}/models/batch", async (int id, ModelBatchInput input,
     await transaction.CommitAsync(token);
     return Results.Ok(new { added = additions.Length, skipped = names.Length - additions.Length });
 });
-api.MapDelete("/models/{id:int}", async (int id, AppDb db) => { await db.Models.Where(m => m.Id == id).ExecuteDeleteAsync(); return Results.NoContent(); });
-api.MapPost("/detect", async (DetectionScope input, AppDb db) =>
+api.MapDelete("/models/{id:int}", async (int id, AppDb db, DetectionControl control) => { await control.Delete(db, modelId: id); return Results.NoContent(); });
+api.MapPost("/detect", async (DetectionScope input, AppDb db, DetectionControl control) =>
 {
+    await control.Gate.WaitAsync();
     try { var run = await DetectionJobs.Enqueue(db, input, "Manual"); return Results.Accepted($"/api/runs/{run.Id}", new { run.Id }); }
     catch (InvalidOperationException e) { return Results.Conflict(new { error = e.Message }); }
+    finally { control.Gate.Release(); }
 });
 api.MapGet("/runs", async (AppDb db, CancellationToken token) =>
 {

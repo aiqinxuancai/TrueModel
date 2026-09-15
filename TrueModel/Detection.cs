@@ -20,7 +20,7 @@ public static class DetectionJobs
         db.Runs.Add(run); await db.SaveChangesAsync(); return run;
     }
 }
-public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClient client, IDataProtectionProvider protection, ILogger<DetectionWorker> logger) : BackgroundService
+public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClient client, IDataProtectionProvider protection, ILogger<DetectionWorker> logger, DetectionControl control) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -38,15 +38,24 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 var settings = await db.Settings.SingleAsync(stoppingToken);
                 if (settings.IntervalMinutes > 0 && settings.NextRunAt <= DateTime.UtcNow)
                 {
+                    await control.Gate.WaitAsync(stoppingToken);
                     try { await DetectionJobs.Enqueue(db, new(null, null, null), "Scheduled"); }
                     catch (InvalidOperationException) { }
+                    finally { control.Gate.Release(); }
                     settings.NextRunAt = DateTime.UtcNow.AddMinutes(settings.IntervalMinutes);
                     await db.SaveChangesAsync(stoppingToken);
                 }
-                var run = await db.Runs.OrderBy(r => r.Id).FirstOrDefaultAsync(r => r.Status == "Queued", stoppingToken);
+                DetectionRun? run;
+                await control.Gate.WaitAsync(stoppingToken);
+                try
+                {
+                    db.ChangeTracker.Clear();
+                    run = await db.Runs.OrderBy(r => r.Id).FirstOrDefaultAsync(r => r.Status == "Queued", stoppingToken);
+                    if (run is not null) { run.Status = "Running"; await db.SaveChangesAsync(stoppingToken); }
+                }
+                finally { control.Gate.Release(); }
                 if (run is not null)
                 {
-                    run.Status = "Running"; await db.SaveChangesAsync(stoppingToken);
                     var bank = await db.Banks.SingleAsync(b => b.Id == run.BankId, stoppingToken);
                     var targets = JsonSerializer.Deserialize<Target[]>(run.TargetsJson)!;
                     using var cancelled = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -55,20 +64,48 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                     {
                         await Parallel.ForEachAsync(targets, new ParallelOptions { MaxDegreeOfParallelism = settings.MaxConcurrency, CancellationToken = cancelled.Token }, async (target, token) =>
                         {
-                            var result = await Probe(target, run.Id, bank.Json, settings.ChallengeCount, token);
+                            using var modelCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+                            await control.Gate.WaitAsync(token);
+                            try
+                            {
+                                using var checkScope = scopes.CreateScope();
+                                if (!await checkScope.ServiceProvider.GetRequiredService<AppDb>().Models.AnyAsync(m => m.Id == target.ModelId, token)) return;
+                                control.Active.Add((run.Id, target.ModelId), modelCancellation);
+                            }
+                            finally { control.Gate.Release(); }
+                            DetectionResult result;
+                            try { result = await Probe(target, run.Id, bank.Json, settings.ChallengeCount, modelCancellation.Token); }
+                            finally
+                            {
+                                await control.Gate.WaitAsync(CancellationToken.None);
+                                try { control.Active.Remove((run.Id, target.ModelId)); }
+                                finally { control.Gate.Release(); }
+                            }
                             using var resultScope = scopes.CreateScope();
                             var resultDb = resultScope.ServiceProvider.GetRequiredService<AppDb>();
-                            resultDb.Results.Add(result); await resultDb.SaveChangesAsync(stoppingToken);
-                            await resultDb.Runs.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.Completed, r => r.Completed + 1), stoppingToken);
+                            await control.Gate.WaitAsync(stoppingToken);
+                            try
+                            {
+                                if (!await resultDb.Models.AnyAsync(m => m.Id == target.ModelId, stoppingToken)) return;
+                                resultDb.Results.Add(result); await resultDb.SaveChangesAsync(stoppingToken);
+                                await resultDb.Runs.Where(r => r.Id == run.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.Completed, r => r.Completed + 1), stoppingToken);
+                            }
+                            finally { control.Gate.Release(); }
                         });
                         run.Status = "Completed";
                     }
                     catch (OperationCanceledException) { run.Status = stoppingToken.IsCancellationRequested ? "Interrupted" : "Cancelled"; }
                     finally { await cancelled.CancelAsync(); await monitor; }
-                    run.CompletedAt = DateTime.UtcNow;
-                    // Progress is updated atomically by workers, not by this tracked instance.
-                    db.Entry(run).Property(r => r.Completed).IsModified = false;
-                    await db.SaveChangesAsync(CancellationToken.None);
+                    var finalStatus = run.Status;
+                    await control.Gate.WaitAsync(CancellationToken.None);
+                    try
+                    {
+                        await db.Entry(run).ReloadAsync(CancellationToken.None);
+                        if (run.Status != "Cancelled") run.Status = finalStatus;
+                        run.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync(CancellationToken.None);
+                    }
+                    finally { control.Gate.Release(); }
                     try { await scope.ServiceProvider.GetRequiredService<NotificationService>().NotifyRun(db, run, stoppingToken); }
                     catch (Exception) when (!stoppingToken.IsCancellationRequested) { logger.LogWarning("Notification delivery could not be recorded for run {RunId}", run.Id); }
                 }

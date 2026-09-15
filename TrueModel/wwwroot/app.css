@@ -240,6 +240,14 @@ main {
 .stat:nth-child(5) strong {
   color: #c07b39;
 }
+.recent-stat { min-height: 119px; }
+.recent-stat small { display: block; margin-top: 11px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-dots { display: flex; align-items: center; gap: 9px; min-height: 30px; margin-top: 2px; }
+.recent-dot { width: 13px; height: 13px; border-radius: 50%; display: inline-block; cursor: help; outline: 0; box-shadow: 0 0 0 3px transparent; transition: box-shadow .15s, transform .15s; }
+.recent-dot:hover, .recent-dot:focus-visible { transform: scale(1.15); box-shadow: 0 0 0 3px #3874cb26; }
+.recent-dot.success { background: #35a878; }
+.recent-dot.failure { background: #d98b38; }
+.recent-empty { color: var(--muted); font-size: 12px; }
 .stat-icon {
   position: absolute;
   right: 18px;
