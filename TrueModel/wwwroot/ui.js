@@ -334,3 +334,60 @@ for (const id of [
 }
 navigate(location.hash.slice(1) || "overview");
 icons();
+
+// Keep the tooltip outside the table's scroll and stacking contexts.
+const recentTooltip = document.createElement("div");
+recentTooltip.id = "recentResultTooltip";
+recentTooltip.className = "recent-tooltip";
+recentTooltip.setAttribute("role", "tooltip");
+recentTooltip.hidden = true;
+document.body.append(recentTooltip);
+let tooltipAnchor, tooltipCloseTimer;
+function closeRecentTooltip() {
+  clearTimeout(tooltipCloseTimer);
+  tooltipAnchor?.removeAttribute("aria-describedby");
+  tooltipAnchor = null;
+  recentTooltip.hidden = true;
+}
+function showRecentTooltip(anchor) {
+  closeRecentTooltip();
+  tooltipAnchor = anchor;
+  recentTooltip.textContent = anchor.dataset.tooltip;
+  anchor.setAttribute("aria-describedby", recentTooltip.id);
+  recentTooltip.style.left = "12px";
+  recentTooltip.style.top = "12px";
+  recentTooltip.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const box = recentTooltip.getBoundingClientRect();
+  const width = document.documentElement.clientWidth;
+  const height = document.documentElement.clientHeight;
+  const top = rect.bottom + 8 + box.height <= height - 12 ? rect.bottom + 8 : rect.top - box.height - 8;
+  recentTooltip.style.left = `${Math.max(12, Math.min(rect.right - box.width, width - box.width - 12))}px`;
+  recentTooltip.style.top = `${Math.max(12, Math.min(top, height - box.height - 12))}px`;
+}
+document.addEventListener("pointerover", event => {
+  if (recentTooltip.contains(event.target)) { clearTimeout(tooltipCloseTimer); return; }
+  const anchor = event.target.closest(".recent-dot[data-tooltip]");
+  if (anchor) showRecentTooltip(anchor);
+});
+document.addEventListener("pointerout", event => {
+  if (event.target.closest(".recent-dot[data-tooltip]") || recentTooltip.contains(event.target)) {
+    clearTimeout(tooltipCloseTimer);
+    tooltipCloseTimer = setTimeout(closeRecentTooltip, 150);
+  }
+});
+document.addEventListener("focusin", event => {
+  const anchor = event.target.closest(".recent-dot[data-tooltip]");
+  if (anchor) showRecentTooltip(anchor);
+});
+document.addEventListener("focusout", event => {
+  if (event.target === tooltipAnchor) closeRecentTooltip();
+});
+document.addEventListener("keydown", event => { if (event.key === "Escape") closeRecentTooltip(); });
+document.addEventListener("scroll", event => {
+  if (event.target !== recentTooltip) closeRecentTooltip();
+}, true);
+window.addEventListener("resize", closeRecentTooltip);
+new MutationObserver(() => {
+  if (tooltipAnchor && !tooltipAnchor.isConnected) closeRecentTooltip();
+}).observe($("modelRows"), { childList: true, subtree: true });

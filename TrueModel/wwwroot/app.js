@@ -14,7 +14,7 @@ function recentModelHistory(modelId) {
         const type = r.status !== 'Success' ? 'failure' : !winner ? 'unknown' : normalize(winner.Model || winner.DisplayName) === normalize(r.modelName) ? 'success' : 'mismatch';
         const meaning = {success:'归因一致',mismatch:'归因不符',failure:'检测失败',unknown:'暂无归因结果'}[type];
         const info = `${r.modelName} · ${meaning}（${statuses[r.status] || r.status}）\n${time(r.startedAt)} · 批次 #${r.runId} · ${(r.latencyMs / 1000).toFixed(1)}s${winner ? `\n归因：${winner.DisplayName || winner.Model} · ${(winner.Probability * 100).toFixed(1)}%` : ''}${type === 'failure' ? `\n${failureReason(r)}` : ''}`;
-        return `<span class="recent-dot ${type}" tabindex="0" title="${esc(info)}" aria-label="${esc(info)}"><span class="recent-tooltip" role="tooltip">${esc(info)}</span></span>`;
+        return `<span class="recent-dot ${type}" tabindex="0" data-tooltip="${esc(info)}" aria-label="${esc(info)}"></span>`;
     }).join('');
     return `<div class="recent-dots" aria-label="最近五次检测，从左到右由新到旧">${dots}</div><small class="recent-model-time">${time(recent[0].startedAt)}</small>`;
 }
