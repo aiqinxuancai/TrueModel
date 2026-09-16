@@ -73,6 +73,7 @@ public class DetectionDeletionTests
             return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
         }
         await Token(); await client.PostAsJsonAsync("/api/login", new { username = "admin", password = "test-password-123!" }); await Token();
+        (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 1, timeoutSeconds = 240 })).EnsureSuccessStatusCode();
         var site = await Create("/api/sites", new { name = "site", baseUrl = "https://mock.test" });
         var key = await Create($"/api/sites/{site}/keys", new { name = "key", value = "secret" });
         var deleted = await Create($"/api/keys/{key}/models", new { name = "blocked" });

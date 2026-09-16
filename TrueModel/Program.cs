@@ -209,8 +209,12 @@ api.MapPost("/detect", async (DetectionScope input, AppDb db, DetectionControl c
     catch (InvalidOperationException e) { return Results.Conflict(new { error = e.Message }); }
     finally { control.Gate.Release(); }
 });
-api.MapGet("/runs", async (AppDb db, CancellationToken token) =>
+api.MapGet("/runs", async (AppDb db, DetectionControl control, CancellationToken token) =>
 {
+    (int RunId, int ModelId)[] active;
+    await control.Gate.WaitAsync(token);
+    try { active = control.Active.Keys.ToArray(); }
+    finally { control.Gate.Release(); }
     var runs = await db.Runs.AsNoTracking().OrderByDescending(r => r.Id).Take(100).Select(r => new { r.Id, r.StartedAt, r.CompletedAt, r.Status, r.Source, r.Total, r.Completed, r.BankId, r.TargetsJson }).ToArrayAsync(token);
     var ids = runs.Select(r => r.Id).ToArray();
     var completedTargets = await db.Results.AsNoTracking().Where(r => ids.Contains(r.RunId))
@@ -223,11 +227,22 @@ api.MapGet("/runs", async (AppDb db, CancellationToken token) =>
     {
         run.Id, run.StartedAt, run.CompletedAt, run.Status, run.Source, run.Total, run.Completed, run.BankId,
         CompletedModelIds = completedLookup[run.Id].Distinct(),
+        ActiveModelIds = active.Where(t => t.RunId == run.Id).Select(t => t.ModelId),
         Targets = System.Text.Json.JsonSerializer.Deserialize<Target[]>(run.TargetsJson)?.Select(t => new { t.ModelId, t.ModelName, t.KeyName, t.SiteName }),
         Failures = lookup[run.Id].Select(r => new { r.Id, r.SiteName, r.KeyName, r.ModelName, Reason = FailureReasons.Describe(r.Status, r.StatusCode, r.Error, r.ResponsesJson) })
     }));
 });
-api.MapPost("/runs/{id:int}/cancel", async (int id, AppDb db) => { await db.Runs.Where(r => r.Id == id && (r.Status == "Running" || r.Status == "Queued")).ExecuteUpdateAsync(s => s.SetProperty(r => r.CancelRequested, true)); return Results.NoContent(); });
+api.MapPost("/runs/{id:int}/cancel", async (int id, AppDb db, DetectionControl control) =>
+{
+    await control.Gate.WaitAsync();
+    try
+    {
+        await db.Runs.Where(r => r.Id == id && (r.Status == "Running" || r.Status == "Queued")).ExecuteUpdateAsync(s => s.SetProperty(r => r.CancelRequested, true));
+        foreach (var entry in control.Active.Where(e => e.Key.RunId == id)) await entry.Value.CancelAsync();
+    }
+    finally { control.Gate.Release(); }
+    return Results.NoContent();
+});
 api.MapGet("/results", async (int? runId, int? modelId, bool? perModel, AppDb db) =>
 {
     var query = db.Results.AsNoTracking().Where(r => (runId == null || r.RunId == runId) && (modelId == null || r.ModelId == modelId));

@@ -16,11 +16,19 @@ function recentModelHistory(modelId) {
         const info = `${r.modelName} · ${meaning}（${statuses[r.status] || r.status}）\n${time(r.startedAt)} · 批次 #${r.runId} · ${(r.latencyMs / 1000).toFixed(1)}s${winner ? `\n归因：${winner.DisplayName || winner.Model} · ${(winner.Probability * 100).toFixed(1)}%` : ''}${type === 'failure' ? `\n${failureReason(r)}` : ''}`;
         return `<span class="recent-dot ${type}" tabindex="0" data-tooltip="${esc(info)}" aria-label="${esc(info)}"></span>`;
     }).join('');
-    return `<div class="recent-dots" aria-label="最近五次检测，从左到右由新到旧">${dots}</div><small class="recent-model-time">${time(recent[0].startedAt)}</small>`;
+    return `<div class="recent-dots" aria-label="最近五次检测，从左到右由新到旧">${dots}</div><small class="recent-model-time" title="${esc(time(recent[0].startedAt))}">${relativeTime(recent[0].startedAt)}</small>`;
 }
 const statuses = {Success:'成功',Failed:'失败',Timeout:'超时',Running:'运行中',Queued:'排队中',Completed:'已完成',Cancelled:'已取消',Interrupted:'已中断',Pending:'待检测'};
 const badge = s => `<span class="badge ${esc(s)}">${esc(statuses[s] || s)}</span>`;
 const time = v => v ? new Date(v).toLocaleString('zh-CN') : '—';
+function relativeTime(value) {
+    if (!value) return time(value);
+    const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+    if (seconds < 60) return `${seconds}秒前`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟前`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时前`;
+    return time(value);
+}
 function failureReason(result) {
     const reasons = [];
     try { const responses = JSON.parse(result.responsesJson || '[]'); if (Array.isArray(responses)) for (const response of responses) if (typeof response?.Error === 'string' && response.Error.trim()) reasons.push(response.Error); } catch {}
@@ -48,7 +56,7 @@ function modelStatus(modelId, latestResult) {
     for (const run of runs) {
         if (!['Running', 'Queued'].includes(run.status) || !run.targets?.some(t => t.modelId === modelId)) continue;
         if (run.completedModelIds?.includes(modelId) || results.some(r => r.runId === run.id && r.modelId === modelId)) continue;
-        if (run.status === 'Running') return 'Running';
+        if (run.activeModelIds?.includes(modelId)) return 'Running';
         queued = true;
     }
     return queued ? 'Queued' : latestResult?.status || 'Pending';
