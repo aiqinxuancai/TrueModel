@@ -16,6 +16,15 @@ public static class DetectionJobs
             where m.Enabled && k.Enabled && s.Enabled && (scope.SiteId == null || s.Id == scope.SiteId) && (scope.KeyId == null || k.Id == scope.KeyId) && (scope.ModelId == null || m.Id == scope.ModelId)
             select new Target(m.Id, m.Name, k.Name, s.Name, s.BaseUrl, k.ProtectedValue)).ToArrayAsync();
         if (targets.Length == 0) throw new InvalidOperationException("No enabled models in this scope.");
+        // Callers hold DetectionControl.Gate through this check and the insert.
+        var pendingRuns = await db.Runs.AsNoTracking().Where(r => r.Status == "Queued" || r.Status == "Running").ToArrayAsync();
+        var pendingIds = pendingRuns.Select(r => r.Id).ToArray();
+        var completed = (await db.Results.Where(r => pendingIds.Contains(r.RunId))
+            .Select(r => new { r.RunId, r.ModelId }).ToArrayAsync()).Select(r => (r.RunId, r.ModelId)).ToHashSet();
+        var busyModels = pendingRuns.SelectMany(r => (JsonSerializer.Deserialize<Target[]>(r.TargetsJson) ?? [])
+            .Where(t => !completed.Contains((r.Id, t.ModelId))).Select(t => t.ModelId)).ToHashSet();
+        targets = targets.Where(t => !busyModels.Contains(t.ModelId)).ToArray();
+        if (targets.Length == 0) throw new InvalidOperationException("所选模型已在检测中或队列中，请勿重复提交。");
         var run = new DetectionRun { Total = targets.Length, BankId = bank.Id, TargetsJson = JsonSerializer.Serialize(targets), Source = source };
         db.Runs.Add(run); await db.SaveChangesAsync(); return run;
     }

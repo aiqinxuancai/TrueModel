@@ -80,8 +80,11 @@ public class DetectionDeletionTests
         var kept = await Create($"/api/keys/{key}/models", new { name = "kept" });
         var active = await Create("/api/detect", new { });
         await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var queuedKept = await Create($"/api/keys/{key}/models", new { name = "queued-kept" });
         var queued = await Create("/api/detect", new { });
-        var empty = await Create("/api/detect", new { modelId = deleted });
+        var queuedDeleted = await Create($"/api/keys/{key}/models", new { name = "queued-deleted" });
+        var empty = await Create("/api/detect", new { modelId = queuedDeleted });
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/models/{queuedDeleted}")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/models/{deleted}")).StatusCode);
         await handler.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var deadline = DateTime.UtcNow.AddSeconds(15);
@@ -98,14 +101,14 @@ public class DetectionDeletionTests
             Assert.Equal("Completed", run.GetProperty("status").GetString());
             Assert.Equal(1, run.GetProperty("total").GetInt32());
             Assert.Equal(1, run.GetProperty("completed").GetInt32());
-            Assert.Equal(kept, run.GetProperty("targets")[0].GetProperty("modelId").GetInt32());
+            Assert.Equal(id == active ? kept : queuedKept, run.GetProperty("targets")[0].GetProperty("modelId").GetInt32());
         }
         var removedRun = runs.EnumerateArray().Single(r => r.GetProperty("id").GetInt32() == empty);
         Assert.Equal("Cancelled", removedRun.GetProperty("status").GetString());
         Assert.Equal(0, removedRun.GetProperty("total").GetInt32());
         Assert.Equal(1, handler.BlockedRequests);
         var results = await client.GetFromJsonAsync<JsonElement>("/api/results");
-        Assert.All(results.EnumerateArray(), r => Assert.Equal(kept, r.GetProperty("modelId").GetInt32()));
+        Assert.All(results.EnumerateArray(), r => Assert.Contains(r.GetProperty("modelId").GetInt32(), new[] { kept, queuedKept }));
     }
 
     private sealed class BlockingHandler : HttpMessageHandler
