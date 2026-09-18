@@ -1325,9 +1325,26 @@ details pre {
 @keyframes juice-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .juice-refresh[aria-busy="true"] svg { animation: none; } }
 
-#juicePromptPicker { width: min(560px, calc(100vw - 32px)); }
-#juicePickerForm { display: grid; gap: 12px; }
-#juicePickerForm h2, #juicePickerForm p { margin: 0; }
-#juicePromptPreview { margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; background: #f5f7fa; border-radius: 6px; }
-#juicePickerHint { color: var(--muted); font-size: 12px; }
-#juicePickerForm .actions { justify-content: flex-end; }
+/* Juice picker owns its spacing instead of inheriting page form margins. */
+#juicePromptPicker { width: min(560px, calc(100vw - 32px)); padding: 0; }
+#juicePickerForm { display: flex; flex-direction: column; margin: 0; max-height: calc(100dvh - 50px); }
+.juice-picker-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 18px; border-bottom: 1px solid var(--border); }
+.juice-picker-header > div { min-width: 0; }
+#juicePickerTitle { margin: 0; font-size: 17px; line-height: 1.5; font-weight: 600; }
+#juicePickerModel { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+#juicePickerClose { flex: 0 0 28px; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 22px; line-height: 1; }
+#juicePickerClose:hover { background: #f1f4f8; }
+.juice-picker-body { display: grid; gap: 20px; padding: 22px 24px 24px; overflow-y: auto; min-height: 0; }
+.juice-picker-field label { margin: 0 0 8px; font-size: 13px; font-weight: 500; }
+#juiceMethod { margin: 0; }
+#juicePickerHint { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.juice-picker-preview { min-width: 0; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; background: #f7f9fc; }
+#juicePreviewLabel { padding: 10px 14px; border-bottom: 1px solid var(--border); color: #596270; font-size: 11px; font-weight: 500; }
+#juicePromptPreview { margin: 0; padding: 14px; min-height: 76px; max-height: 240px; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; background: transparent; border-radius: 0; font-size: 12px; line-height: 1.8; }
+.juice-picker-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--border); background: #fafbfd; }
+.juice-picker-footer button { min-width: 80px; }
+@media (max-width: 480px) {
+    .juice-picker-header { padding: 18px; }
+    .juice-picker-body { padding: 18px; gap: 16px; }
+    .juice-picker-footer { padding: 14px 18px; }
+}

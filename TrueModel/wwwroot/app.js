@@ -20,13 +20,25 @@ function juiceCell(m, r) {
 const juicePicker = document.createElement('dialog');
 juicePicker.id = 'juicePromptPicker';
 juicePicker.setAttribute('aria-labelledby', 'juicePickerTitle');
-juicePicker.innerHTML = `<form id="juicePickerForm"><h2 id="juicePickerTitle">选择 Juice 检测方法</h2><p id="juicePickerModel"></p><label for="juiceMethod">Prompt 文案方法</label><select id="juiceMethod"></select><pre id="juicePromptPreview"></pre><p id="juicePickerHint"></p><div class="actions"><button type="button" id="juicePickerCancel">取消</button><button type="submit" class="primary">获取 Juice</button></div></form>`;
+juicePicker.innerHTML = `
+<form id="juicePickerForm">
+    <div class="juice-picker-header">
+        <div><h2 id="juicePickerTitle">获取 Juice</h2><p id="juicePickerModel"></p></div>
+        <button type="button" id="juicePickerClose" aria-label="关闭" title="关闭">×</button>
+    </div>
+    <div class="juice-picker-body">
+        <div class="juice-picker-field"><label for="juiceMethod">检测方法</label><select id="juiceMethod" aria-describedby="juicePickerHint"></select><p id="juicePickerHint"></p></div>
+        <div class="juice-picker-preview"><div id="juicePreviewLabel">检测策略</div><pre id="juicePromptPreview" aria-labelledby="juicePreviewLabel"></pre></div>
+    </div>
+    <div class="juice-picker-footer"><button type="button" id="juicePickerCancel">取消</button><button type="submit" class="primary">获取 Juice</button></div>
+</form>`;
 document.body.append(juicePicker);
 let juicePickerModelId, juiceMethods = [];
 const juiceMethodNames = {xml:'XML 算式', direct:'英文直问', 'direct-instant':'英文立即回答', 'direct-only':'英文仅数字', 'direct-spaced':'英文分隔拼写', arithmetic:'普通算式', chinese:'中文 Juice 询问', 'chinese-direct':'中文果汁直问', 'chinese-only':'中文仅数字'};
-$('juicePickerCancel').onclick = () => juicePicker.close();
+$('juicePickerCancel').onclick = $('juicePickerClose').onclick = () => juicePicker.close();
 $('juiceMethod').onchange = () => {
     const method = juiceMethods.find(m => m.id === $('juiceMethod').value);
+    $('juicePreviewLabel').textContent = method ? '请求文案 · Prompt' : '检测策略';
     $('juicePromptPreview').textContent = method?.prompt || '按历史正常率优先选择文案，遇到拒答或无效回复自动切换。';
     $('juicePickerHint').textContent = method ? '仅使用所选文案请求一次，结果计入该文案的正常率。' : '取得有效整数即停止。';
 };
