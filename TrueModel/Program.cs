@@ -58,6 +58,15 @@ using (var scope = app.Services.CreateScope())
             while (await reader.ReadAsync()) hasCount |= reader.GetString(1) == "ChallengeCount";
         if (!hasCount) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Settings ADD COLUMN ChallengeCount INTEGER NOT NULL DEFAULT 3");
     }
+    using (var command = db.Database.GetDbConnection().CreateCommand())
+    {
+        command.CommandText = "PRAGMA table_info(Results)";
+        var columns = new HashSet<string>();
+        using (var reader = await command.ExecuteReaderAsync())
+            while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
+        if (!columns.Contains("JuiceValue")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceValue INTEGER NULL");
+        if (!columns.Contains("JuiceStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceStatus TEXT NULL");
+    }
     await db.Database.CloseConnectionAsync();
     await db.Database.ExecuteSqlRawAsync("""
         CREATE TABLE IF NOT EXISTS Notifications (

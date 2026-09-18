@@ -22,6 +22,7 @@
 
 - **分层管理**：站点 → 多个 API Key → 多个模型，密钥加密存储。
 - **检测与归因**：手动或定时运行，每次 3–6 题可配置；展示模型候选、家族概率和各题耗时。
+- **Juice 检测**：仅 GPT（含 ChatGPT、提供商前缀）模型每轮归因题目结束后额外请求一次，在归因模型右侧、最近检测浮层和详情中显示；旧记录及不适用模型显示 `—`，拒答或请求失败显示“未获取”，不影响归因结果。采用 [codex-juice-eval 的直接询问方案](https://github.com/Leeiio/codex-juice-eval#built-in-test-prompts)，不重试；数值为模型自报，并非官方预算指标。
 - **结果通知**：Webhook、PushDeer，支持仅失败通知、测试发送和发送记录。
 - **本地运行**：Windows、macOS 自包含版本，启动后自动打开浏览器，SQLite 持久化。
 - **容器部署**：Docker Compose、GHCR 镜像，推送版本 tag 自动构建 Release。

@@ -55,6 +55,8 @@ public sealed class DetectionResult
     public string? Error { get; set; }
     public string ResponsesJson { get; set; } = "[]";
     public string? AttributionJson { get; set; }
+    public int? JuiceValue { get; set; }
+    public string? JuiceStatus { get; set; }
 }
 public sealed class FingerprintBank
 {

@@ -160,6 +160,8 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedKey);
             var response = await client.Test(target.BaseUrl, key, target.ModelName, bank, challengeCount, token);
             result.ResponsesJson = response.GetProperty("responses").GetRawText();
+            result.JuiceValue = response.TryGetProperty("juice_value", out var juice) && juice.ValueKind == JsonValueKind.Number ? juice.GetInt32() : null;
+            result.JuiceStatus = response.TryGetProperty("juice_status", out var juiceStatus) ? juiceStatus.GetString() : null;
             result.StatusCode = response.TryGetProperty("status_code", out var status) ? status.GetInt32() : 0;
             if (response.TryGetProperty("error", out var error))
             {
