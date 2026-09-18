@@ -162,6 +162,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             result.ResponsesJson = response.GetProperty("responses").GetRawText();
             result.JuiceValue = response.TryGetProperty("juice_value", out var juice) && juice.ValueKind == JsonValueKind.Number ? juice.GetInt32() : null;
             result.JuiceStatus = response.TryGetProperty("juice_status", out var juiceStatus) ? juiceStatus.GetString() : null;
+            result.JuicePrompt = response.TryGetProperty("juice_prompt", out var juicePrompt) ? juicePrompt.GetString() : null;
             result.StatusCode = response.TryGetProperty("status_code", out var status) ? status.GetInt32() : 0;
             if (response.TryGetProperty("error", out var error))
             {

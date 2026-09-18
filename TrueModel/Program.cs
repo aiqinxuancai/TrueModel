@@ -67,6 +67,7 @@ using (var scope = app.Services.CreateScope())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
         if (!columns.Contains("JuiceValue")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceValue INTEGER NULL");
         if (!columns.Contains("JuiceStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceStatus TEXT NULL");
+        if (!columns.Contains("JuicePrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuicePrompt TEXT NULL");
     }
     await db.Database.CloseConnectionAsync();
     await db.Database.OpenConnectionAsync();
@@ -78,6 +79,7 @@ using (var scope = app.Services.CreateScope())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
         if (!columns.Contains("JuiceValue")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceValue INTEGER NULL");
         if (!columns.Contains("JuiceStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceStatus TEXT NULL");
+        if (!columns.Contains("JuicePrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuicePrompt TEXT NULL");
         if (!columns.Contains("JuiceCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceCheckedAt TEXT NULL");
     }
     await db.Database.CloseConnectionAsync();
@@ -174,7 +176,7 @@ api.MapPost("/notifications/test", async (AppDb db, NotificationService sender, 
 api.MapGet("/sites", async (AppDb db) => await db.Sites.AsNoTracking().Select(s => new
 {
     s.Id, s.Name, s.BaseUrl, s.Enabled,
-    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.JuiceValue, m.JuiceStatus, m.JuiceCheckedAt }) })
+    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt }) })
 }).ToListAsync());
 api.MapPost("/sites", async (SiteInput input, AppDb db) =>
 {
@@ -227,8 +229,11 @@ api.MapPost("/keys/{id:int}/models/batch", async (int id, ModelBatchInput input,
     return Results.Ok(new { added = additions.Length, skipped = names.Length - additions.Length });
 });
 api.MapDelete("/models/{id:int}", async (int id, AppDb db, DetectionControl control) => { await control.Delete(db, modelId: id); return Results.NoContent(); });
-api.MapPost("/models/{id:int}/juice", async (int id, AppDb db, ModelTraceClient client, IDataProtectionProvider protection, CancellationToken token) =>
+api.MapGet("/juice-methods", () => JuiceProbe.Methods);
+api.MapPost("/models/{id:int}/juice", async (int id, string? methodId, AppDb db, ModelTraceClient client, IDataProtectionProvider protection, CancellationToken token) =>
 {
+    if (methodId is not null && !JuiceProbe.Methods.Any(m => m.Id == methodId))
+        return Results.BadRequest(new { error = "未知的 Juice 检测方法" });
     var target = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
         where m.Id == id select new { Model = m, k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
     if (target is null) return Results.NotFound();
@@ -236,13 +241,14 @@ api.MapPost("/models/{id:int}/juice", async (int id, AppDb db, ModelTraceClient 
     string key;
     try { key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue); }
     catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
-    var result = await client.ProbeJuice(target.BaseUrl, key, target.Model.Name, token);
+    var result = await client.ProbeJuice(target.BaseUrl, key, target.Model.Name, token, methodId);
     var value = result.GetValueOrDefault("juice_value") as int?;
     var status = result.GetValueOrDefault("juice_status") as string;
+    var prompt = result.GetValueOrDefault("juice_prompt") as string;
     var checkedAt = DateTime.UtcNow;
     var updated = await db.Models.Where(m => m.Id == id).ExecuteUpdateAsync(s => s
-        .SetProperty(m => m.JuiceValue, value).SetProperty(m => m.JuiceStatus, status).SetProperty(m => m.JuiceCheckedAt, checkedAt), token);
-    return updated == 0 ? Results.NotFound() : Results.Ok(new { juiceValue = value, juiceStatus = status, juiceCheckedAt = checkedAt });
+        .SetProperty(m => m.JuiceValue, value).SetProperty(m => m.JuicePrompt, prompt).SetProperty(m => m.JuiceStatus, status).SetProperty(m => m.JuiceCheckedAt, checkedAt), token);
+    return updated == 0 ? Results.NotFound() : Results.Ok(new { juiceValue = value, juiceStatus = status, juicePrompt = prompt, juiceCheckedAt = checkedAt });
 });
 api.MapPost("/detect", async (DetectionScope input, AppDb db, DetectionControl control) =>
 {

@@ -26,9 +26,11 @@ public class JuiceTests
             await legacy.SaveChangesAsync();
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN JuiceValue");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN JuiceStatus");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN JuicePrompt");
             await legacy.Database.ExecuteSqlRawAsync("DROP TABLE JuiceMethodStatistics");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceValue");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceStatus");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuicePrompt");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceCheckedAt");
         }
         var standalone = new ProbeHandler(0, "96", false, false) { ExpectedFirst = "direct-only" };
@@ -47,6 +49,8 @@ public class JuiceTests
         var old = await db.Results.SingleAsync();
         Assert.Null(old.JuiceValue);
         Assert.Null(old.JuiceStatus);
+        Assert.Null(old.JuicePrompt);
+        old.JuicePrompt = "historical prompt";
         old.JuiceValue = 128;
         old.JuiceStatus = "Success";
         await db.SaveChangesAsync();
@@ -84,6 +88,9 @@ public class JuiceTests
         await Csrf();
         (await http.PostAsJsonAsync("/api/login", new { username = "admin", password = "test-password-123!" })).EnsureSuccessStatusCode();
         await Csrf();
+        var methods = await http.GetFromJsonAsync<JuiceMethod[]>("/api/juice-methods");
+        Assert.Equal(JuiceProbe.Methods.Count, methods!.Length);
+        Assert.Equal(HttpStatusCode.BadRequest, (await http.PostAsJsonAsync($"/api/models/{model.Id}/juice?methodId=unknown", new { })).StatusCode);
         var refresh = await http.PostAsJsonAsync($"/api/models/{model.Id}/juice", new { });
         refresh.EnsureSuccessStatusCode();
         Assert.Equal(96, (await refresh.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("juiceValue").GetInt32());
@@ -91,11 +98,26 @@ public class JuiceTests
         db.ChangeTracker.Clear();
         Assert.Equal(96, (await db.Models.FindAsync(model.Id))!.JuiceValue);
         Assert.NotNull((await db.Models.FindAsync(model.Id))!.JuiceCheckedAt);
+        Assert.Equal(JuiceProbe.Methods.Single(m => m.Id == "direct-only").Prompt, (await db.Models.FindAsync(model.Id))!.JuicePrompt);
+        Assert.Equal("historical prompt", (await db.Results.SingleAsync()).JuicePrompt);
         Assert.Equal(128, (await db.Results.SingleAsync()).JuiceValue);
         Assert.Empty(await db.Runs.ToArrayAsync());
         Assert.Equal(HttpStatusCode.BadRequest, (await http.PostAsJsonAsync($"/api/models/{site.Keys[0].Models[1].Id}/juice", new { })).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await http.PostAsJsonAsync("/api/models/999999/juice", new { })).StatusCode);
         Assert.Equal(1, standalone.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SelectedPromptRunsOnlyOnceEvenWhenRefused(bool refuse)
+    {
+        var handler = new ProbeHandler(0, "64", false, false) { ExpectedFirst = "chinese-only", RefuseFirst = refuse };
+        var engine = new ModelTraceClient(new HttpClient(handler));
+        var result = await engine.ProbeJuice("https://example.test", "secret", "gpt-5", CancellationToken.None, "chinese-only");
+        Assert.Equal(1, handler.Calls);
+        Assert.Equal(refuse ? "Unavailable" : "Success", result["juice_status"]);
+        Assert.Equal(JuiceProbe.Methods.Single(m => m.Id == "chinese-only").Prompt, result["juice_prompt"]);
     }
 
     [Theory]
@@ -110,6 +132,7 @@ public class JuiceTests
         Assert.Equal(5, handler.Calls);
         Assert.Equal(64, report.GetProperty("juice_value").GetInt32());
         Assert.Equal("direct", report.GetProperty("juice_method").GetString());
+        Assert.Equal(JuiceProbe.Prompt, report.GetProperty("juice_prompt").GetString());
     }
 
     [Fact]

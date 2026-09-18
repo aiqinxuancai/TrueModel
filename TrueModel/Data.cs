@@ -59,6 +59,7 @@ public sealed class DetectionResult
     public string? AttributionJson { get; set; }
     public int? JuiceValue { get; set; }
     public string? JuiceStatus { get; set; }
+    public string? JuicePrompt { get; set; }
 }
 public sealed class FingerprintBank
 {
@@ -105,6 +106,7 @@ public sealed class MonitoredModel
 {
     public int? JuiceValue { get; set; }
     public string? JuiceStatus { get; set; }
+    public string? JuicePrompt { get; set; }
     public DateTime? JuiceCheckedAt { get; set; }
     public int Id { get; set; }
     public int SiteKeyId { get; set; }

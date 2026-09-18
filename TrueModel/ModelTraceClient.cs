@@ -97,16 +97,20 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
         catch (JsonException) { }
         return text[..Math.Min(500, text.Length)];
     }
-    public async Task<Dictionary<string, object?>> ProbeJuice(string baseUrl, string key, string model, CancellationToken token)
+    public async Task<Dictionary<string, object?>> ProbeJuice(string baseUrl, string key, string model, CancellationToken token, string? methodId = null)
     {
         var envelope = new Dictionary<string, object?>();
         if (JuiceProbe.Supports(model))
         {
             token.ThrowIfCancellationRequested();
             var endpoint = CompletionUrl(baseUrl, false);
-            var methods = juiceHistory is null ? JuiceProbe.Methods.ToArray() : await juiceHistory.Ranked(endpoint, model, token);
+            var methods = methodId is not null
+                ? new[] { JuiceProbe.Methods.Single(m => m.Id == methodId) }
+                : juiceHistory is null ? JuiceProbe.Methods.ToArray() : await juiceHistory.Ranked(endpoint, model, token);
             foreach (var method in methods)
             {
+                token.ThrowIfCancellationRequested();
+                envelope["juice_prompt"] = method.Prompt;
                 try
                 {
                     var text = await Request(baseUrl, key, model, method.Prompt, false, token, null, maxAttempts: 1, juice: true);

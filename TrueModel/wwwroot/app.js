@@ -8,26 +8,58 @@ function juiceLabel(r) {
     if (r?.juiceValue != null) return String(r.juiceValue);
     return r?.juiceStatus ? '未获取' : '—';
 }
+function juiceTooltip(r) {
+    return `Juice 为模型自报值，仅供参考\n${r?.juicePrompt ? '本次请求 Prompt：\n' + r.juicePrompt : '未记录 Prompt（旧记录或尚未检测）'}`;
+}
 const refreshingJuice = new Set();
 function juiceCell(m, r) {
     const latest = m.juiceCheckedAt && (!r || new Date(m.juiceCheckedAt).getTime() > new Date(r.startedAt).getTime() + r.latencyMs) ? m : r;
     const supported = /(?:^|[/\s:_-])(?:chat)?gpt(?:$|[-_.\s\d])/i.test(m.name);
-    return `<span class="juice-cell"><span title="Juice 为模型自报值，仅供参考">${juiceLabel(latest)}</span>${supported ? `<button class="icon-button juice-refresh" data-juice="${m.id}" title="单独刷新 Juice" aria-label="刷新 ${esc(m.name)} 的 Juice" ${refreshingJuice.has(m.id) ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button>` : ''}</span>`;
+    return `<span class="juice-cell"><span title="${esc(juiceTooltip(latest))}">${juiceLabel(latest)}</span>${supported ? `<button class="icon-button juice-refresh" data-juice="${m.id}" title="单独刷新 Juice" aria-label="刷新 ${esc(m.name)} 的 Juice" ${refreshingJuice.has(m.id) ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button>` : ''}</span>`;
 }
+const juicePicker = document.createElement('dialog');
+juicePicker.id = 'juicePromptPicker';
+juicePicker.setAttribute('aria-labelledby', 'juicePickerTitle');
+juicePicker.innerHTML = `<form id="juicePickerForm"><h2 id="juicePickerTitle">选择 Juice 检测方法</h2><p id="juicePickerModel"></p><label for="juiceMethod">Prompt 文案方法</label><select id="juiceMethod"></select><pre id="juicePromptPreview"></pre><p id="juicePickerHint"></p><div class="actions"><button type="button" id="juicePickerCancel">取消</button><button type="submit" class="primary">获取 Juice</button></div></form>`;
+document.body.append(juicePicker);
+let juicePickerModelId, juiceMethods = [];
+const juiceMethodNames = {xml:'XML 算式', direct:'英文直问', 'direct-instant':'英文立即回答', 'direct-only':'英文仅数字', 'direct-spaced':'英文分隔拼写', arithmetic:'普通算式', chinese:'中文 Juice 询问', 'chinese-direct':'中文果汁直问', 'chinese-only':'中文仅数字'};
+$('juicePickerCancel').onclick = () => juicePicker.close();
+$('juiceMethod').onchange = () => {
+    const method = juiceMethods.find(m => m.id === $('juiceMethod').value);
+    $('juicePromptPreview').textContent = method?.prompt || '按历史正常率优先选择文案，遇到拒答或无效回复自动切换。';
+    $('juicePickerHint').textContent = method ? '仅使用所选文案请求一次，结果计入该文案的正常率。' : '取得有效整数即停止。';
+};
 document.addEventListener('click', async event => {
     const button = event.target.closest('button[data-juice]');
     if (!button) return;
     const id = Number(button.dataset.juice);
     if (refreshingJuice.has(id)) return;
+    try {
+        if (!juiceMethods.length) juiceMethods = await api('/juice-methods');
+        juicePickerModelId = id;
+        const model = sites.flatMap(s => s.keys.flatMap(k => k.models)).find(m => m.id === id);
+        $('juicePickerModel').textContent = model?.name || '';
+        $('juiceMethod').innerHTML = '<option value="">自动择优（拒答时自动切换）</option>' + juiceMethods.map(m => `<option value="${esc(m.id)}">${esc(juiceMethodNames[m.id] || m.id)}</option>`).join('');
+        $('juiceMethod').onchange();
+        if (!juicePicker.open) juicePicker.showModal();
+    } catch (error) { message(error.message); }
+});
+$('juicePickerForm').onsubmit = async event => {
+    event.preventDefault();
+    const id = juicePickerModelId;
+    if (refreshingJuice.has(id)) return;
+    const methodId = $('juiceMethod').value;
+    juicePicker.close();
     refreshingJuice.add(id);
     render();
     try {
-        const result = await api(`/models/${id}/juice`, 'POST', {});
+        const result = await api(`/models/${id}/juice${methodId ? '?methodId=' + encodeURIComponent(methodId) : ''}`, 'POST', {});
         message(result.juiceStatus === 'Success' ? 'Juice 已更新' : '未获取到 Juice 值');
         await refresh();
     } catch (error) { message(error.message); }
     finally { refreshingJuice.delete(id); render(); }
-});
+};
 function recentModelHistory(modelId) {
     const recent = recentModelResults.filter(r => r.modelId === modelId).slice(0, 5);
     if (!recent.length) return '<span class="muted">暂无检测</span>';
@@ -37,7 +69,7 @@ function recentModelHistory(modelId) {
         const normalize = value => String(value || '').trim().toLowerCase();
         const type = r.status !== 'Success' ? 'failure' : !winner ? 'unknown' : normalize(winner.Model || winner.DisplayName) === normalize(r.modelName) ? 'success' : 'mismatch';
         const meaning = {success:'归因一致',mismatch:'归因不符',failure:'检测失败',unknown:'暂无归因结果'}[type];
-        const info = `${r.modelName} · ${meaning}（${statuses[r.status] || r.status}）\n${time(r.startedAt)} · 批次 #${r.runId} · ${(r.latencyMs / 1000).toFixed(1)}s${winner ? `\n归因：${winner.DisplayName || winner.Model} · ${(winner.Probability * 100).toFixed(1)}%` : ''}\nJuice（模型自报）：${juiceLabel(r)}${type === 'failure' ? `\n${failureReason(r)}` : ''}`;
+        const info = `${r.modelName} · ${meaning}（${statuses[r.status] || r.status}）\n${time(r.startedAt)} · 批次 #${r.runId} · ${(r.latencyMs / 1000).toFixed(1)}s${winner ? `\n归因：${winner.DisplayName || winner.Model} · ${(winner.Probability * 100).toFixed(1)}%` : ''}\nJuice（模型自报）：${juiceLabel(r)}${r.juicePrompt ? `\nJuice Prompt：${r.juicePrompt}` : ''}${type === 'failure' ? `\n${failureReason(r)}` : ''}`;
         return `<span class="recent-dot ${type}" tabindex="0" data-tooltip="${esc(info)}" aria-label="${esc(info)}"></span>`;
     }).join('');
     return `<div class="recent-dots" aria-label="最近五次检测，从左到右由新到旧">${dots}</div><small class="recent-model-time" title="${esc(time(recent[0].startedAt))}">${relativeTime(recent[0].startedAt)}</small>`;
@@ -106,5 +138,5 @@ $('closeEditor').onclick=()=>$('editor').close();$('closeDetail').onclick=()=>$(
 $('addSite').onclick=()=>edit('添加站点',[['name','名称'],['baseUrl','Base URL','url']],v=>api('/sites','POST',v));
 $('importBank').onclick=()=>edit('导入指纹库',[['name','版本名称'],['file','ModelTrace JSON 文件','file']],async v=>{await api('/banks','POST',{name:v.name,json:await v.file.text()});});
 $('settingsForm').onsubmit=async e=>{e.preventDefault();try{await api('/settings','PUT',Object.fromEntries([...new FormData(e.target)].map(([k,v])=>[k,Number(v)])));message('设置已保存');await refresh();}catch(e){message(e.message);}};
-document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;if(!['key','model','delete','detect','detectModel','detectKey','detectSite','cancel','activate','detail'].some(k=>d[k]!==undefined))return;try{if(d.key)edit('添加 Key',[['name','Key 名称'],['value','API Key','password']],v=>api(`/sites/${d.key}/keys`,'POST',v));if(d.model)edit('添加模型',[['name','模型 ID']],v=>api(`/keys/${d.model}/models`,'POST',v));if(d.delete&&confirm('确认删除？此操作会删除下级配置，历史记录仍然保留。')){await api('/'+d.delete,'DELETE');await refresh();}if(d.detect||d.detectModel||d.detectKey||d.detectSite){b.disabled=true;await api('/detect','POST',{modelId:d.detectModel?Number(d.detectModel):null,keyId:d.detectKey?Number(d.detectKey):null,siteId:d.detectSite?Number(d.detectSite):null});message('检测任务已加入队列');await refresh();}if(d.cancel){await api(`/runs/${d.cancel}/cancel`,'POST',{});message('已请求取消');}if(d.activate){await api(`/banks/${d.activate}/activate`,'POST',{});await refresh();}if(d.detail){const r=results.find(x=>x.id===Number(d.detail));const report=r.attributionJson?JSON.parse(r.attributionJson):null;$('detailBody').innerHTML=`<p>${esc(r.siteName)} / ${esc(r.keyName)} / ${esc(r.modelName)} · ${badge(r.status)} · 总耗时 ${(r.latencyMs/1000).toFixed(1)}s</p><p>Juice（模型自报）：${juiceLabel(r)}</p>${r.error?`<p>${esc(r.error)}</p>`:''}${report?`<h2>候选模型</h2><p>有效回答 ${report.UsedOutputs} · 校准 β ${report.Beta.toFixed(2)}</p><table><thead><tr><th>模型</th><th>家族</th><th>概率</th></tr></thead><tbody>${report.Candidates.map(c=>`<tr><td>${esc(c.DisplayName)}</td><td>${esc(c.Family)}</td><td>${(c.Probability*100).toFixed(2)}%</td></tr>`).join('')}</tbody></table><h2>家族概率</h2>${Object.entries(report.Families).map(([k,v])=>`<p>${esc(k)}: ${(v*100).toFixed(2)}%</p>`).join('')}`:''}<h2>挑战与响应</h2>${JSON.parse(r.responsesJson).map(o=>`<details><summary>${o.ExpectedCount} 个整数 · ${((o.DurationMs||0)/1000).toFixed(1)}s</summary>${o.Error?`<p>${esc(o.Error)}</p>`:''}<p>${esc(o.Prompt)}</p><pre>${esc(o.Text)}</pre></details>`).join('')}`;$('detail').showModal();}}catch(e){message(e.message);}finally{b.disabled=false;}});
+document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;if(!['key','model','delete','detect','detectModel','detectKey','detectSite','cancel','activate','detail'].some(k=>d[k]!==undefined))return;try{if(d.key)edit('添加 Key',[['name','Key 名称'],['value','API Key','password']],v=>api(`/sites/${d.key}/keys`,'POST',v));if(d.model)edit('添加模型',[['name','模型 ID']],v=>api(`/keys/${d.model}/models`,'POST',v));if(d.delete&&confirm('确认删除？此操作会删除下级配置，历史记录仍然保留。')){await api('/'+d.delete,'DELETE');await refresh();}if(d.detect||d.detectModel||d.detectKey||d.detectSite){b.disabled=true;await api('/detect','POST',{modelId:d.detectModel?Number(d.detectModel):null,keyId:d.detectKey?Number(d.detectKey):null,siteId:d.detectSite?Number(d.detectSite):null});message('检测任务已加入队列');await refresh();}if(d.cancel){await api(`/runs/${d.cancel}/cancel`,'POST',{});message('已请求取消');}if(d.activate){await api(`/banks/${d.activate}/activate`,'POST',{});await refresh();}if(d.detail){const r=results.find(x=>x.id===Number(d.detail));const report=r.attributionJson?JSON.parse(r.attributionJson):null;$('detailBody').innerHTML=`<p>${esc(r.siteName)} / ${esc(r.keyName)} / ${esc(r.modelName)} · ${badge(r.status)} · 总耗时 ${(r.latencyMs/1000).toFixed(1)}s</p><p>Juice（模型自报）：<span title="${esc(juiceTooltip(r))}">${juiceLabel(r)}</span></p>${r.error?`<p>${esc(r.error)}</p>`:''}${report?`<h2>候选模型</h2><p>有效回答 ${report.UsedOutputs} · 校准 β ${report.Beta.toFixed(2)}</p><table><thead><tr><th>模型</th><th>家族</th><th>概率</th></tr></thead><tbody>${report.Candidates.map(c=>`<tr><td>${esc(c.DisplayName)}</td><td>${esc(c.Family)}</td><td>${(c.Probability*100).toFixed(2)}%</td></tr>`).join('')}</tbody></table><h2>家族概率</h2>${Object.entries(report.Families).map(([k,v])=>`<p>${esc(k)}: ${(v*100).toFixed(2)}%</p>`).join('')}`:''}<h2>挑战与响应</h2>${JSON.parse(r.responsesJson).map(o=>`<details><summary>${o.ExpectedCount} 个整数 · ${((o.DurationMs||0)/1000).toFixed(1)}s</summary>${o.Error?`<p>${esc(o.Error)}</p>`:''}<p>${esc(o.Prompt)}</p><pre>${esc(o.Text)}</pre></details>`).join('')}`;$('detail').showModal();}}catch(e){message(e.message);}finally{b.disabled=false;}});
 session().catch(e=>message(e.message));setInterval(()=>{if(!$('application').hidden)refresh().catch(e=>message(e.message));},5000);

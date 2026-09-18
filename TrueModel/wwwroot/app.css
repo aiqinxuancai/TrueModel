@@ -1324,3 +1324,10 @@ details pre {
 .juice-refresh[aria-busy="true"] svg { animation: juice-spin 1s linear infinite; }
 @keyframes juice-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .juice-refresh[aria-busy="true"] svg { animation: none; } }
+
+#juicePromptPicker { width: min(560px, calc(100vw - 32px)); }
+#juicePickerForm { display: grid; gap: 12px; }
+#juicePickerForm h2, #juicePickerForm p { margin: 0; }
+#juicePromptPreview { margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; background: #f5f7fa; border-radius: 6px; }
+#juicePickerHint { color: var(--muted); font-size: 12px; }
+#juicePickerForm .actions { justify-content: flex-end; }
