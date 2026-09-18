@@ -11,12 +11,14 @@ public sealed class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
     public DbSet<MonitoredModel> Models => Set<MonitoredModel>();
     public DbSet<DetectionRun> Runs => Set<DetectionRun>();
     public DbSet<DetectionResult> Results => Set<DetectionResult>();
+    public DbSet<JuiceMethodStatistic> JuiceMethodStatistics => Set<JuiceMethodStatistic>();
     public DbSet<FingerprintBank> Banks => Set<FingerprintBank>();
     public DbSet<AppSettings> Settings => Set<AppSettings>();
     public DbSet<NotificationSettings> Notifications => Set<NotificationSettings>();
     public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
     protected override void OnModelCreating(ModelBuilder model)
     {
+        model.Entity<JuiceMethodStatistic>().HasKey(s => new { s.Endpoint, s.Model, s.Method });
         model.Entity<SiteKey>().HasOne<Site>().WithMany(s => s.Keys).HasForeignKey(k => k.SiteId).OnDelete(DeleteBehavior.Cascade);
         model.Entity<MonitoredModel>().HasOne<SiteKey>().WithMany(k => k.Models).HasForeignKey(m => m.SiteKeyId).OnDelete(DeleteBehavior.Cascade);
         model.Entity<MonitoredModel>().HasIndex(m => new { m.SiteKeyId, m.Name }).IsUnique();
@@ -101,6 +103,9 @@ public sealed class SiteKey
 }
 public sealed class MonitoredModel
 {
+    public int? JuiceValue { get; set; }
+    public string? JuiceStatus { get; set; }
+    public DateTime? JuiceCheckedAt { get; set; }
     public int Id { get; set; }
     public int SiteKeyId { get; set; }
     public string Name { get; set; } = "";

@@ -37,6 +37,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddHttpClient("probe", c => { c.Timeout = Timeout.InfiniteTimeSpan; c.MaxResponseContentBufferSize = 1_000_000; }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHostedService<DetectionWorker>();
 builder.Services.AddSingleton<DetectionControl>();
+builder.Services.AddSingleton<JuiceHistory>();
 builder.Services.AddHttpClient<ModelTraceClient>(c => c.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddHttpClient<ModelDiscovery>(c => { c.Timeout = TimeSpan.FromSeconds(20); c.MaxResponseContentBufferSize = 2_000_000; })
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false }).RemoveAllLoggers();
@@ -68,7 +69,22 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("JuiceStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceStatus TEXT NULL");
     }
     await db.Database.CloseConnectionAsync();
+    await db.Database.OpenConnectionAsync();
+    using (var command = db.Database.GetDbConnection().CreateCommand())
+    {
+        command.CommandText = "PRAGMA table_info(Models)";
+        var columns = new HashSet<string>();
+        using (var reader = await command.ExecuteReaderAsync())
+            while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
+        if (!columns.Contains("JuiceValue")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceValue INTEGER NULL");
+        if (!columns.Contains("JuiceStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceStatus TEXT NULL");
+        if (!columns.Contains("JuiceCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceCheckedAt TEXT NULL");
+    }
+    await db.Database.CloseConnectionAsync();
     await db.Database.ExecuteSqlRawAsync("""
+        CREATE TABLE IF NOT EXISTS JuiceMethodStatistics (
+          Endpoint TEXT NOT NULL, Model TEXT NOT NULL, Method TEXT NOT NULL,
+          Attempts INTEGER NOT NULL, Successes INTEGER NOT NULL, PRIMARY KEY (Endpoint, Model, Method));
         CREATE TABLE IF NOT EXISTS Notifications (
           Id INTEGER NOT NULL PRIMARY KEY, WebhookEnabled INTEGER NOT NULL, WebhookProtected TEXT NOT NULL,
           PushDeerEnabled INTEGER NOT NULL, PushDeerEndpoint TEXT NOT NULL, PushKeyProtected TEXT NOT NULL, OnlyFailures INTEGER NOT NULL);
@@ -158,7 +174,7 @@ api.MapPost("/notifications/test", async (AppDb db, NotificationService sender, 
 api.MapGet("/sites", async (AppDb db) => await db.Sites.AsNoTracking().Select(s => new
 {
     s.Id, s.Name, s.BaseUrl, s.Enabled,
-    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled }) })
+    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.JuiceValue, m.JuiceStatus, m.JuiceCheckedAt }) })
 }).ToListAsync());
 api.MapPost("/sites", async (SiteInput input, AppDb db) =>
 {
@@ -211,6 +227,23 @@ api.MapPost("/keys/{id:int}/models/batch", async (int id, ModelBatchInput input,
     return Results.Ok(new { added = additions.Length, skipped = names.Length - additions.Length });
 });
 api.MapDelete("/models/{id:int}", async (int id, AppDb db, DetectionControl control) => { await control.Delete(db, modelId: id); return Results.NoContent(); });
+api.MapPost("/models/{id:int}/juice", async (int id, AppDb db, ModelTraceClient client, IDataProtectionProvider protection, CancellationToken token) =>
+{
+    var target = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
+        where m.Id == id select new { Model = m, k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
+    if (target is null) return Results.NotFound();
+    if (!JuiceProbe.Supports(target.Model.Name)) return Results.BadRequest(new { error = "仅 GPT 模型支持 Juice 检测" });
+    string key;
+    try { key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue); }
+    catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
+    var result = await client.ProbeJuice(target.BaseUrl, key, target.Model.Name, token);
+    var value = result.GetValueOrDefault("juice_value") as int?;
+    var status = result.GetValueOrDefault("juice_status") as string;
+    var checkedAt = DateTime.UtcNow;
+    var updated = await db.Models.Where(m => m.Id == id).ExecuteUpdateAsync(s => s
+        .SetProperty(m => m.JuiceValue, value).SetProperty(m => m.JuiceStatus, status).SetProperty(m => m.JuiceCheckedAt, checkedAt), token);
+    return updated == 0 ? Results.NotFound() : Results.Ok(new { juiceValue = value, juiceStatus = status, juiceCheckedAt = checkedAt });
+});
 api.MapPost("/detect", async (DetectionScope input, AppDb db, DetectionControl control) =>
 {
     await control.Gate.WaitAsync();

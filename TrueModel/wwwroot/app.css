@@ -1317,3 +1317,10 @@ details pre {
     animation: none !important;
   }
 }
+
+.juice-cell { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+#overview .juice-refresh { padding: 3px; min-height: 24px; width: 24px; }
+.juice-refresh svg { width: 13px; height: 13px; }
+.juice-refresh[aria-busy="true"] svg { animation: juice-spin 1s linear infinite; }
+@keyframes juice-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .juice-refresh[aria-busy="true"] svg { animation: none; } }

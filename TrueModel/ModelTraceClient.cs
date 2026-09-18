@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace TrueModel;
 
 // Native port of ModelTrace enrollment.py's completion adapter.
-public sealed class ModelTraceClient(HttpClient client)
+public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHistory = null)
 {
     public const string DefaultUserAgent = "Codex Desktop/0.147.0-alpha.1.2 (Windows 10.0.26200; x86_64) unknown (codex_exec; 0.147.0-alpha.1.2)";
     private static readonly int[] Retryable = [408, 429, 500, 502, 503, 504];
@@ -26,7 +26,7 @@ public sealed class ModelTraceClient(HttpClient client)
         }
         throw new UpstreamException("接口格式自动探测失败；" + string.Join('；', errors));
     }
-    private async Task<string> Request(string url, string key, string model, string prompt, bool anthropic, CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3)
+    private async Task<string> Request(string url, string key, string model, string prompt, bool anthropic, CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false)
     {
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -51,6 +51,13 @@ public sealed class ModelTraceClient(HttpClient client)
                     throw new UpstreamException($"HTTP {(int)response.StatusCode}: {CompactError(text)}" + (attempt > 1 ? $"（已自动重试 {attempt - 1} 次）" : ""));
                 }
                 using var payload = JsonDocument.Parse(text);
+                if (juice)
+                {
+                    var choice = payload.RootElement.GetProperty("choices")[0];
+                    var message = choice.GetProperty("message");
+                    if ((message.TryGetProperty("refusal", out var refusal) && refusal.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(refusal.GetString())) ||
+                        (choice.TryGetProperty("finish_reason", out var finish) && finish.GetString() is "length" or "content_filter")) return "";
+                }
                 return ExtractContent(payload.RootElement, anthropic);
             }
             catch (HttpRequestException e)
@@ -90,6 +97,33 @@ public sealed class ModelTraceClient(HttpClient client)
         catch (JsonException) { }
         return text[..Math.Min(500, text.Length)];
     }
+    public async Task<Dictionary<string, object?>> ProbeJuice(string baseUrl, string key, string model, CancellationToken token)
+    {
+        var envelope = new Dictionary<string, object?>();
+        if (JuiceProbe.Supports(model))
+        {
+            token.ThrowIfCancellationRequested();
+            var endpoint = CompletionUrl(baseUrl, false);
+            var methods = juiceHistory is null ? JuiceProbe.Methods.ToArray() : await juiceHistory.Ranked(endpoint, model, token);
+            foreach (var method in methods)
+            {
+                try
+                {
+                    var text = await Request(baseUrl, key, model, method.Prompt, false, token, null, maxAttempts: 1, juice: true);
+                    var value = JuiceProbe.Parse(text);
+                    if (juiceHistory is not null) await juiceHistory.Record(endpoint, model, method.Id, value.HasValue, token);
+                    envelope["juice_value"] = value;
+                    envelope["juice_status"] = value.HasValue ? "Success" : "Unavailable";
+                    envelope["juice_method"] = method.Id;
+                    if (value.HasValue) break;
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                catch (Exception e) when (e is UpstreamException or HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException or FormatException or IndexOutOfRangeException)
+                { envelope["juice_status"] = "Failed"; break; }
+            }
+        }
+        return envelope;
+    }
     public async Task<JsonElement> Test(string baseUrl, string key, string model, string bank, int challengeCount, CancellationToken token)
     {
         var watch = Stopwatch.StartNew();
@@ -109,21 +143,7 @@ public sealed class ModelTraceClient(HttpClient client)
             responses.Add(new { challenge.Id, challenge.Prompt, Text = text, challenge.ExpectedCount, DurationMs = before.ElapsedMilliseconds, Error = error });
         }
         var envelope = new Dictionary<string, object?> { ["responses"] = responses, ["duration_ms"] = watch.ElapsedMilliseconds, ["status_code"] = statusCode };
-        if (JuiceProbe.Supports(model))
-        {
-            token.ThrowIfCancellationRequested();
-            try
-            {
-                // One extra request per round; no retries or protocol fallback.
-                var text = await Request(baseUrl, key, model, JuiceProbe.Prompt, false, token, null, maxAttempts: 1);
-                var value = JuiceProbe.Parse(text);
-                envelope["juice_value"] = value;
-                envelope["juice_status"] = value.HasValue ? "Success" : "Unavailable";
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-            catch (Exception e) when (e is UpstreamException or HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException or FormatException or IndexOutOfRangeException)
-            { envelope["juice_status"] = "Failed"; }
-        }
+        foreach (var entry in await ProbeJuice(baseUrl, key, model, token)) envelope[entry.Key] = entry.Value;
         envelope["duration_ms"] = watch.ElapsedMilliseconds;
         try
         {
