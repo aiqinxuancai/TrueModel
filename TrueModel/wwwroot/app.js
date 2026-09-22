@@ -5,7 +5,7 @@ let setupRequired = false;
 let token = '', sites = [], results = [], runs = [], banks = [], editAction;
 let recentModelResults = [];
 function juiceLabel(r) {
-    if (r?.juiceValue != null) return `通过 · ${r.juiceValue}`;
+    if (r?.juiceValue != null) return String(r.juiceValue);
     return probeLabel(r?.juiceStatus);
 }
 function juiceTooltip(r) {
