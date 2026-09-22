@@ -1348,3 +1348,8 @@ details pre {
     .juice-picker-body { padding: 18px; gap: 16px; }
     .juice-picker-footer { padding: 14px 18px; }
 }
+
+.probe-Success { color: #15803d; }
+.probe-Unavailable { color: #b45309; }
+.probe-Failed { color: #dc2626; }
+.probe-pending { color: var(--muted); }

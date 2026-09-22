@@ -36,7 +36,8 @@ public class NativeDetectionTests
         var engine = new ModelTraceClient(new HttpClient(handler));
         var bank = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets/unified_bank.json"));
         var report = await engine.Test("https://example.test", "test-secret", "mock", bank, count, CancellationToken.None);
-        Assert.Equal(count, handler.Requests.Count);
+        Assert.Equal(count + 1, handler.Requests.Count);
+        Assert.Equal(InstructionProbe.Prompt, handler.Requests[^1].GetProperty("messages")[0].GetProperty("content").GetString());
         Assert.Equal(count, report.GetProperty("result").GetProperty("used_outputs").GetInt32());
         Assert.Equal(count, report.GetProperty("responses").EnumerateArray().Select(r => r.GetProperty("ExpectedCount").GetInt32()).Distinct().Count());
         foreach (var body in handler.Requests)

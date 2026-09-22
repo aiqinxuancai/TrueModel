@@ -32,6 +32,15 @@ public class JuiceTests
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceStatus");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuicePrompt");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceCheckedAt");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN InstructionStatus");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN InstructionPrompt");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN InstructionResponse");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN InstructionError");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN InstructionStatus");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN InstructionPrompt");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN InstructionResponse");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN InstructionError");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN InstructionCheckedAt");
         }
         var standalone = new ProbeHandler(0, "96", false, false) { ExpectedFirst = "direct-only" };
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -79,6 +88,7 @@ public class JuiceTests
         await db.SaveChangesAsync();
         var model = site.Keys[0].Models[0];
         Assert.Equal(HttpStatusCode.Unauthorized, (await http.PostAsJsonAsync($"/api/models/{model.Id}/juice", new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await http.PostAsJsonAsync($"/api/models/{model.Id}/instruction", new { })).StatusCode);
         async Task Csrf()
         {
             var session = await http.GetFromJsonAsync<JsonElement>("/api/session");
@@ -105,6 +115,18 @@ public class JuiceTests
         Assert.Equal(HttpStatusCode.BadRequest, (await http.PostAsJsonAsync($"/api/models/{site.Keys[0].Models[1].Id}/juice", new { })).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await http.PostAsJsonAsync("/api/models/999999/juice", new { })).StatusCode);
         Assert.Equal(1, standalone.Calls);
+        Assert.Equal(HttpStatusCode.NotFound, (await http.PostAsJsonAsync("/api/models/999999/instruction", new { })).StatusCode);
+        var instructionRefresh = await http.PostAsJsonAsync($"/api/models/{model.Id}/instruction", new { });
+        instructionRefresh.EnsureSuccessStatusCode();
+        Assert.Equal("Success", (await instructionRefresh.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("instructionStatus").GetString());
+        db.ChangeTracker.Clear();
+        var saved = (await db.Models.FindAsync(model.Id))!;
+        Assert.Equal("Success", saved.InstructionStatus);
+        Assert.Equal("是。", saved.InstructionResponse);
+        Assert.Equal(InstructionProbe.Prompt, saved.InstructionPrompt);
+        Assert.NotNull(saved.InstructionCheckedAt);
+        Assert.Null((await db.Results.SingleAsync()).InstructionStatus);
+        Assert.Empty(await db.Runs.ToArrayAsync());
     }
 
     [Theory]
@@ -129,7 +151,7 @@ public class JuiceTests
         var engine = new ModelTraceClient(new HttpClient(handler));
         var bank = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets/unified_bank.json"));
         var report = await engine.Test("https://example.test", "secret", "gpt-5", bank, 3, CancellationToken.None);
-        Assert.Equal(5, handler.Calls);
+        Assert.Equal(6, handler.Calls);
         Assert.Equal(64, report.GetProperty("juice_value").GetInt32());
         Assert.Equal("direct", report.GetProperty("juice_method").GetString());
         Assert.Equal(JuiceProbe.Prompt, report.GetProperty("juice_prompt").GetString());
@@ -181,9 +203,10 @@ public class JuiceTests
         var client = new ModelTraceClient(new HttpClient(handler));
         var bank = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets/unified_bank.json"));
         var report = await client.Test("https://example.test", "secret", model, bank, count, CancellationToken.None);
-        Assert.Equal(count + (status is null ? 0 : status == "Unavailable" ? JuiceProbe.Methods.Count : 1), handler.Calls);
+        Assert.Equal(count + 1 + (status is null ? 0 : status == "Unavailable" ? JuiceProbe.Methods.Count : 1), handler.Calls);
         Assert.Equal(count, report.GetProperty("responses").GetArrayLength());
         Assert.Equal(invalidChallenges, report.TryGetProperty("error", out _));
+        Assert.Equal("Success", report.GetProperty("instruction").GetProperty("InstructionStatus").GetString());
         if (status is null) Assert.False(report.TryGetProperty("juice_status", out _));
         else Assert.Equal(status, report.GetProperty("juice_status").GetString());
         if (status == "Success") Assert.Equal(int.Parse(answer), report.GetProperty("juice_value").GetInt32());
@@ -200,6 +223,8 @@ public class JuiceTests
             Calls++;
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
             var prompt = body.GetProperty("messages")[0].GetProperty("content").GetString();
+            if (prompt == InstructionProbe.Prompt)
+                return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "是。" }, finish_reason = "stop" } } }) };
             if (Calls > count)
             {
                 Assert.Equal(ExpectedFirst is null ? JuiceProbe.Methods[Calls - count - 1].Prompt : JuiceProbe.Methods.Single(m => m.Id == ExpectedFirst).Prompt, prompt);

@@ -5,8 +5,8 @@ let setupRequired = false;
 let token = '', sites = [], results = [], runs = [], banks = [], editAction;
 let recentModelResults = [];
 function juiceLabel(r) {
-    if (r?.juiceValue != null) return String(r.juiceValue);
-    return r?.juiceStatus ? '未获取' : '—';
+    if (r?.juiceValue != null) return `通过 · ${r.juiceValue}`;
+    return probeLabel(r?.juiceStatus);
 }
 function juiceTooltip(r) {
     return `Juice 为模型自报值，仅供参考\n${r?.juicePrompt ? '本次请求 Prompt：\n' + r.juicePrompt : '未记录 Prompt（旧记录或尚未检测）'}`;
@@ -15,8 +15,62 @@ const refreshingJuice = new Set();
 function juiceCell(m, r) {
     const latest = m.juiceCheckedAt && (!r || new Date(m.juiceCheckedAt).getTime() > new Date(r.startedAt).getTime() + r.latencyMs) ? m : r;
     const supported = /(?:^|[/\s:_-])(?:chat)?gpt(?:$|[-_.\s\d])/i.test(m.name);
-    return `<span class="juice-cell"><span title="${esc(juiceTooltip(latest))}">${juiceLabel(latest)}</span>${supported ? `<button class="icon-button juice-refresh" data-juice="${m.id}" title="单独刷新 Juice" aria-label="刷新 ${esc(m.name)} 的 Juice" ${refreshingJuice.has(m.id) ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button>` : ''}</span>`;
+    return `<span class="juice-cell"><span class="probe-${esc(latest?.juiceStatus || 'pending')}" tabindex="0" data-tooltip="${esc(juiceTooltip(latest))}">${juiceLabel(latest)}</span>${supported ? `<button class="icon-button juice-refresh" data-juice="${m.id}" title="单独刷新 Juice" aria-label="刷新 ${esc(m.name)} 的 Juice" ${refreshingJuice.has(m.id) ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button>` : ''}</span>`;
 }
+function probeLabel(status) {
+    return {Success:'通过', Unavailable:'未通过', Failed:'错误'}[status] || '—';
+}
+function probeBadge(status) {
+    return `<span class="probe-${esc(status || 'pending')}">${probeLabel(status)}</span>`;
+}
+function instructionTooltip(r) {
+    return `是/否检测：${probeLabel(r?.instructionStatus)}\n判定：仅“是”“否”“是。”“否。”通过（忽略首尾空白）\n题目：${r?.instructionPrompt || '尚未检测'}\n回复：${r?.instructionResponse ?? '—'}${r?.instructionError ? '\n错误：' + r.instructionError : ''}`;
+}
+const refreshingInstruction = new Set();
+function instructionCell(m, r) {
+    const latest = m.instructionCheckedAt && (!r || new Date(m.instructionCheckedAt).getTime() > new Date(r.startedAt).getTime() + r.latencyMs) ? m : r;
+    return `<span class="juice-cell"><span tabindex="0" data-tooltip="${esc(instructionTooltip(latest))}">${probeBadge(latest?.instructionStatus)}</span><button class="icon-button juice-refresh" data-instruction="${m.id}" title="单独刷新是/否检测" aria-label="刷新 ${esc(m.name)} 的是/否检测" ${refreshingInstruction.has(m.id) ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button></span>`;
+}
+async function refreshProbe(id, kind) {
+    const busy = kind === 'juice' ? refreshingJuice : refreshingInstruction;
+    if (busy.has(id)) return;
+    busy.add(id);
+    render();
+    try {
+        const result = await api(`/models/${id}/${kind}`, 'POST', {});
+        const model = sites.flatMap(s => s.keys.flatMap(k => k.models)).find(m => m.id === id);
+        if (model) Object.assign(model, result);
+        return result;
+    } finally { busy.delete(id); render(); }
+}
+document.addEventListener('click', async event => {
+    const button = event.target.closest('button[data-instruction]');
+    if (!button) return;
+    try { const result = await refreshProbe(Number(button.dataset.instruction), 'instruction'); if (result) message('是/否检测：' + probeLabel(result.instructionStatus)); }
+    catch (error) { message(error.message); }
+});
+async function refreshAllProbes(kind, button) {
+    if (button.disabled) return;
+    const models = sites.flatMap(s => s.keys.flatMap(k => k.models)).filter(m => kind !== 'juice' || /(?:^|[/\s:_-])(?:chat)?gpt(?:$|[-_.\s\d])/i.test(m.name));
+    const busy = kind === 'juice' ? refreshingJuice : refreshingInstruction;
+    const pending = models.filter(m => !busy.has(m.id));
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    let errors = 0, completed = 0;
+    try {
+        // Limit concurrency so a bulk refresh does not flood upstream services.
+        await Promise.all(Array.from({length: Math.min(2, pending.length)}, async () => {
+            while (pending.length) {
+                const model = pending.shift();
+                try { const result = await refreshProbe(model.id, kind); if (result) { completed++; if (result[kind + 'Status'] === 'Failed') errors++; } }
+                catch { errors++; }
+            }
+        }));
+        message(`${kind === 'juice' ? 'Juice' : '是/否检测'}全部刷新完成：已更新 ${completed} 个，错误 ${errors} 个`);
+    } finally { button.disabled = false; button.removeAttribute('aria-busy'); }
+}
+$('refreshAllJuice').onclick = event => refreshAllProbes('juice', event.currentTarget);
+$('refreshAllInstruction').onclick = event => refreshAllProbes('instruction', event.currentTarget);
 const juicePicker = document.createElement('dialog');
 juicePicker.id = 'juicePromptPicker';
 juicePicker.setAttribute('aria-labelledby', 'juicePickerTitle');
@@ -67,7 +121,7 @@ $('juicePickerForm').onsubmit = async event => {
     render();
     try {
         const result = await api(`/models/${id}/juice${methodId ? '?methodId=' + encodeURIComponent(methodId) : ''}`, 'POST', {});
-        message(result.juiceStatus === 'Success' ? 'Juice 已更新' : '未获取到 Juice 值');
+        message('Juice：' + juiceLabel(result));
         await refresh();
     } catch (error) { message(error.message); }
     finally { refreshingJuice.delete(id); render(); }
@@ -81,7 +135,7 @@ function recentModelHistory(modelId) {
         const normalize = value => String(value || '').trim().toLowerCase();
         const type = r.status !== 'Success' ? 'failure' : !winner ? 'unknown' : normalize(winner.Model || winner.DisplayName) === normalize(r.modelName) ? 'success' : 'mismatch';
         const meaning = {success:'归因一致',mismatch:'归因不符',failure:'检测失败',unknown:'暂无归因结果'}[type];
-        const info = `${r.modelName} · ${meaning}（${statuses[r.status] || r.status}）\n${time(r.startedAt)} · 批次 #${r.runId} · ${(r.latencyMs / 1000).toFixed(1)}s${winner ? `\n归因：${winner.DisplayName || winner.Model} · ${(winner.Probability * 100).toFixed(1)}%` : ''}\nJuice（模型自报）：${juiceLabel(r)}${r.juicePrompt ? `\nJuice Prompt：${r.juicePrompt}` : ''}${type === 'failure' ? `\n${failureReason(r)}` : ''}`;
+        const info = `${r.modelName} · ${meaning}（${statuses[r.status] || r.status}）\n${time(r.startedAt)} · 批次 #${r.runId} · ${(r.latencyMs / 1000).toFixed(1)}s${winner ? `\n归因：${winner.DisplayName || winner.Model} · ${(winner.Probability * 100).toFixed(1)}%` : ''}\nJuice（模型自报）：${juiceLabel(r)}${r.juicePrompt ? `\nJuice Prompt：${r.juicePrompt}` : ''}\n${instructionTooltip(r)}${type === 'failure' ? `\n${failureReason(r)}` : ''}`;
         return `<span class="recent-dot ${type}" tabindex="0" data-tooltip="${esc(info)}" aria-label="${esc(info)}"></span>`;
     }).join('');
     return `<div class="recent-dots" aria-label="最近五次检测，从左到右由新到旧">${dots}</div><small class="recent-model-time" title="${esc(time(recent[0].startedAt))}">${relativeTime(recent[0].startedAt)}</small>`;
@@ -116,7 +170,7 @@ function attributionLabel(winner, modelName) {
     if (!winner) return '—';
     const normalize = value => String(value || '').trim().toLowerCase();
     const mismatch = normalize(winner.Model || winner.DisplayName) !== normalize(modelName);
-    const label = esc(winner.DisplayName || winner.Model || '—');
+    const label = esc(winner.DisplayName || winner.Model || '—') + ` · ${(winner.Probability * 100).toFixed(1)}%`;
     return mismatch ? `<span class="attribution-mismatch" title="归因候选与配置模型不一致；归因概率不代表身份已验证" aria-label="${label}，与配置模型不一致">${label}</span>` : `<span class="attribution-match" title="归因候选与配置模型一致；归因概率不代表身份已验证" aria-label="${label}，与配置模型一致">${label}</span>`;
 }
 function modelStatus(modelId, latestResult) {
@@ -138,7 +192,7 @@ $('logout').onclick=async()=>{await api('/logout','POST',{});await session();};
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!==b.dataset.tab);document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('selected',x===b));});
 async function refresh(){[sites,results,runs,banks,recentModelResults]=await Promise.all(['/sites','/results','/runs','/banks','/results?perModel=true'].map(p=>api(p)));render();const settings=await api('/settings');if(!document.querySelector('#settingsForm:focus-within'))for(const name of ['challengeCount','intervalMinutes','maxConcurrency','timeoutSeconds'])$('settingsForm').elements[name].value=name==='timeoutSeconds'?240:settings[name];$('nextRun').textContent=`每次 ${settings.challengeCount} 个挑战 · 下次定时检测：${time(settings.nextRunAt)}`;}
 function render(){const models=sites.flatMap(s=>s.keys.flatMap(k=>k.models.map(m=>({s,k,m,r:results.find(r=>r.modelId===m.id)}))));const latest=models.filter(x=>x.r);$('stats').innerHTML=[['站点',sites.length],['Key',sites.reduce((n,s)=>n+s.keys.length,0)],['模型',models.length],['最近成功',latest.filter(x=>x.r.status==='Success').length],['最近失败',latest.filter(x=>['Failed','Timeout'].includes(x.r.status)).length]].map(([k,v])=>`<div class="stat"><span>${k}</span><strong>${v}</strong></div>`).join('');
-const query=$('search').value.toLowerCase();$('modelRows').innerHTML=models.filter(x=>[x.s.name,x.k.name,x.m.name].join(' ').toLowerCase().includes(query)).map(({s,k,m,r})=>{const winner=r?.attributionJson?JSON.parse(r.attributionJson).Candidates[0]:null;return `<tr><td>${esc(s.name)}</td><td>${esc(k.name)}</td><td>${esc(m.name)}</td><td>${badge(modelStatus(m.id,r))}</td><td>${r?(r.latencyMs/1000).toFixed(1)+'s':'—'}</td><td>${attributionLabel(winner,m.name)}</td><td>${juiceCell(m,r)}</td><td>${winner?(winner.Probability*100).toFixed(1)+'%':'—'}</td><td class="recent-model-cell">${recentModelHistory(m.id)}</td><td><button data-detect-model="${m.id}">检测</button>${r?` <button data-detail="${r.id}">详情</button>`:''}</td></tr>`;}).join('')||'<tr><td colspan="10" class="empty">暂无模型</td></tr>';
+const query=$('search').value.toLowerCase();$('modelRows').innerHTML=models.filter(x=>[x.s.name,x.k.name,x.m.name].join(' ').toLowerCase().includes(query)).map(({s,k,m,r})=>{const winner=r?.attributionJson?JSON.parse(r.attributionJson).Candidates[0]:null;return `<tr><td>${esc(s.name)}</td><td>${esc(k.name)}</td><td>${esc(m.name)}</td><td>${badge(modelStatus(m.id,r))}</td><td>${r?(r.latencyMs/1000).toFixed(1)+'s':'—'}</td><td>${attributionLabel(winner,m.name)}</td><td>${juiceCell(m,r)}</td><td>${instructionCell(m,r)}</td><td class="recent-model-cell">${recentModelHistory(m.id)}</td><td><button data-detect-model="${m.id}">检测</button>${r?` <button data-detail="${r.id}">详情</button>`:''}</td></tr>`;}).join('')||'<tr><td colspan="10" class="empty">暂无模型</td></tr>';
 $('runRows').innerHTML=runs.slice(0,12).map(r=>`<div class="run-entry"><div class="run-summary"><strong>#${r.id}</strong><span class="run-time" title="${esc(time(r.startedAt))}">${relativeTime(r.startedAt)}</span>${badge(r.status)}<span class="run-source">${r.source==='Manual'?'手动':'定时'}</span><span class="run-duration">${((new Date(r.completedAt||Date.now())-new Date(r.startedAt))/1000).toFixed(1)}s</span><div class="run-progress"><progress aria-label="任务 #${r.id} 检测进度" value="${r.completed}" max="${r.total||1}"></progress><span>${r.completed}/${r.total}</span></div><div class="run-actions">${['Queued','Running'].includes(r.status)?`<button class="icon-button" data-cancel="${r.id}" title="取消任务" aria-label="取消任务 #${r.id}"><i data-lucide="square"></i></button>`:''}</div></div><details class="run-details" data-reason-id="run-details-${r.id}"><summary><span>${r.total} 个检测 · ${new Set((r.targets||[]).map(t=>t.siteName)).size} 个站点</span>${r.failures?.length?`<span class="run-error-count">${r.failures.length} 项异常</span>`:''}</summary><div class="run-details-body">${runTargets(r)}${(r.failures||[]).map(f=>`<div class="run-failure"><span>${esc(f.siteName)} / ${esc(f.keyName)} / ${esc(f.modelName)}</span>${reasonContent(f.reason,`run-${r.id}-${f.id}`)}</div>`).join('')}${!(r.failures?.length)&&['Cancelled','Interrupted'].includes(r.status)?`<p class="run-failure">${r.status==='Cancelled'?'任务已取消，未完成的模型未产生检测结果':'服务中断，部分模型未完成检测'}</p>`:''}</div></details></div>`).join('')||'<p class="empty">暂无检测任务</p>';
 $('siteRows').innerHTML=sites.map(s=>`<div class="row"><div><b>${esc(s.name)}</b><small>${esc(s.baseUrl)}</small></div><div class="actions"><button data-key="${s.id}">添加 Key</button><button data-detect-site="${s.id}">检测站点</button><button data-delete="sites/${s.id}">删除</button></div></div><div class="keys">${s.keys.map(k=>`<div class="row"><div><b>${esc(k.name)}</b><small>${esc(k.mask)}</small>${k.models.map(m=>`<div>${esc(m.name)} <button data-delete="models/${m.id}">删除模型</button></div>`).join('')}</div><div class="actions"><button data-model="${k.id}">添加模型</button><button data-detect-key="${k.id}">检测 Key</button><button data-delete="keys/${k.id}">删除 Key</button></div></div>`).join('')}</div>`).join('')||'<p class="empty">暂无站点</p>';
 $('resultRows').innerHTML=results.map(r=>`<tr><td>${time(r.startedAt)}</td><td>#${r.runId}</td><td>${esc(r.siteName)} / ${esc(r.keyName)}</td><td>${esc(r.modelName)}</td><td>${badge(r.status)}</td><td>${r.statusCode||'—'}</td><td>${(r.latencyMs/1000).toFixed(1)}s</td><td class="history-reason">${['Failed','Timeout','Cancelled','Interrupted'].includes(r.status)?reasonContent(failureReason(r),`result-${r.id}`):'—'}</td><td><button data-detail="${r.id}">详情</button><button data-detect-model="${r.modelId}">重测</button></td></tr>`).join('')||'<tr><td colspan="9" class="empty">暂无记录</td></tr>';
@@ -150,5 +204,5 @@ $('closeEditor').onclick=()=>$('editor').close();$('closeDetail').onclick=()=>$(
 $('addSite').onclick=()=>edit('添加站点',[['name','名称'],['baseUrl','Base URL','url']],v=>api('/sites','POST',v));
 $('importBank').onclick=()=>edit('导入指纹库',[['name','版本名称'],['file','ModelTrace JSON 文件','file']],async v=>{await api('/banks','POST',{name:v.name,json:await v.file.text()});});
 $('settingsForm').onsubmit=async e=>{e.preventDefault();try{await api('/settings','PUT',Object.fromEntries([...new FormData(e.target)].map(([k,v])=>[k,Number(v)])));message('设置已保存');await refresh();}catch(e){message(e.message);}};
-document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;if(!['key','model','delete','detect','detectModel','detectKey','detectSite','cancel','activate','detail'].some(k=>d[k]!==undefined))return;try{if(d.key)edit('添加 Key',[['name','Key 名称'],['value','API Key','password']],v=>api(`/sites/${d.key}/keys`,'POST',v));if(d.model)edit('添加模型',[['name','模型 ID']],v=>api(`/keys/${d.model}/models`,'POST',v));if(d.delete&&confirm('确认删除？此操作会删除下级配置，历史记录仍然保留。')){await api('/'+d.delete,'DELETE');await refresh();}if(d.detect||d.detectModel||d.detectKey||d.detectSite){b.disabled=true;await api('/detect','POST',{modelId:d.detectModel?Number(d.detectModel):null,keyId:d.detectKey?Number(d.detectKey):null,siteId:d.detectSite?Number(d.detectSite):null});message('检测任务已加入队列');await refresh();}if(d.cancel){await api(`/runs/${d.cancel}/cancel`,'POST',{});message('已请求取消');}if(d.activate){await api(`/banks/${d.activate}/activate`,'POST',{});await refresh();}if(d.detail){const r=results.find(x=>x.id===Number(d.detail));const report=r.attributionJson?JSON.parse(r.attributionJson):null;$('detailBody').innerHTML=`<p>${esc(r.siteName)} / ${esc(r.keyName)} / ${esc(r.modelName)} · ${badge(r.status)} · 总耗时 ${(r.latencyMs/1000).toFixed(1)}s</p><p>Juice（模型自报）：<span title="${esc(juiceTooltip(r))}">${juiceLabel(r)}</span></p>${r.error?`<p>${esc(r.error)}</p>`:''}${report?`<h2>候选模型</h2><p>有效回答 ${report.UsedOutputs} · 校准 β ${report.Beta.toFixed(2)}</p><table><thead><tr><th>模型</th><th>家族</th><th>概率</th></tr></thead><tbody>${report.Candidates.map(c=>`<tr><td>${esc(c.DisplayName)}</td><td>${esc(c.Family)}</td><td>${(c.Probability*100).toFixed(2)}%</td></tr>`).join('')}</tbody></table><h2>家族概率</h2>${Object.entries(report.Families).map(([k,v])=>`<p>${esc(k)}: ${(v*100).toFixed(2)}%</p>`).join('')}`:''}<h2>挑战与响应</h2>${JSON.parse(r.responsesJson).map(o=>`<details><summary>${o.ExpectedCount} 个整数 · ${((o.DurationMs||0)/1000).toFixed(1)}s</summary>${o.Error?`<p>${esc(o.Error)}</p>`:''}<p>${esc(o.Prompt)}</p><pre>${esc(o.Text)}</pre></details>`).join('')}`;$('detail').showModal();}}catch(e){message(e.message);}finally{b.disabled=false;}});
+document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;if(!['key','model','delete','detect','detectModel','detectKey','detectSite','cancel','activate','detail'].some(k=>d[k]!==undefined))return;try{if(d.key)edit('添加 Key',[['name','Key 名称'],['value','API Key','password']],v=>api(`/sites/${d.key}/keys`,'POST',v));if(d.model)edit('添加模型',[['name','模型 ID']],v=>api(`/keys/${d.model}/models`,'POST',v));if(d.delete&&confirm('确认删除？此操作会删除下级配置，历史记录仍然保留。')){await api('/'+d.delete,'DELETE');await refresh();}if(d.detect||d.detectModel||d.detectKey||d.detectSite){b.disabled=true;await api('/detect','POST',{modelId:d.detectModel?Number(d.detectModel):null,keyId:d.detectKey?Number(d.detectKey):null,siteId:d.detectSite?Number(d.detectSite):null});message('检测任务已加入队列');await refresh();}if(d.cancel){await api(`/runs/${d.cancel}/cancel`,'POST',{});message('已请求取消');}if(d.activate){await api(`/banks/${d.activate}/activate`,'POST',{});await refresh();}if(d.detail){const r=results.find(x=>x.id===Number(d.detail));const report=r.attributionJson?JSON.parse(r.attributionJson):null;$('detailBody').innerHTML=`<p>${esc(r.siteName)} / ${esc(r.keyName)} / ${esc(r.modelName)} · ${badge(r.status)} · 总耗时 ${(r.latencyMs/1000).toFixed(1)}s</p><p>Juice（模型自报）：<span class="probe-${esc(r.juiceStatus || 'pending')}" title="${esc(juiceTooltip(r))}">${juiceLabel(r)}</span></p><p>是/否检测：${probeBadge(r.instructionStatus)}</p><details><summary>是/否检测题目与回复</summary><pre>${esc(instructionTooltip(r))}</pre></details>${r.error?`<p>${esc(r.error)}</p>`:''}${report?`<h2>候选模型</h2><p>有效回答 ${report.UsedOutputs} · 校准 β ${report.Beta.toFixed(2)}</p><table><thead><tr><th>模型</th><th>家族</th><th>概率</th></tr></thead><tbody>${report.Candidates.map(c=>`<tr><td>${esc(c.DisplayName)}</td><td>${esc(c.Family)}</td><td>${(c.Probability*100).toFixed(2)}%</td></tr>`).join('')}</tbody></table><h2>家族概率</h2>${Object.entries(report.Families).map(([k,v])=>`<p>${esc(k)}: ${(v*100).toFixed(2)}%</p>`).join('')}`:''}<h2>挑战与响应</h2>${JSON.parse(r.responsesJson).map(o=>`<details><summary>${o.ExpectedCount} 个整数 · ${((o.DurationMs||0)/1000).toFixed(1)}s</summary>${o.Error?`<p>${esc(o.Error)}</p>`:''}<p>${esc(o.Prompt)}</p><pre>${esc(o.Text)}</pre></details>`).join('')}`;$('detail').showModal();}}catch(e){message(e.message);}finally{b.disabled=false;}});
 session().catch(e=>message(e.message));setInterval(()=>{if(!$('application').hidden)refresh().catch(e=>message(e.message));},5000);

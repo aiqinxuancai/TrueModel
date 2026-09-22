@@ -367,17 +367,17 @@ function showRecentTooltip(anchor) {
 }
 document.addEventListener("pointerover", event => {
   if (recentTooltip.contains(event.target)) { clearTimeout(tooltipCloseTimer); return; }
-  const anchor = event.target.closest(".recent-dot[data-tooltip]");
+  const anchor = event.target.closest("[data-tooltip]");
   if (anchor) showRecentTooltip(anchor);
 });
 document.addEventListener("pointerout", event => {
-  if (event.target.closest(".recent-dot[data-tooltip]") || recentTooltip.contains(event.target)) {
+  if (event.target.closest("[data-tooltip]") || recentTooltip.contains(event.target)) {
     clearTimeout(tooltipCloseTimer);
     tooltipCloseTimer = setTimeout(closeRecentTooltip, 150);
   }
 });
 document.addEventListener("focusin", event => {
-  const anchor = event.target.closest(".recent-dot[data-tooltip]");
+  const anchor = event.target.closest("[data-tooltip]");
   if (anchor) showRecentTooltip(anchor);
 });
 document.addEventListener("focusout", event => {
