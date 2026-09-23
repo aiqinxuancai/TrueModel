@@ -173,6 +173,49 @@ $("refreshButton").onclick = async () => {
 };
 const knownKeys = new Set();
 let expandedKeys = new Set();
+
+function configuredModelCard(model) {
+  return `<div class="configured-model">
+    <span>${icon("box")}<code>${esc(model.name)}</code></span>
+    <div class="actions">
+      <button data-detect-model="${model.id}" class="icon-button" aria-label="检测模型 ${esc(model.name)}" title="检测模型">${icon("play")}</button>
+      <button data-delete="models/${model.id}" class="icon-button" aria-label="删除模型 ${esc(model.name)}" title="删除模型">${icon("trash-2")}</button>
+    </div>
+  </div>`;
+}
+
+function configuredKeyGroup(key) {
+  const open = expandedKeys.has(String(key.id)) || !knownKeys.has(key.id);
+  return `<details class="key-group" data-key-id="${key.id}" ${open ? "open" : ""}>
+    <summary>
+      <span class="key-name"><span class="config-level key-level">${icon("key-round")}Key</span><b>${esc(key.name)}</b><code>${esc(key.mask)}</code><span class="key-count">${key.models.length} 个模型</span></span>
+      <span class="actions key-actions">
+        <button data-model="${key.id}">${icon("plus")}添加模型</button>
+        <button data-detect-key="${key.id}" ${key.models.length ? "" : "disabled"}>${icon("play")}检测 Key</button>
+        <button class="icon-button" data-delete="keys/${key.id}" aria-label="删除 Key ${esc(key.name)}" title="删除 Key">${icon("trash-2")}</button>
+      </span>
+    </summary>
+    <div class="configured-models">${key.models.map(configuredModelCard).join("") || '<div class="inline-empty">暂无模型，点击“添加模型”开始配置</div>'}</div>
+  </details>`;
+}
+
+function configuredSiteCard(site) {
+  const modelCount = site.keys.reduce((count, key) => count + key.models.length, 0);
+  return `<section class="site-group" aria-labelledby="site-title-${site.id}">
+    <div class="site-heading">
+      <div class="site-identity">
+        <span class="site-icon">${icon("network")}</span>
+        <div class="site-info"><div class="site-title"><span class="config-level site-level">站点</span><h2 id="site-title-${site.id}">${esc(site.name)}</h2><span class="site-count">${site.keys.length} 个 Key · ${modelCount} 个模型</span></div><small>${esc(site.baseUrl)}</small></div>
+      </div>
+      <div class="actions">
+        <button data-key="${site.id}">${icon("plus")}添加 Key</button>
+        <button data-detect-site="${site.id}" ${modelCount ? "" : "disabled"}>${icon("play")}检测站点</button>
+        <button class="icon-button" data-delete="sites/${site.id}" aria-label="删除站点 ${esc(site.name)}" title="删除站点">${icon("trash-2")}</button>
+      </div>
+    </div>
+    <div class="site-keys">${site.keys.map(configuredKeyGroup).join("") || `<div class="inline-empty">暂无 API Key<button data-key="${site.id}">${icon("plus")}添加 Key</button></div>`}</div>
+  </section>`;
+}
 document.addEventListener(
   "toggle",
   (e) => {
@@ -225,14 +268,7 @@ render = function () {
     $("modelRows").innerHTML =
       `<tr><td colspan="10" class="empty">${icon(hasModels ? "search-x" : "box")}<strong>${hasModels ? "没有匹配的模型" : "暂无模型"}</strong><button ${hasModels ? "data-clear-filter" : 'data-go="configuration"'}>${hasModels ? "清除筛选" : "配置站点"}</button></td></tr>`;
   }
-  const expanded = expandedKeys;
-  $("siteRows").innerHTML =
-    sites
-      .map(
-        (s) =>
-          `<section class="site-group"><div class="site-heading"><div class="site-identity"><span class="site-icon">${icon("network")}</span><div><h2>${esc(s.name)}</h2><small>${esc(s.baseUrl)}</small></div></div><div class="actions"><span class="muted">${s.keys.length} 个 Key · ${s.keys.reduce((n, k) => n + k.models.length, 0)} 个模型</span><button data-key="${s.id}">${icon("plus")}添加 Key</button><button data-detect-site="${s.id}" ${s.keys.some((k) => k.models.length) ? "" : "disabled"}>${icon("play")}检测站点</button><button class="icon-button" data-delete="sites/${s.id}" aria-label="删除站点 ${esc(s.name)}" title="删除站点">${icon("trash-2")}</button></div></div>${s.keys.map((k) => `<details class="key-group" data-key-id="${k.id}" ${expanded.has(String(k.id)) || !knownKeys.has(k.id) ? "open" : ""}><summary><span class="key-name">${icon("key-round")}<b>${esc(k.name)}</b><code>${esc(k.mask)}</code></span><span class="key-count">${k.models.length} 个模型</span></summary><div class="key-toolbar"><span class="muted">模型列表</span><div class="actions"><button data-model="${k.id}">${icon("plus")}添加模型</button><button data-detect-key="${k.id}" ${k.models.length ? "" : "disabled"}>${icon("play")}检测 Key</button><button class="icon-button" data-delete="keys/${k.id}" aria-label="删除 Key ${esc(k.name)}" title="删除 Key">${icon("trash-2")}</button></div></div><div class="configured-models">${k.models.map((m) => `<div class="configured-model"><span>${icon("box")}<code>${esc(m.name)}</code></span><div class="actions"><button data-detect-model="${m.id}" class="icon-button" aria-label="检测模型 ${esc(m.name)}" title="检测模型">${icon("play")}</button><button data-delete="models/${m.id}" class="icon-button" aria-label="删除模型 ${esc(m.name)}" title="删除模型">${icon("trash-2")}</button></div></div>`).join("") || `<div class="inline-empty">暂无模型<button data-model="${k.id}">${icon("plus")}添加模型</button></div>`}</div></details>`).join("") || `<div class="inline-empty">暂无 API Key<button data-key="${s.id}">${icon("plus")}添加 Key</button></div>`}</section>`,
-      )
-      .join("") ||
+  $("siteRows").innerHTML = sites.map(configuredSiteCard).join("") ||
     `<div class="empty">${icon("network")}<strong>暂无站点</strong><button data-create-site>添加站点</button></div>`;
   sites.forEach((s) => s.keys.forEach((k) => knownKeys.add(k.id)));
   document
