@@ -111,7 +111,7 @@
           <section id="banks" class="view" hidden>
             <div class="heading">
               <h1>指纹库</h1>
-              <button id="importBank">导入指纹库</button>
+              <div class="actions"><button id="collectFingerprint">采集模型指纹</button><button id="importBank">导入指纹库</button></div>
             </div>
             <p class="notice">
               归因概率仅在当前候选库内比较，不代表模型身份已得到独立验证。
@@ -319,5 +319,6 @@
     <script src="/notifications.js"></script>
     <script src="/ui.js"></script>
     <script src="/models.js"></script>
+    <script src="/fingerprints.js"></script>
   </body>
 </html>

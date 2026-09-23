@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace TrueModel;
 
 // Port of ModelTrace fingerprint.py at 60949ef; see THIRD-PARTY-NOTICES.md.
-public static class Attribution
+public static partial class Attribution
 {
     public static int[] ParseNumbers(string text)
     {
@@ -70,6 +70,17 @@ public static class Attribution
         if (!robust.TryGetProperty("ordered_blocks", out var ordered)) return marginal;
         var weight = ordered.GetProperty("weight").GetDouble();
         if (weight == 0) return marginal;
+        var values = OrderedFeature(numbers);
+        var normalized = Normalize(Transform(values, ordered));
+        var environments = ordered.GetProperty("environment_centroids").EnumerateArray()
+            .Select(env => env.EnumerateArray().Select(row => Dot(normalized, Array(row))).ToArray()).ToArray();
+        var template = Standardize(Enumerable.Range(0, marginal.Length).Select(i => environments.Max(e => e[i])).ToArray());
+        var nuisance = Scores(values, ordered);
+        var fused = Standardize(template.Zip(nuisance, (a, b) => .5 * a + .5 * b).ToArray());
+        return marginal.Zip(fused, (a, b) => (1 - weight) * a + weight * b).ToArray();
+    }
+    private static double[] OrderedFeature(int[] numbers)
+    {
         var parts = new List<double>();
         var offset = 0;
         for (var part = 0; part < 4; part++)
@@ -82,14 +93,7 @@ public static class Attribution
         var digits = new int[10];
         foreach (var n in numbers) digits[n % 10]++;
         parts.AddRange(Feature(digits));
-        var values = parts.ToArray();
-        var normalized = Normalize(Transform(values, ordered));
-        var environments = ordered.GetProperty("environment_centroids").EnumerateArray()
-            .Select(env => env.EnumerateArray().Select(row => Dot(normalized, Array(row))).ToArray()).ToArray();
-        var template = Standardize(Enumerable.Range(0, marginal.Length).Select(i => environments.Max(e => e[i])).ToArray());
-        var nuisance = Scores(values, ordered);
-        var fused = Standardize(template.Zip(nuisance, (a, b) => .5 * a + .5 * b).ToArray());
-        return marginal.Zip(fused, (a, b) => (1 - weight) * a + weight * b).ToArray();
+        return parts.ToArray();
     }
     public static AttributionReport Analyze(IReadOnlyList<ProbeOutput> outputs, string bankJson)
     {
