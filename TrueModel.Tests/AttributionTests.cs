@@ -16,7 +16,10 @@ public class AttributionTests
     {
         Attribution.Validate(Bank);
         var report = Attribution.Analyze([new(string.Join(',', Enumerable.Range(1, 310)), 310)], Bank);
-        Assert.Equal(13, report.Candidates.Length);
+        Assert.Equal(16, report.Candidates.Length);
+        Assert.Contains(report.Candidates, c => c.Model == "gpt-6-sol");
+        Assert.Contains(report.Candidates, c => c.Model == "gpt-6-luna");
+        Assert.Contains(report.Candidates, c => c.Model == "claude-opus-5-5");
         Assert.Equal(1, report.Candidates.Sum(c => c.Probability), 10);
         Assert.Equal(1, report.Families.Values.Sum(), 10);
         Assert.Equal(1, report.UsedOutputs);

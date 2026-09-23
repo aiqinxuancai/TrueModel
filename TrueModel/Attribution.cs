@@ -112,12 +112,12 @@ public static partial class Attribution
             m.TryGetProperty("family", out var family) ? family.GetString()! : "models", weights[i] / sum, combined[i])).OrderByDescending(c => c.Probability).ToArray();
         return new AttributionReport(accepted.Length, beta, candidates, candidates.GroupBy(c => c.Family).ToDictionary(g => g.Key, g => g.Sum(c => c.Probability)));
     }
-    public static void Validate(string json)
+    public static void Validate(string json, bool allowIncomplete = false)
     {
         using var document = JsonDocument.Parse(json);
         var bank = document.RootElement;
         var ids = bank.GetProperty("models").EnumerateArray().Select(m => m.GetProperty("id").GetString()).ToArray();
-        if (ids.Length is < 2 or > 1000 || ids.Distinct().Count() != ids.Length) throw new FormatException("Bank must contain 2-1000 unique models.");
+        if ((!allowIncomplete && ids.Length < 2) || ids.Length > 1000 || ids.Distinct().Count() != ids.Length) throw new FormatException("Bank must contain 2-1000 unique models to be activated.");
         if (!ids.SequenceEqual(bank.GetProperty("robust").GetProperty("model_order").EnumerateArray().Select(m => m.GetString()))) throw new FormatException("Model order mismatch.");
         foreach (var (name, dimension) in new[] { ("hellinger", 355), ("ordered_blocks", 74) })
         {
@@ -148,7 +148,7 @@ public static partial class Attribution
             var beta = bank.GetProperty("calibration").GetProperty(i.ToString()).GetProperty("beta").GetDouble();
             if (!double.IsFinite(beta) || beta <= 0) throw new FormatException("Invalid calibration.");
         }
-        Analyze([new ProbeOutput(string.Join(',', Enumerable.Range(1, 310)), 310)], json);
+        if (ids.Length >= 2) Analyze([new ProbeOutput(string.Join(',', Enumerable.Range(1, 310)), 310)], json);
     }
     public static Dictionary<string, object?> AnalyzeGlobal(IReadOnlyList<ProbeOutput> outputs, string json)
     {

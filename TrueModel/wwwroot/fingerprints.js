@@ -1,4 +1,18 @@
 'use strict';
+$('updateDefaultBank').onclick = async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    $('bankUpdateStatus').textContent = '正在从 ModelTrace GitHub 检查并下载最新指纹库…';
+    try {
+        const result = await api('/banks/update-default', 'POST', {});
+        $('bankUpdateStatus').textContent = result.updated
+            ? `已下载并保存默认库 #${result.id}（${result.commit.slice(0, 7)}），可点击“设为当前库”启用。`
+            : `最新默认库已存在（#${result.id}），无需重复更新。`;
+        await refresh();
+    } catch (error) { $('bankUpdateStatus').textContent = error.message; }
+    finally { button.disabled = false; button.removeAttribute('aria-busy'); }
+};
 const fingerprintDialog = document.createElement('dialog');
 fingerprintDialog.id = 'fingerprintDialog';
 fingerprintDialog.innerHTML = `<form id="fingerprintForm">

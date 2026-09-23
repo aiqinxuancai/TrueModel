@@ -4,8 +4,9 @@ TrueModel 的 C# 挑战生成、接口适配和归因算法移植自
 [xqy2006/ModelTrace](https://github.com/xqy2006/ModelTrace)。
 参考文件：fingerprint.py、enrollment.py、static/challenge-browser.js。
 参考提交：60949ef522a84f66b1236b459308b48028d36949。
-TrueModel/Assets/unified_bank.json 保留上游原始文件，SHA-256：
-B25D306B1A40FE489469C0FFF6B11C74A87A1F12BC6A461270201EED884034EF。
+TrueModel/Assets/unified_bank.json 保留上游 data/unified_bank.json 原始文件，
+指纹库提交：55a2e4a55170423b484d701e9a82ab62b268c811，SHA-256：
+6A678E6C73EB015C1C507D61CDD1313B41916D55186BB65920D1BF119EC5009E。
 
 运行时为纯 C#，不包含或调用 Python；下列许可适用于移植部分与指纹库。
 

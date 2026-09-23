@@ -5,10 +5,29 @@ namespace TrueModel;
 
 public static partial class Attribution
 {
+    public static string CreateEmptyBank(string templateJson)
+    {
+        Validate(templateJson);
+        var bank = JsonNode.Parse(templateJson)!;
+        bank["models"]!.AsArray().Clear();
+        bank["robust"]!["model_order"]!.AsArray().Clear();
+        foreach (var name in new[] { "hellinger", "ordered_blocks" })
+        {
+            var artifact = bank["robust"]![name]!;
+            artifact["centroids"]!.AsArray().Clear();
+            if (name == "ordered_blocks")
+                foreach (var environment in artifact["environment_centroids"]!.AsArray()) environment!.AsArray().Clear();
+        }
+        bank["built_at"] = DateTime.UtcNow.ToString("O");
+        bank["calibration_refitted"] = false;
+        var json = bank.ToJsonString();
+        Validate(json, allowIncomplete: true);
+        return json;
+    }
     // Enroll in the existing feature space. Training transforms and calibration are not refitted.
     public static string Enroll(string json, string model, string displayName, string family, IReadOnlyList<ProbeOutput> outputs)
     {
-        Validate(json);
+        Validate(json, allowIncomplete: true);
         if (string.IsNullOrWhiteSpace(model) || string.IsNullOrWhiteSpace(displayName) || string.IsNullOrWhiteSpace(family))
             throw new ArgumentException("模型标识、显示名称和家族不能为空");
         var samples = outputs.Select(o => ParseNumbers(o.Text)).ToArray();
@@ -53,7 +72,7 @@ public static partial class Attribution
         bank["built_at"] = DateTime.UtcNow.ToString("O");
         bank["calibration_refitted"] = false;
         var result = bank.ToJsonString();
-        Validate(result);
+        Validate(result, allowIncomplete: true);
         return result;
     }
 }

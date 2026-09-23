@@ -111,11 +111,13 @@
           <section id="banks" class="view" hidden>
             <div class="heading">
               <h1>指纹库</h1>
-              <div class="actions"><button id="collectFingerprint">采集模型指纹</button><button id="importBank">导入指纹库</button></div>
+              <button id="updateDefaultBank">检查默认库更新</button>
+              <div class="actions"><button id="createEmptyBank">新建空指纹库</button><button id="collectFingerprint">采集模型指纹</button><button id="importBank">导入指纹库</button></div>
             </div>
             <p class="notice">
               归因概率仅在当前候选库内比较，不代表模型身份已得到独立验证。
             </p>
+            <p id="bankUpdateStatus" role="status" aria-live="polite"></p>
             <div id="bankRows"></div>
           </section>
           <section id="settings" class="view" hidden>

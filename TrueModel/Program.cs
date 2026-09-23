@@ -41,6 +41,12 @@ builder.Services.AddHostedService<DetectionWorker>();
 builder.Services.AddSingleton<DetectionControl>();
 builder.Services.AddSingleton<JuiceHistory>();
 builder.Services.AddHttpClient<ModelTraceClient>(c => c.Timeout = Timeout.InfiniteTimeSpan);
+builder.Services.AddHttpClient<DefaultBankUpdater>(c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(60);
+    c.MaxResponseContentBufferSize = 10_000_000;
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("TrueModel/1.0");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient<ModelDiscovery>(c => { c.Timeout = TimeSpan.FromSeconds(20); c.MaxResponseContentBufferSize = 2_000_000; })
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false }).RemoveAllLoggers();
 builder.Services.AddHttpClient<NotificationService>(c => { c.Timeout = TimeSpan.FromSeconds(15); c.MaxResponseContentBufferSize = 1_000_000; })
@@ -106,11 +112,12 @@ using (var scope = app.Services.CreateScope())
           CreatedAt TEXT NOT NULL, Success INTEGER NOT NULL, Message TEXT NOT NULL);
         """);
     if (!await db.Notifications.AnyAsync()) db.Notifications.Add(new NotificationSettings());
+    var defaultJson = await File.ReadAllTextAsync(Path.Combine(app.Environment.ContentRootPath, "Assets", "unified_bank.json"));
+    var defaultHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(defaultJson)));
     if (!await db.Banks.AnyAsync())
     {
-        var json = await File.ReadAllTextAsync(Path.Combine(app.Environment.ContentRootPath, "Assets", "unified_bank.json"));
-        Attribution.Validate(json);
-        db.Banks.Add(new FingerprintBank { Name = "ModelTrace 60949ef", Json = json, Active = true, Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))) });
+        Attribution.Validate(defaultJson);
+        db.Banks.Add(new FingerprintBank { Name = "ModelTrace 55a2e4a", Json = defaultJson, Active = true, Sha256 = defaultHash });
     }
     if (!await db.Settings.AnyAsync()) db.Settings.Add(new AppSettings());
     if (!await db.Administrators.AnyAsync())
@@ -328,6 +335,16 @@ api.MapGet("/results", async (int? runId, int? modelId, bool? perModel, AppDb db
     return await query.OrderByDescending(r => r.Id).Take(200).ToArrayAsync();
 });
 api.MapGet("/banks", async (AppDb db) => await db.Banks.Select(b => new { b.Id, b.Name, b.Sha256, b.ImportedAt, b.Active }).ToArrayAsync());
+api.MapPost("/banks/update-default", async (AppDb db, DefaultBankUpdater updater, CancellationToken token) =>
+{
+    try { return Results.Ok(await updater.Update(db, token)); }
+    catch (OperationCanceledException) when (!token.IsCancellationRequested)
+    { return Results.Json(new { error = "连接 GitHub 超时，请稍后重试" }, statusCode: 504); }
+    catch (HttpRequestException)
+    { return Results.Json(new { error = "无法从 GitHub 下载指纹库（网络异常或请求限流），请稍后重试" }, statusCode: 502); }
+    catch (Exception e) when (e is JsonException or FormatException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException)
+    { return Results.BadRequest(new { error = "GitHub 指纹库格式不兼容或内容无效，未保存更新" }); }
+});
 api.MapGet("/banks/{id:int}", async (int id, AppDb db) =>
 {
     var bank = await db.Banks.AsNoTracking().SingleOrDefaultAsync(b => b.Id == id);
@@ -420,17 +437,33 @@ api.MapPost("/models/{id:int}/fingerprint", async (int id, EnrollmentInput input
     }
 });
 api.MapGet("/banks/{id:int}/export", async (int id, AppDb db) => { var bank = await db.Banks.FindAsync(id); return bank is null ? Results.NotFound() : Results.File(Encoding.UTF8.GetBytes(bank.Json), "application/json", $"bank-{id}.json"); });
+api.MapPost("/banks/empty", async (EmptyBankInput input, AppDb db, CancellationToken token) =>
+{
+    if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Length > 200)
+        return Results.BadRequest(new { error = "请填写指纹库名称（最多 200 字符）" });
+    var template = await File.ReadAllTextAsync(Path.Combine(app.Environment.ContentRootPath, "Assets", "unified_bank.json"), token);
+    var json = Attribution.CreateEmptyBank(template);
+    var bank = new FingerprintBank { Name = input.Name.Trim(), Json = json,
+        Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))) };
+    db.Banks.Add(bank);
+    await db.SaveChangesAsync(token);
+    return Results.Ok(new { bank.Id });
+});
 api.MapPost("/banks", async (BankInput input, AppDb db) =>
 {
     if (string.IsNullOrWhiteSpace(input.Name) || input.Json.Length > 10_000_000) return Results.BadRequest();
-    try { Attribution.Validate(input.Json); }
+    try { Attribution.Validate(input.Json, allowIncomplete: true); }
     catch (Exception e) when (e is System.Text.Json.JsonException or FormatException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException) { return Results.BadRequest(new { error = "Invalid ModelTrace bank" }); }
     var bank = new FingerprintBank { Name = input.Name, Json = input.Json, Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input.Json))) };
     db.Banks.Add(bank); await db.SaveChangesAsync(); return Results.Ok(new { bank.Id });
 });
 api.MapPost("/banks/{id:int}/activate", async (int id, AppDb db) =>
 {
-    if (!await db.Banks.AnyAsync(b => b.Id == id)) return Results.NotFound();
+    var bank = await db.Banks.AsNoTracking().SingleOrDefaultAsync(b => b.Id == id);
+    if (bank is null) return Results.NotFound();
+    using var document = JsonDocument.Parse(bank.Json);
+    if (document.RootElement.GetProperty("models").GetArrayLength() < 2)
+        return Results.Conflict(new { error = "至少添加两个模型指纹后才能设为当前库" });
     await using var transaction = await db.Database.BeginTransactionAsync();
     await db.Banks.ExecuteUpdateAsync(s => s.SetProperty(b => b.Active, false));
     await db.Banks.Where(b => b.Id == id).ExecuteUpdateAsync(s => s.SetProperty(b => b.Active, true));
@@ -455,6 +488,7 @@ if (desktop) app.Lifetime.ApplicationStarted.Register(() =>
 });
 app.Run();
 record BankInput(string Name, string Json);
+record EmptyBankInput(string Name);
 record ManualFingerprintInput(string Model, string DisplayName, string Family, int[]? Counts);
 record LoginRequest(string Username, string Password);
 record SiteInput(string Name, string BaseUrl, bool Enabled = true);
