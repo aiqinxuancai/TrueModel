@@ -112,12 +112,33 @@ using (var scope = app.Services.CreateScope())
           CreatedAt TEXT NOT NULL, Success INTEGER NOT NULL, Message TEXT NOT NULL);
         """);
     if (!await db.Notifications.AnyAsync()) db.Notifications.Add(new NotificationSettings());
+    await db.Database.OpenConnectionAsync();
+    using (var command = db.Database.GetDbConnection().CreateCommand())
+    {
+        command.CommandText = "PRAGMA table_info(Banks)";
+        var hasDefault = false;
+        using (var reader = await command.ExecuteReaderAsync())
+            while (await reader.ReadAsync()) hasDefault |= reader.GetString(1) == "IsDefault";
+        if (!hasDefault)
+        {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE Banks ADD COLUMN IsDefault INTEGER NOT NULL DEFAULT 0");
+            // Identify the original seeded bank, not subsequent imports or downloaded copies.
+            await db.Database.ExecuteSqlRawAsync("""
+                UPDATE Banks SET IsDefault = 1 WHERE Id = (
+                    SELECT Id FROM Banks WHERE
+                    (Name = 'ModelTrace 60949ef' AND Sha256 = 'B25D306B1A40FE489469C0FFF6B11C74A87A1F12BC6A461270201EED884034EF') OR
+                    (Name = 'ModelTrace 55a2e4a' AND Sha256 = '6A678E6C73EB015C1C507D61CDD1313B41916D55186BB65920D1BF119EC5009E')
+                    ORDER BY Id LIMIT 1)
+                """);
+        }
+    }
+    await db.Database.CloseConnectionAsync();
     var defaultJson = await File.ReadAllTextAsync(Path.Combine(app.Environment.ContentRootPath, "Assets", "unified_bank.json"));
     var defaultHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(defaultJson)));
     if (!await db.Banks.AnyAsync())
     {
         Attribution.Validate(defaultJson);
-        db.Banks.Add(new FingerprintBank { Name = "ModelTrace 55a2e4a", Json = defaultJson, Active = true, Sha256 = defaultHash });
+        db.Banks.Add(new FingerprintBank { Name = "ModelTrace 55a2e4a", Json = defaultJson, Active = true, IsDefault = true, Sha256 = defaultHash });
     }
     if (!await db.Settings.AnyAsync()) db.Settings.Add(new AppSettings());
     if (!await db.Administrators.AnyAsync())

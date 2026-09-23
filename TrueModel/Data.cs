@@ -67,6 +67,7 @@ public sealed class DetectionResult
 }
 public sealed class FingerprintBank
 {
+    public bool IsDefault { get; set; }
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public string Json { get; set; } = "";

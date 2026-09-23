@@ -19,10 +19,17 @@ public sealed class DefaultBankUpdater(HttpClient client)
             var json = await client.GetStringAsync($"https://raw.githubusercontent.com/xqy2006/ModelTrace/{sha}/data/unified_bank.json", token);
             Attribution.Validate(json);
             var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
-            var existing = await db.Banks.AsNoTracking().FirstOrDefaultAsync(b => b.Sha256 == hash, token);
-            if (existing is not null) return new(existing.Id, false, sha);
-            var bank = new FingerprintBank { Name = $"ModelTrace {sha[..7]}", Json = json, Sha256 = hash };
-            db.Banks.Add(bank);
+            var bank = await db.Banks.SingleOrDefaultAsync(b => b.IsDefault, token);
+            if (bank is not null && bank.Sha256 == hash) return new(bank.Id, false, sha);
+            if (bank is null)
+            {
+                bank = new FingerprintBank { IsDefault = true, Active = !await db.Banks.AnyAsync(b => b.Active, token) };
+                db.Banks.Add(bank);
+            }
+            bank.Name = $"ModelTrace {sha[..7]}";
+            bank.Json = json;
+            bank.Sha256 = hash;
+            bank.ImportedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(token);
             return new(bank.Id, true, sha);
         }

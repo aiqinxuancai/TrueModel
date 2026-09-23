@@ -7,8 +7,8 @@ $('updateDefaultBank').onclick = async event => {
     try {
         const result = await api('/banks/update-default', 'POST', {});
         $('bankUpdateStatus').textContent = result.updated
-            ? `已下载并保存默认库 #${result.id}（${result.commit.slice(0, 7)}），可点击“设为当前库”启用。`
-            : `最新默认库已存在（#${result.id}），无需重复更新。`;
+            ? `默认库 #${result.id} 已更新（${result.commit.slice(0, 7)}）。`
+            : '默认库已是最新版本。';
         await refresh();
     } catch (error) { $('bankUpdateStatus').textContent = error.message; }
     finally { button.disabled = false; button.removeAttribute('aria-busy'); }
