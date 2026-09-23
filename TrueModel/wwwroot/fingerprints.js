@@ -1,5 +1,6 @@
 'use strict';
 const fingerprintDialog = document.createElement('dialog');
+fingerprintDialog.id = 'fingerprintDialog';
 fingerprintDialog.innerHTML = `<form id="fingerprintForm">
     <h2>采集模型指纹</h2>
     <p class="notice">请选择身份可信的模型作为参考。采集成功后保存为新库版本，同标识指纹在新版本中替换；保存后可设为当前库。新版本沿用基础库校准参数，概率仅供参考。</p>
