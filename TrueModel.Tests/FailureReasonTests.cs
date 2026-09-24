@@ -71,11 +71,15 @@ public class FailureReasonTests
             var site = new Site { Keys = [new SiteKey { Models = [new MonitoredModel { Name = "first" }, new MonitoredModel { Name = "second" }] }] };
             db.Sites.Add(site); await db.SaveChangesAsync();
             foreach (var model in site.Keys[0].Models)
-                db.Results.AddRange(Enumerable.Range(0, 7).Select(i => new DetectionResult { ModelId = model.Id, ModelName = model.Name, Status = "Success" }));
+                db.Results.AddRange(Enumerable.Range(0, 12).Select(i => new DetectionResult { ModelId = model.Id, ModelName = model.Name, Status = "Success", LatencyMs = i }));
             await db.SaveChangesAsync();
         }
         var recent = await client.GetFromJsonAsync<JsonElement>("/api/results?perModel=true");
-        Assert.Equal(10, recent.GetArrayLength());
-        Assert.All(recent.EnumerateArray().GroupBy(r => r.GetProperty("modelId").GetInt32()), group => Assert.Equal(5, group.Count()));
+        Assert.Equal(20, recent.GetArrayLength());
+        Assert.All(recent.EnumerateArray().GroupBy(r => r.GetProperty("modelId").GetInt32()), group =>
+        {
+            Assert.Equal(10, group.Count());
+            Assert.Equal(Enumerable.Range(2, 10).Reverse(), group.Select(r => r.GetProperty("latencyMs").GetInt32()));
+        });
     }
 }

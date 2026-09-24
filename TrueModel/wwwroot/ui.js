@@ -103,7 +103,7 @@ document.querySelectorAll(".table-wrap").forEach((el) => {
   el.tabIndex = 0;
   el.setAttribute(
     "aria-label",
-    el.closest("section").id === "overview" ? "模型状态表" : "检测历史表",
+    el.getAttribute("aria-label") || (el.closest("section").id === "overview" ? "模型状态表" : "检测历史表"),
   );
 });
 function closeNav() {
@@ -426,4 +426,4 @@ document.addEventListener("scroll", event => {
 window.addEventListener("resize", closeRecentTooltip);
 new MutationObserver(() => {
   if (tooltipAnchor && !tooltipAnchor.isConnected) closeRecentTooltip();
-}).observe($("modelRows"), { childList: true, subtree: true });
+}).observe($("overview"), { childList: true, subtree: true });

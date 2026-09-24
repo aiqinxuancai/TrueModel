@@ -1163,7 +1163,8 @@ details pre {
 #overview th { padding: 8px 12px; }
 #overview td { padding: 6px 12px; line-height: 1.4; vertical-align: middle; }
 #overview td.empty { padding: 24px 12px; }
-#overview .recent-model-cell { min-width: 140px; }
+#overview .recent-model-cell { min-width: 196px; }
+#overview .table-wrap + .heading { margin-top: 20px; }
 #overview .recent-dots { min-height: 16px; margin: 0 0 2px; gap: 8px; }
 #overview .recent-dot { width: 10px; height: 10px; }
 #overview .badge { padding: 2px 6px; }

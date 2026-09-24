@@ -51,6 +51,29 @@
             </div>
             <div id="stats"></div>
             <div class="heading">
+              <h2>最近归因正确率 ≥80%<span id="accurateModelCount" class="count">0</span></h2>
+            </div>
+            <p class="muted">按最近 10 次检测中归因一致的占比筛选；不足 10 次按实际次数计算，失败或无归因结果计为不正确。</p>
+            <div class="table-wrap" aria-label="最近归因正确率达标模型表">
+              <table>
+                <thead>
+                  <tr>
+                    <th>站点</th>
+                    <th>Key</th>
+                    <th>模型</th>
+                    <th>状态</th>
+                    <th>耗时</th>
+                    <th>归因模型</th>
+                    <th title="模型自报值，仅供参考">Juice</th>
+                    <th>是/否检测</th>
+                    <th>最近检测</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="accurateModelRows"></tbody>
+              </table>
+            </div>
+            <div class="heading">
               <h2>模型状态</h2>
               <input
                 id="search"

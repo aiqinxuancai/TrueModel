@@ -352,7 +352,7 @@ api.MapGet("/results", async (int? runId, int? modelId, bool? perModel, AppDb db
 {
     var query = db.Results.AsNoTracking().Where(r => (runId == null || r.RunId == runId) && (modelId == null || r.ModelId == modelId));
     if (perModel == true)
-        return await query.Where(r => db.Models.Any(m => m.Id == r.ModelId) && db.Results.Count(newer => newer.ModelId == r.ModelId && newer.Id > r.Id) < 5).OrderByDescending(r => r.Id).ToArrayAsync();
+        return await query.Where(r => db.Models.Any(m => m.Id == r.ModelId) && db.Results.Count(newer => newer.ModelId == r.ModelId && newer.Id > r.Id) < 10).OrderByDescending(r => r.Id).ToArrayAsync();
     return await query.OrderByDescending(r => r.Id).Take(200).ToArrayAsync();
 });
 api.MapGet("/banks", async (AppDb db) => await db.Banks.Select(b => new { b.Id, b.Name, b.Sha256, b.ImportedAt, b.Active }).ToArrayAsync());
