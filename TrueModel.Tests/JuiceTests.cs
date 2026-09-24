@@ -44,6 +44,8 @@ public class JuiceTests
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CandyReasoningEffort");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyReasoningEffort");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyReasoningTokens");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyRefreshStatus");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyRequestedEffort");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyReasoningEffort");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyReasoningTokens");
             // Existing yes/no results must not become candy passes during the upgrade.
@@ -136,7 +138,11 @@ public class JuiceTests
         standalone.ExpectedCandyEffort = "high";
         var candyRefresh = await http.PostAsJsonAsync($"/api/models/{model.Id}/candy", new { });
         candyRefresh.EnsureSuccessStatusCode();
-        Assert.Equal("Success", (await candyRefresh.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("candyStatus").GetString());
+        Assert.Equal(HttpStatusCode.Accepted, candyRefresh.StatusCode);
+        Assert.Equal("Queued", (await candyRefresh.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("candyRefreshStatus").GetString());
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (await db.Models.AsNoTracking().AnyAsync(m => m.Id == model.Id && (m.CandyRefreshStatus == "Queued" || m.CandyRefreshStatus == "Running"), deadline.Token))
+            await Task.Delay(50, deadline.Token);
         db.ChangeTracker.Clear();
         var saved = (await db.Models.FindAsync(model.Id))!;
         Assert.Equal("Success", saved.CandyStatus);

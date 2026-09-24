@@ -33,13 +33,20 @@ function candySummary(r) {
     return `${probeBadge(r?.candyStatus)}<small class="candy-metrics">${esc(candyEffortLabel(r))} · Reason Tok: ${esc(r?.candyReasoningTokens ?? '—')}</small>`;
 }
 const refreshingCandy = new Set();
+function candyIsBusy(m) {
+    return refreshingCandy.has(m.id) || ['Queued', 'Running'].includes(m.candyRefreshStatus);
+}
 function candyCell(m, r) {
     const latest = m.candyCheckedAt && (!r || new Date(m.candyCheckedAt).getTime() > new Date(r.startedAt).getTime() + r.latencyMs) ? m : r;
-    return `<span class="juice-cell"><span tabindex="0" data-tooltip="${esc(candyTooltip(latest))}">${candySummary(latest)}</span><button class="icon-button juice-refresh" data-candy="${m.id}" title="单独刷新糖果" aria-label="刷新 ${esc(m.name)} 的糖果" ${refreshingCandy.has(m.id) ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button></span>`;
+    const busy = candyIsBusy(m);
+    const progress = busy ? `${m.candyRefreshStatus === 'Running' ? '检测中' : '排队中'} · ${candyEffortLabel({candyReasoningEffort:m.candyRequestedEffort})}` : m.candyRefreshStatus === 'Interrupted' ? '检测已中断，请重新开始' : '';
+    const tooltip = (progress ? progress + '\n以下为上次结果：\n' : '') + candyTooltip(latest);
+    return `<span class="juice-cell"><span tabindex="0" data-tooltip="${esc(tooltip)}">${progress ? `<small class="candy-metrics">${esc(progress)}</small>` : ''}${candySummary(latest)}</span><button class="icon-button juice-refresh" data-candy="${m.id}" title="单独刷新糖果" aria-label="刷新 ${esc(m.name)} 的糖果" ${busy ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button></span>`;
 }
 async function refreshProbe(id, kind) {
     const busy = kind === 'juice' ? refreshingJuice : refreshingCandy;
-    if (busy.has(id)) return;
+    const currentModel = sites.flatMap(s => s.keys.flatMap(k => k.models)).find(m => m.id === id);
+    if (busy.has(id) || (kind === 'candy' && currentModel && candyIsBusy(currentModel))) return;
     busy.add(id);
     render();
     try {
@@ -52,11 +59,21 @@ async function refreshProbe(id, kind) {
 document.addEventListener('click', async event => {
     const button = event.target.closest('button[data-candy]');
     if (!button) return;
-    try { const result = await refreshProbe(Number(button.dataset.candy), 'candy'); if (result) message('糖果：' + probeLabel(result.candyStatus) + ' · ' + candyEffortLabel(result) + ' · Reason Tok: ' + (result.candyReasoningTokens ?? '—')); }
-    catch (error) { message(error.message); }
+    try { const result = await refreshProbe(Number(button.dataset.candy), 'candy'); if (result) message('糖果检测已加入后台队列，刷新或关闭页面不会中断检测'); }
+    catch (error) { message(error.message); refresh().catch(() => {}); }
 });
 async function refreshAllProbes(kind, button) {
     if (button.disabled) return;
+    if (kind === 'candy') {
+        button.disabled = true;
+        try {
+            const result = await api('/candy/refresh-all', 'POST', {});
+            message(`已将 ${result.queued} 个模型加入糖果后台检测队列`);
+            await refresh();
+        } catch (error) { message(error.message); }
+        finally { button.disabled = false; render(); }
+        return;
+    }
     const models = sites.flatMap(s => s.keys.flatMap(k => k.models)).filter(m => kind !== 'juice' || /(?:^|[/\s:_-])(?:chat)?gpt(?:$|[-_.\s\d])/i.test(m.name));
     const busy = kind === 'juice' ? refreshingJuice : refreshingCandy;
     const pending = models.filter(m => !busy.has(m.id));

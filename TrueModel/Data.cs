@@ -112,6 +112,8 @@ public sealed class SiteKey
 }
 public sealed class MonitoredModel
 {
+    public string? CandyRefreshStatus { get; set; }
+    public string? CandyRequestedEffort { get; set; }
     public int? JuiceValue { get; set; }
     public string? JuiceStatus { get; set; }
     public string? JuicePrompt { get; set; }

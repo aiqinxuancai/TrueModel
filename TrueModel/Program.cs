@@ -39,6 +39,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 builder.Services.AddHttpClient("probe", c => { c.Timeout = Timeout.InfiniteTimeSpan; c.MaxResponseContentBufferSize = 1_000_000; }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHostedService<DetectionWorker>();
+builder.Services.AddHostedService<CandyWorker>();
 builder.Services.AddSingleton<DetectionControl>();
 builder.Services.AddSingleton<JuiceHistory>();
 builder.Services.AddHttpClient<ModelTraceClient>(c => c.Timeout = Timeout.InfiniteTimeSpan);
@@ -107,6 +108,8 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("CandyError")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyError TEXT NULL");
         if (!columns.Contains("CandyReasoningEffort")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyReasoningEffort TEXT NULL");
         if (!columns.Contains("CandyReasoningTokens")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyReasoningTokens INTEGER NULL");
+        if (!columns.Contains("CandyRefreshStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyRefreshStatus TEXT NULL");
+        if (!columns.Contains("CandyRequestedEffort")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyRequestedEffort TEXT NULL");
         if (!columns.Contains("CandyCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyCheckedAt TEXT NULL");
         if (!columns.Contains("JuiceCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceCheckedAt TEXT NULL");
     }
@@ -226,7 +229,7 @@ api.MapPost("/notifications/test", async (AppDb db, NotificationService sender, 
 api.MapGet("/sites", async (AppDb db) => await db.Sites.AsNoTracking().Select(s => new
 {
     s.Id, s.Name, s.BaseUrl, s.Enabled,
-    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyCheckedAt }) })
+    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyCheckedAt, m.CandyRefreshStatus, m.CandyRequestedEffort }) })
 }).ToListAsync());
 api.MapPost("/sites", async (SiteInput input, AppDb db) =>
 {
@@ -300,26 +303,21 @@ api.MapPost("/models/{id:int}/juice", async (int id, string? methodId, AppDb db,
         .SetProperty(m => m.JuiceValue, value).SetProperty(m => m.JuicePrompt, prompt).SetProperty(m => m.JuiceStatus, status).SetProperty(m => m.JuiceCheckedAt, checkedAt), token);
     return updated == 0 ? Results.NotFound() : Results.Ok(new { juiceValue = value, juiceStatus = status, juicePrompt = prompt, juiceCheckedAt = checkedAt });
 });
-api.MapPost("/models/{id:int}/candy", async (int id, AppDb db, ModelTraceClient client, IDataProtectionProvider protection, CancellationToken token) =>
+api.MapPost("/models/{id:int}/candy", async (int id, AppDb db, CancellationToken token) =>
 {
-    var target = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
-        where m.Id == id select new { Model = m, k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
-    if (target is null) return Results.NotFound();
-    string key;
-    try { key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue); }
-    catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
+    if (!await db.Models.AnyAsync(m => m.Id == id, token)) return Results.NotFound();
     var effort = (await db.Settings.AsNoTracking().SingleAsync(token)).CandyReasoningEffort;
-    var result = await client.ProbeCandy(target.BaseUrl, key, target.Model.Name, token, effort);
-    var checkedAt = DateTime.UtcNow;
-    var updated = await db.Models.Where(m => m.Id == id).ExecuteUpdateAsync(s => s
-        .SetProperty(m => m.CandyStatus, result.CandyStatus)
-        .SetProperty(m => m.CandyPrompt, result.CandyPrompt)
-        .SetProperty(m => m.CandyResponse, result.CandyResponse)
-        .SetProperty(m => m.CandyError, result.CandyError)
-        .SetProperty(m => m.CandyReasoningEffort, result.CandyReasoningEffort)
-        .SetProperty(m => m.CandyReasoningTokens, result.CandyReasoningTokens)
-        .SetProperty(m => m.CandyCheckedAt, checkedAt), token);
-    return updated == 0 ? Results.NotFound() : Results.Ok(new { result.CandyStatus, result.CandyPrompt, result.CandyResponse, result.CandyError, result.CandyReasoningEffort, result.CandyReasoningTokens, candyCheckedAt = checkedAt });
+    var updated = await db.Models.Where(m => m.Id == id && m.CandyRefreshStatus != "Queued" && m.CandyRefreshStatus != "Running")
+        .ExecuteUpdateAsync(s => s.SetProperty(m => m.CandyRefreshStatus, "Queued").SetProperty(m => m.CandyRequestedEffort, effort), token);
+    if (updated == 0) return Results.Conflict(new { error = "糖果检测已在队列中或运行中，请勿重复提交" });
+    return Results.Accepted("/api/sites", new { candyRefreshStatus = "Queued", candyRequestedEffort = effort });
+});
+api.MapPost("/candy/refresh-all", async (AppDb db, CancellationToken token) =>
+{
+    var effort = (await db.Settings.AsNoTracking().SingleAsync(token)).CandyReasoningEffort;
+    var queued = await db.Models.Where(m => m.CandyRefreshStatus != "Queued" && m.CandyRefreshStatus != "Running")
+        .ExecuteUpdateAsync(s => s.SetProperty(m => m.CandyRefreshStatus, "Queued").SetProperty(m => m.CandyRequestedEffort, effort), token);
+    return Results.Accepted("/api/sites", new { queued });
 });
 api.MapPost("/detect", async (DetectionScope input, AppDb db, DetectionControl control) =>
 {
