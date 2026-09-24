@@ -60,10 +60,10 @@ public sealed class DetectionResult
     public int? JuiceValue { get; set; }
     public string? JuiceStatus { get; set; }
     public string? JuicePrompt { get; set; }
-    public string? InstructionStatus { get; set; }
-    public string? InstructionPrompt { get; set; }
-    public string? InstructionResponse { get; set; }
-    public string? InstructionError { get; set; }
+    public string? CandyStatus { get; set; }
+    public string? CandyPrompt { get; set; }
+    public string? CandyResponse { get; set; }
+    public string? CandyError { get; set; }
 }
 public sealed class FingerprintBank
 {
@@ -112,12 +112,12 @@ public sealed class MonitoredModel
     public int? JuiceValue { get; set; }
     public string? JuiceStatus { get; set; }
     public string? JuicePrompt { get; set; }
-    public string? InstructionStatus { get; set; }
-    public string? InstructionPrompt { get; set; }
-    public string? InstructionResponse { get; set; }
-    public string? InstructionError { get; set; }
+    public string? CandyStatus { get; set; }
+    public string? CandyPrompt { get; set; }
+    public string? CandyResponse { get; set; }
+    public string? CandyError { get; set; }
     public DateTime? JuiceCheckedAt { get; set; }
-    public DateTime? InstructionCheckedAt { get; set; }
+    public DateTime? CandyCheckedAt { get; set; }
     public int Id { get; set; }
     public int SiteKeyId { get; set; }
     public string Name { get; set; } = "";

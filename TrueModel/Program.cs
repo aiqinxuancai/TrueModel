@@ -76,10 +76,10 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("JuiceValue")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceValue INTEGER NULL");
         if (!columns.Contains("JuiceStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceStatus TEXT NULL");
         if (!columns.Contains("JuicePrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuicePrompt TEXT NULL");
-        if (!columns.Contains("InstructionStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN InstructionStatus TEXT NULL");
-        if (!columns.Contains("InstructionPrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN InstructionPrompt TEXT NULL");
-        if (!columns.Contains("InstructionResponse")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN InstructionResponse TEXT NULL");
-        if (!columns.Contains("InstructionError")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN InstructionError TEXT NULL");
+        if (!columns.Contains("CandyStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyStatus TEXT NULL");
+        if (!columns.Contains("CandyPrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyPrompt TEXT NULL");
+        if (!columns.Contains("CandyResponse")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyResponse TEXT NULL");
+        if (!columns.Contains("CandyError")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyError TEXT NULL");
     }
     await db.Database.CloseConnectionAsync();
     await db.Database.OpenConnectionAsync();
@@ -92,11 +92,11 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("JuiceValue")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceValue INTEGER NULL");
         if (!columns.Contains("JuiceStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceStatus TEXT NULL");
         if (!columns.Contains("JuicePrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuicePrompt TEXT NULL");
-        if (!columns.Contains("InstructionStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN InstructionStatus TEXT NULL");
-        if (!columns.Contains("InstructionPrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN InstructionPrompt TEXT NULL");
-        if (!columns.Contains("InstructionResponse")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN InstructionResponse TEXT NULL");
-        if (!columns.Contains("InstructionError")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN InstructionError TEXT NULL");
-        if (!columns.Contains("InstructionCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN InstructionCheckedAt TEXT NULL");
+        if (!columns.Contains("CandyStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyStatus TEXT NULL");
+        if (!columns.Contains("CandyPrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyPrompt TEXT NULL");
+        if (!columns.Contains("CandyResponse")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyResponse TEXT NULL");
+        if (!columns.Contains("CandyError")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyError TEXT NULL");
+        if (!columns.Contains("CandyCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyCheckedAt TEXT NULL");
         if (!columns.Contains("JuiceCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceCheckedAt TEXT NULL");
     }
     await db.Database.CloseConnectionAsync();
@@ -215,7 +215,7 @@ api.MapPost("/notifications/test", async (AppDb db, NotificationService sender, 
 api.MapGet("/sites", async (AppDb db) => await db.Sites.AsNoTracking().Select(s => new
 {
     s.Id, s.Name, s.BaseUrl, s.Enabled,
-    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.InstructionStatus, m.InstructionPrompt, m.InstructionResponse, m.InstructionError, m.InstructionCheckedAt }) })
+    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyCheckedAt }) })
 }).ToListAsync());
 api.MapPost("/sites", async (SiteInput input, AppDb db) =>
 {
@@ -289,7 +289,7 @@ api.MapPost("/models/{id:int}/juice", async (int id, string? methodId, AppDb db,
         .SetProperty(m => m.JuiceValue, value).SetProperty(m => m.JuicePrompt, prompt).SetProperty(m => m.JuiceStatus, status).SetProperty(m => m.JuiceCheckedAt, checkedAt), token);
     return updated == 0 ? Results.NotFound() : Results.Ok(new { juiceValue = value, juiceStatus = status, juicePrompt = prompt, juiceCheckedAt = checkedAt });
 });
-api.MapPost("/models/{id:int}/instruction", async (int id, AppDb db, ModelTraceClient client, IDataProtectionProvider protection, CancellationToken token) =>
+api.MapPost("/models/{id:int}/candy", async (int id, AppDb db, ModelTraceClient client, IDataProtectionProvider protection, CancellationToken token) =>
 {
     var target = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
         where m.Id == id select new { Model = m, k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
@@ -297,15 +297,15 @@ api.MapPost("/models/{id:int}/instruction", async (int id, AppDb db, ModelTraceC
     string key;
     try { key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue); }
     catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
-    var result = await client.ProbeInstruction(target.BaseUrl, key, target.Model.Name, token);
+    var result = await client.ProbeCandy(target.BaseUrl, key, target.Model.Name, token);
     var checkedAt = DateTime.UtcNow;
     var updated = await db.Models.Where(m => m.Id == id).ExecuteUpdateAsync(s => s
-        .SetProperty(m => m.InstructionStatus, result.InstructionStatus)
-        .SetProperty(m => m.InstructionPrompt, result.InstructionPrompt)
-        .SetProperty(m => m.InstructionResponse, result.InstructionResponse)
-        .SetProperty(m => m.InstructionError, result.InstructionError)
-        .SetProperty(m => m.InstructionCheckedAt, checkedAt), token);
-    return updated == 0 ? Results.NotFound() : Results.Ok(new { result.InstructionStatus, result.InstructionPrompt, result.InstructionResponse, result.InstructionError, instructionCheckedAt = checkedAt });
+        .SetProperty(m => m.CandyStatus, result.CandyStatus)
+        .SetProperty(m => m.CandyPrompt, result.CandyPrompt)
+        .SetProperty(m => m.CandyResponse, result.CandyResponse)
+        .SetProperty(m => m.CandyError, result.CandyError)
+        .SetProperty(m => m.CandyCheckedAt, checkedAt), token);
+    return updated == 0 ? Results.NotFound() : Results.Ok(new { result.CandyStatus, result.CandyPrompt, result.CandyResponse, result.CandyError, candyCheckedAt = checkedAt });
 });
 api.MapPost("/detect", async (DetectionScope input, AppDb db, DetectionControl control) =>
 {

@@ -31,3 +31,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## 糖果检测参考来源
+
+固定糖果题与独立数字 `21` 的判分规则参考
+[haowang02/codex-candy-eval](https://github.com/haowang02/codex-candy-eval/blob/29127fa5a12fb7654e865f684dcaf55ade181349/codex_candy_eval.py)，
+参考提交：29127fa5a12fb7654e865f684dcaf55ade181349。
+TrueModel 使用自己的 C# 模型 API 调用，不包含或运行上游 Python/CLI 程序。
+该参考提交未提供 LICENSE 文件；上文 ModelTrace 的 MIT 许可不适用于此来源。

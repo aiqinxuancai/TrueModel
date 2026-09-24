@@ -5,26 +5,31 @@ using TrueModel;
 
 namespace TrueModel.Tests;
 
-public class InstructionProbeTests
+public class CandyProbeTests
 {
     [Theory]
-    [InlineData("是", true)]
-    [InlineData("否", true)]
-    [InlineData("是。", true)]
-    [InlineData("否。", true)]
-    [InlineData(" \n否。\r\n", true)]
-    [InlineData("是，因为需要适配。", false)]
-    [InlineData("否。\n你没有要求。", false)]
-    [InlineData("是.", false)]
-    [InlineData("**是**", false)]
+    [InlineData("21", true)]
+    [InlineData("最少取出21个糖果。", true)]
+    [InlineData("**21**", true)]
+    [InlineData(" \n21\r\n", true)]
+    [InlineData("先考虑 21，再得出 29。", true)]
+    [InlineData("21.0", true)]
+    [InlineData("121", false)]
+    [InlineData("210", false)]
+    [InlineData("２21", false)]
+    [InlineData("21３", false)]
+    [InlineData("二十一", false)]
+    [InlineData("是。", false)]
+    [InlineData("否", false)]
+    [InlineData("29", false)]
     [InlineData("", false)]
     public async Task JudgesEntireResponseAndPreservesIt(string answer, bool passes)
     {
         var handler = new Handler(answer);
         var client = new ModelTraceClient(new HttpClient(handler));
-        var result = await client.ProbeInstruction("https://example.test", "secret", "any-model", CancellationToken.None);
-        Assert.Equal(passes ? "Success" : "Unavailable", result.InstructionStatus);
-        Assert.Equal(answer, result.InstructionResponse);
+        var result = await client.ProbeCandy("https://example.test", "secret", "any-model", CancellationToken.None);
+        Assert.Equal(passes ? "Success" : "Unavailable", result.CandyStatus);
+        Assert.Equal(answer, result.CandyResponse);
         Assert.Equal(1, handler.Calls);
     }
 
@@ -32,20 +37,20 @@ public class InstructionProbeTests
     public async Task ErrorsAreDistinctAndSecretsAreRedacted()
     {
         var client = new ModelTraceClient(new HttpClient(new Handler("secret", true)));
-        var result = await client.ProbeInstruction("https://example.test", "secret", "any-model", CancellationToken.None);
-        Assert.Equal("Failed", result.InstructionStatus);
-        Assert.Null(result.InstructionResponse);
-        Assert.DoesNotContain("secret", result.InstructionError!);
-        Assert.Contains("HTTP 400", result.InstructionError!);
+        var result = await client.ProbeCandy("https://example.test", "secret", "any-model", CancellationToken.None);
+        Assert.Equal("Failed", result.CandyStatus);
+        Assert.Null(result.CandyResponse);
+        Assert.DoesNotContain("secret", result.CandyError!);
+        Assert.Contains("HTTP 400", result.CandyError!);
     }
 
     [Fact]
     public async Task CancellationIsNotReportedAsAProbeError()
     {
-        var client = new ModelTraceClient(new HttpClient(new Handler("是")));
+        var client = new ModelTraceClient(new HttpClient(new Handler("21")));
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.ProbeInstruction("https://example.test", "secret", "any-model", cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.ProbeCandy("https://example.test", "secret", "any-model", cancellation.Token));
     }
 
     private sealed class Handler(string answer, bool error = false) : HttpMessageHandler
@@ -56,7 +61,7 @@ public class InstructionProbeTests
             token.ThrowIfCancellationRequested();
             Calls++;
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            Assert.Equal(InstructionProbe.Prompt, body.GetProperty("messages")[0].GetProperty("content").GetString());
+            Assert.Equal(CandyProbe.Prompt, body.GetProperty("messages")[0].GetProperty("content").GetString());
             Assert.False(body.TryGetProperty("tools", out _));
             return error
                 ? new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = answer }) }

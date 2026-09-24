@@ -14,7 +14,7 @@ namespace TrueModel.Tests;
 public class JuiceTests
 {
     [Fact]
-    public async Task StartupUpgradesOldResultsAndPersistsJuice()
+    public async Task StartupUpgradesOldResultsAndPersistsJuiceAndCandy()
     {
         var directory = Path.Combine(Path.GetTempPath(), "truemodel-juice-" + Guid.NewGuid());
         Directory.CreateDirectory(directory);
@@ -32,15 +32,19 @@ public class JuiceTests
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceStatus");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuicePrompt");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceCheckedAt");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN InstructionStatus");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN InstructionPrompt");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN InstructionResponse");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN InstructionError");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN InstructionStatus");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN InstructionPrompt");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN InstructionResponse");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN InstructionError");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN InstructionCheckedAt");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyStatus");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyPrompt");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyResponse");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyError");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyStatus");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyPrompt");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyResponse");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyError");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyCheckedAt");
+            // Existing yes/no results must not become candy passes during the upgrade.
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN InstructionStatus TEXT NULL");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN InstructionResponse TEXT NULL");
+            await legacy.Database.ExecuteSqlRawAsync("UPDATE Results SET InstructionStatus = 'Success', InstructionResponse = '是。'");
         }
         var standalone = new ProbeHandler(0, "96", false, false) { ExpectedFirst = "direct-only" };
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -59,6 +63,10 @@ public class JuiceTests
         Assert.Null(old.JuiceValue);
         Assert.Null(old.JuiceStatus);
         Assert.Null(old.JuicePrompt);
+        Assert.Null(old.CandyStatus);
+        Assert.Null(old.CandyPrompt);
+        Assert.Null(old.CandyResponse);
+        Assert.Null(old.CandyError);
         old.JuicePrompt = "historical prompt";
         old.JuiceValue = 128;
         old.JuiceStatus = "Success";
@@ -88,7 +96,7 @@ public class JuiceTests
         await db.SaveChangesAsync();
         var model = site.Keys[0].Models[0];
         Assert.Equal(HttpStatusCode.Unauthorized, (await http.PostAsJsonAsync($"/api/models/{model.Id}/juice", new { })).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await http.PostAsJsonAsync($"/api/models/{model.Id}/instruction", new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await http.PostAsJsonAsync($"/api/models/{model.Id}/candy", new { })).StatusCode);
         async Task Csrf()
         {
             var session = await http.GetFromJsonAsync<JsonElement>("/api/session");
@@ -115,17 +123,24 @@ public class JuiceTests
         Assert.Equal(HttpStatusCode.BadRequest, (await http.PostAsJsonAsync($"/api/models/{site.Keys[0].Models[1].Id}/juice", new { })).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await http.PostAsJsonAsync("/api/models/999999/juice", new { })).StatusCode);
         Assert.Equal(1, standalone.Calls);
-        Assert.Equal(HttpStatusCode.NotFound, (await http.PostAsJsonAsync("/api/models/999999/instruction", new { })).StatusCode);
-        var instructionRefresh = await http.PostAsJsonAsync($"/api/models/{model.Id}/instruction", new { });
-        instructionRefresh.EnsureSuccessStatusCode();
-        Assert.Equal("Success", (await instructionRefresh.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("instructionStatus").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, (await http.PostAsJsonAsync("/api/models/999999/candy", new { })).StatusCode);
+        var candyRefresh = await http.PostAsJsonAsync($"/api/models/{model.Id}/candy", new { });
+        candyRefresh.EnsureSuccessStatusCode();
+        Assert.Equal("Success", (await candyRefresh.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("candyStatus").GetString());
         db.ChangeTracker.Clear();
         var saved = (await db.Models.FindAsync(model.Id))!;
-        Assert.Equal("Success", saved.InstructionStatus);
-        Assert.Equal("是。", saved.InstructionResponse);
-        Assert.Equal(InstructionProbe.Prompt, saved.InstructionPrompt);
-        Assert.NotNull(saved.InstructionCheckedAt);
-        Assert.Null((await db.Results.SingleAsync()).InstructionStatus);
+        Assert.Equal("Success", saved.CandyStatus);
+        Assert.Equal("最少取出 21 个糖果。", saved.CandyResponse);
+        Assert.Equal(CandyProbe.Prompt, saved.CandyPrompt);
+        Assert.NotNull(saved.CandyCheckedAt);
+        Assert.Null((await db.Results.SingleAsync()).CandyStatus);
+        var sites = await http.GetFromJsonAsync<JsonElement>("/api/sites");
+        var publicModel = sites[0].GetProperty("keys")[0].GetProperty("models")[0];
+        Assert.Equal("Success", publicModel.GetProperty("candyStatus").GetString());
+        Assert.False(publicModel.TryGetProperty("instructionStatus", out _));
+        var results = await http.GetFromJsonAsync<JsonElement>("/api/results");
+        Assert.Equal(JsonValueKind.Null, results[0].GetProperty("candyStatus").ValueKind);
+        Assert.False(results[0].TryGetProperty("instructionStatus", out _));
         Assert.Empty(await db.Runs.ToArrayAsync());
     }
 
@@ -206,7 +221,7 @@ public class JuiceTests
         Assert.Equal(count + 1 + (status is null ? 0 : status == "Unavailable" ? JuiceProbe.Methods.Count : 1), handler.Calls);
         Assert.Equal(count, report.GetProperty("responses").GetArrayLength());
         Assert.Equal(invalidChallenges, report.TryGetProperty("error", out _));
-        Assert.Equal("Success", report.GetProperty("instruction").GetProperty("InstructionStatus").GetString());
+        Assert.Equal("Success", report.GetProperty("candy").GetProperty("CandyStatus").GetString());
         if (status is null) Assert.False(report.TryGetProperty("juice_status", out _));
         else Assert.Equal(status, report.GetProperty("juice_status").GetString());
         if (status == "Success") Assert.Equal(int.Parse(answer), report.GetProperty("juice_value").GetInt32());
@@ -223,8 +238,8 @@ public class JuiceTests
             Calls++;
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
             var prompt = body.GetProperty("messages")[0].GetProperty("content").GetString();
-            if (prompt == InstructionProbe.Prompt)
-                return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "是。" }, finish_reason = "stop" } } }) };
+            if (prompt == CandyProbe.Prompt)
+                return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "最少取出 21 个糖果。" }, finish_reason = "stop" } } }) };
             if (Calls > count)
             {
                 Assert.Equal(ExpectedFirst is null ? JuiceProbe.Methods[Calls - count - 1].Prompt : JuiceProbe.Methods.Single(m => m.Id == ExpectedFirst).Prompt, prompt);

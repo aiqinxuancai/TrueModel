@@ -23,16 +23,16 @@ function probeLabel(status) {
 function probeBadge(status) {
     return `<span class="probe-${esc(status || 'pending')}">${probeLabel(status)}</span>`;
 }
-function instructionTooltip(r) {
-    return `是/否检测：${probeLabel(r?.instructionStatus)}\n判定：仅“是”“否”“是。”“否。”通过（忽略首尾空白）\n题目：${r?.instructionPrompt || '尚未检测'}\n回复：${r?.instructionResponse ?? '—'}${r?.instructionError ? '\n错误：' + r.instructionError : ''}`;
+function candyTooltip(r) {
+    return `糖果：${probeLabel(r?.candyStatus)}\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${r?.candyPrompt || '尚未检测'}\n回复：${r?.candyResponse ?? '—'}${r?.candyError ? '\n错误：' + r.candyError : ''}`;
 }
-const refreshingInstruction = new Set();
-function instructionCell(m, r) {
-    const latest = m.instructionCheckedAt && (!r || new Date(m.instructionCheckedAt).getTime() > new Date(r.startedAt).getTime() + r.latencyMs) ? m : r;
-    return `<span class="juice-cell"><span tabindex="0" data-tooltip="${esc(instructionTooltip(latest))}">${probeBadge(latest?.instructionStatus)}</span><button class="icon-button juice-refresh" data-instruction="${m.id}" title="单独刷新是/否检测" aria-label="刷新 ${esc(m.name)} 的是/否检测" ${refreshingInstruction.has(m.id) ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button></span>`;
+const refreshingCandy = new Set();
+function candyCell(m, r) {
+    const latest = m.candyCheckedAt && (!r || new Date(m.candyCheckedAt).getTime() > new Date(r.startedAt).getTime() + r.latencyMs) ? m : r;
+    return `<span class="juice-cell"><span tabindex="0" data-tooltip="${esc(candyTooltip(latest))}">${probeBadge(latest?.candyStatus)}</span><button class="icon-button juice-refresh" data-candy="${m.id}" title="单独刷新糖果" aria-label="刷新 ${esc(m.name)} 的糖果" ${refreshingCandy.has(m.id) ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button></span>`;
 }
 async function refreshProbe(id, kind) {
-    const busy = kind === 'juice' ? refreshingJuice : refreshingInstruction;
+    const busy = kind === 'juice' ? refreshingJuice : refreshingCandy;
     if (busy.has(id)) return;
     busy.add(id);
     render();
@@ -44,15 +44,15 @@ async function refreshProbe(id, kind) {
     } finally { busy.delete(id); render(); }
 }
 document.addEventListener('click', async event => {
-    const button = event.target.closest('button[data-instruction]');
+    const button = event.target.closest('button[data-candy]');
     if (!button) return;
-    try { const result = await refreshProbe(Number(button.dataset.instruction), 'instruction'); if (result) message('是/否检测：' + probeLabel(result.instructionStatus)); }
+    try { const result = await refreshProbe(Number(button.dataset.candy), 'candy'); if (result) message('糖果：' + probeLabel(result.candyStatus)); }
     catch (error) { message(error.message); }
 });
 async function refreshAllProbes(kind, button) {
     if (button.disabled) return;
     const models = sites.flatMap(s => s.keys.flatMap(k => k.models)).filter(m => kind !== 'juice' || /(?:^|[/\s:_-])(?:chat)?gpt(?:$|[-_.\s\d])/i.test(m.name));
-    const busy = kind === 'juice' ? refreshingJuice : refreshingInstruction;
+    const busy = kind === 'juice' ? refreshingJuice : refreshingCandy;
     const pending = models.filter(m => !busy.has(m.id));
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
@@ -66,11 +66,11 @@ async function refreshAllProbes(kind, button) {
                 catch { errors++; }
             }
         }));
-        message(`${kind === 'juice' ? 'Juice' : '是/否检测'}全部刷新完成：已更新 ${completed} 个，错误 ${errors} 个`);
+        message(`${kind === 'juice' ? 'Juice' : '糖果'}全部刷新完成：已更新 ${completed} 个，错误 ${errors} 个`);
     } finally { button.disabled = false; button.removeAttribute('aria-busy'); }
 }
 $('refreshAllJuice').onclick = event => refreshAllProbes('juice', event.currentTarget);
-$('refreshAllInstruction').onclick = event => refreshAllProbes('instruction', event.currentTarget);
+$('refreshAllCandy').onclick = event => refreshAllProbes('candy', event.currentTarget);
 const juicePicker = document.createElement('dialog');
 juicePicker.id = 'juicePromptPicker';
 juicePicker.setAttribute('aria-labelledby', 'juicePickerTitle');
@@ -148,7 +148,7 @@ function recentModelHistory(modelId) {
         const winner = attributionWinner(r);
         const type = attributionResultType(r);
         const meaning = {success:'归因一致',mismatch:'归因不符',failure:'检测失败',unknown:'暂无归因结果'}[type];
-        const info = `${r.modelName} · ${meaning}（${statuses[r.status] || r.status}）\n${time(r.startedAt)} · 批次 #${r.runId} · ${(r.latencyMs / 1000).toFixed(1)}s${winner ? `\n归因：${winner.DisplayName || winner.Model} · ${(winner.Probability * 100).toFixed(1)}%` : ''}\nJuice（模型自报）：${juiceLabel(r)}${r.juicePrompt ? `\nJuice Prompt：${r.juicePrompt}` : ''}\n${instructionTooltip(r)}${type === 'failure' ? `\n${failureReason(r)}` : ''}`;
+        const info = `${r.modelName} · ${meaning}（${statuses[r.status] || r.status}）\n${time(r.startedAt)} · 批次 #${r.runId} · ${(r.latencyMs / 1000).toFixed(1)}s${winner ? `\n归因：${winner.DisplayName || winner.Model} · ${(winner.Probability * 100).toFixed(1)}%` : ''}\nJuice（模型自报）：${juiceLabel(r)}${r.juicePrompt ? `\nJuice Prompt：${r.juicePrompt}` : ''}\n${candyTooltip(r)}${type === 'failure' ? `\n${failureReason(r)}` : ''}`;
         return `<span class="recent-dot ${type}" tabindex="0" data-tooltip="${esc(info)}" aria-label="${esc(info)}"></span>`;
     }).join('');
     return `<div class="recent-dots" aria-label="最近十次检测，从左到右由新到旧">${dots}</div><small class="recent-model-time" title="${esc(time(recent[0].startedAt))}">${relativeTime(recent[0].startedAt)}</small>`;
@@ -204,7 +204,7 @@ $('loginForm').onsubmit=async e=>{e.preventDefault();try{const credentials=Objec
 $('logout').onclick=async()=>{await api('/logout','POST',{});await session();};
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!==b.dataset.tab);document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('selected',x===b));});
 async function refresh(){[sites,results,runs,banks,recentModelResults]=await Promise.all(['/sites','/results','/runs','/banks','/results?perModel=true'].map(p=>api(p)));render();const settings=await api('/settings');if(!document.querySelector('#settingsForm:focus-within'))for(const name of ['challengeCount','intervalMinutes','maxConcurrency','timeoutSeconds'])$('settingsForm').elements[name].value=name==='timeoutSeconds'?240:settings[name];$('nextRun').textContent=`每次 ${settings.challengeCount} 个挑战 · 下次定时检测：${time(settings.nextRunAt)}`;}
-const modelRow = ({s,k,m,r})=>{const winner=attributionWinner(r);return `<tr><td>${esc(s.name)}</td><td>${esc(k.name)}</td><td>${esc(m.name)}</td><td>${badge(modelStatus(m.id,r))}</td><td>${r?(r.latencyMs/1000).toFixed(1)+'s':'—'}</td><td>${attributionLabel(winner,m.name)}</td><td>${juiceCell(m,r)}</td><td>${instructionCell(m,r)}</td><td class="recent-model-cell">${recentModelHistory(m.id)}</td><td><button data-detect-model="${m.id}">检测</button>${r?` <button data-detail="${r.id}">详情</button>`:''}</td></tr>`;};
+const modelRow = ({s,k,m,r})=>{const winner=attributionWinner(r);return `<tr><td>${esc(s.name)}</td><td>${esc(k.name)}</td><td>${esc(m.name)}</td><td>${badge(modelStatus(m.id,r))}</td><td>${r?(r.latencyMs/1000).toFixed(1)+'s':'—'}</td><td>${attributionLabel(winner,m.name)}</td><td>${juiceCell(m,r)}</td><td>${candyCell(m,r)}</td><td class="recent-model-cell">${recentModelHistory(m.id)}</td><td><button data-detect-model="${m.id}">检测</button>${r?` <button data-detail="${r.id}">详情</button>`:''}</td></tr>`;};
 function render(){const models=sites.flatMap(s=>s.keys.flatMap(k=>k.models.map(m=>({s,k,m,r:recentModelResults.find(r=>r.modelId===m.id)||results.find(r=>r.modelId===m.id)}))));const latest=models.filter(x=>x.r);$('stats').innerHTML=[['站点',sites.length],['Key',sites.reduce((n,s)=>n+s.keys.length,0)],['模型',models.length],['最近成功',latest.filter(x=>x.r.status==='Success').length],['最近失败',latest.filter(x=>['Failed','Timeout'].includes(x.r.status)).length]].map(([k,v])=>`<div class="stat"><span>${k}</span><strong>${v}</strong></div>`).join('');
 const query=$('search').value.toLowerCase();
 $('modelRows').innerHTML=models.filter(x=>[x.s.name,x.k.name,x.m.name].join(' ').toLowerCase().includes(query)).map(modelRow).join('')||'<tr><td colspan="10" class="empty">暂无模型</td></tr>';
@@ -225,5 +225,5 @@ $('createEmptyBank').onclick=()=>edit('新建空指纹库',[['name','指纹库�
 const manualFingerprintDialog=document.createElement('dialog');manualFingerprintDialog.innerHTML=`<form id="manualFingerprintForm"><h2>手动新增指纹</h2><p class="notice">填写模型信息，并粘贴 355 个非负整数频次的 JSON 数组。频次总数至少为 80。</p><label>模型标识<input name="model" required maxlength="200"></label><label>显示名称<input name="displayName" required maxlength="200"></label><label>家族<input name="family" required maxlength="100" value="custom"></label><label>counts（355 个整数）<textarea name="counts" rows="6" required placeholder="[0, 0, ...]"></textarea></label><div class="actions"><button type="button" id="closeManualFingerprint">关闭</button><button class="primary">新增</button></div></form>`;document.body.append(manualFingerprintDialog);
 let manualBankId=0;function openManualFingerprint(id){manualBankId=id;manualFingerprintDialog.showModal();}$('closeManualFingerprint').onclick=()=>manualFingerprintDialog.close();$('manualFingerprintForm').onsubmit=async e=>{e.preventDefault();try{const v=Object.fromEntries(new FormData(e.target));const counts=JSON.parse(v.counts);if(!Array.isArray(counts))throw Error('counts 必须是 JSON 数组');await api(`/banks/${manualBankId}/models`,'POST',{model:v.model,displayName:v.displayName,family:v.family,counts});manualFingerprintDialog.close();message('指纹已新增');await refresh();}catch(error){message(error.message);}};
 $('settingsForm').onsubmit=async e=>{e.preventDefault();try{await api('/settings','PUT',Object.fromEntries([...new FormData(e.target)].map(([k,v])=>[k,Number(v)])));message('设置已保存');await refresh();}catch(e){message(e.message);}};
-document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;if(!['key','model','delete','detect','detectModel','detectKey','detectSite','cancel','activate','detail','bankDetail','deleteBank','manualBank'].some(k=>d[k]!==undefined))return;try{if(d.key)edit('添加 Key',[['name','Key 名称'],['value','API Key','password']],v=>api(`/sites/${d.key}/keys`,'POST',v));if(d.model)edit('添加模型',[['name','模型 ID']],v=>api(`/keys/${d.model}/models`,'POST',v));if(d.delete&&confirm('确认删除？此操作会删除下级配置，历史记录仍然保留。')){await api('/'+d.delete,'DELETE');await refresh();}if(d.deleteBank&&confirm('确认删除此指纹库？删除后无法恢复。')){await api(`/banks/${d.deleteBank}`,'DELETE');await refresh();}if(d.manualBank)openManualFingerprint(Number(d.manualBank));if(d.bankDetail){const bank=await api(`/banks/${d.bankDetail}`);$('detailBody').innerHTML=`<h2>${esc(bank.name)}</h2><p>版本：${esc(bank.builtAt||'—')} · SHA256 ${esc(bank.sha256)}</p><table><thead><tr><th>模型标识</th><th>名称</th><th>家族</th><th>有效数字</th></tr></thead><tbody>${bank.models.map(m=>`<tr><td>${esc(m.id)}</td><td>${esc(m.displayName)}</td><td>${esc(m.family)}</td><td>${m.validNumberCount}</td></tr>`).join('')}</tbody></table>`;$('detail').showModal();}if(d.detect||d.detectModel||d.detectKey||d.detectSite){b.disabled=true;await api('/detect','POST',{modelId:d.detectModel?Number(d.detectModel):null,keyId:d.detectKey?Number(d.detectKey):null,siteId:d.detectSite?Number(d.detectSite):null});message('检测任务已加入队列');await refresh();}if(d.cancel){await api(`/runs/${d.cancel}/cancel`,'POST',{});message('已请求取消');}if(d.activate){await api(`/banks/${d.activate}/activate`,'POST',{});await refresh();}if(d.detail){const r=results.find(x=>x.id===Number(d.detail))||recentModelResults.find(x=>x.id===Number(d.detail));const report=r.attributionJson?JSON.parse(r.attributionJson):null;$('detailBody').innerHTML=`<p>${esc(r.siteName)} / ${esc(r.keyName)} / ${esc(r.modelName)} · ${badge(r.status)} · 总耗时 ${(r.latencyMs/1000).toFixed(1)}s</p><p>Juice（模型自报）：<span class="probe-${esc(r.juiceStatus || 'pending')}" title="${esc(juiceTooltip(r))}">${juiceLabel(r)}</span></p><p>是/否检测：${probeBadge(r.instructionStatus)}</p><details><summary>是/否检测题目与回复</summary><pre>${esc(instructionTooltip(r))}</pre></details>${r.error?`<p>${esc(r.error)}</p>`:''}${report?`<h2>候选模型</h2><p>有效回答 ${report.UsedOutputs} · 校准 β ${report.Beta.toFixed(2)}</p><table><thead><tr><th>模型</th><th>家族</th><th>概率</th></tr></thead><tbody>${report.Candidates.map(c=>`<tr><td>${esc(c.DisplayName)}</td><td>${esc(c.Family)}</td><td>${(c.Probability*100).toFixed(2)}%</td></tr>`).join('')}</tbody></table><h2>家族概率</h2>${Object.entries(report.Families).map(([k,v])=>`<p>${esc(k)}: ${(v*100).toFixed(2)}%</p>`).join('')}`:''}<h2>挑战与响应</h2>${JSON.parse(r.responsesJson).map(o=>`<details><summary>${o.ExpectedCount} 个整数 · ${((o.DurationMs||0)/1000).toFixed(1)}s</summary>${o.Error?`<p>${esc(o.Error)}</p>`:''}<p>${esc(o.Prompt)}</p><pre>${esc(o.Text)}</pre></details>`).join('')}`;$('detail').showModal();}}catch(e){message(e.message);}finally{b.disabled=false;}});
+document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;if(!['key','model','delete','detect','detectModel','detectKey','detectSite','cancel','activate','detail','bankDetail','deleteBank','manualBank'].some(k=>d[k]!==undefined))return;try{if(d.key)edit('添加 Key',[['name','Key 名称'],['value','API Key','password']],v=>api(`/sites/${d.key}/keys`,'POST',v));if(d.model)edit('添加模型',[['name','模型 ID']],v=>api(`/keys/${d.model}/models`,'POST',v));if(d.delete&&confirm('确认删除？此操作会删除下级配置，历史记录仍然保留。')){await api('/'+d.delete,'DELETE');await refresh();}if(d.deleteBank&&confirm('确认删除此指纹库？删除后无法恢复。')){await api(`/banks/${d.deleteBank}`,'DELETE');await refresh();}if(d.manualBank)openManualFingerprint(Number(d.manualBank));if(d.bankDetail){const bank=await api(`/banks/${d.bankDetail}`);$('detailBody').innerHTML=`<h2>${esc(bank.name)}</h2><p>版本：${esc(bank.builtAt||'—')} · SHA256 ${esc(bank.sha256)}</p><table><thead><tr><th>模型标识</th><th>名称</th><th>家族</th><th>有效数字</th></tr></thead><tbody>${bank.models.map(m=>`<tr><td>${esc(m.id)}</td><td>${esc(m.displayName)}</td><td>${esc(m.family)}</td><td>${m.validNumberCount}</td></tr>`).join('')}</tbody></table>`;$('detail').showModal();}if(d.detect||d.detectModel||d.detectKey||d.detectSite){b.disabled=true;await api('/detect','POST',{modelId:d.detectModel?Number(d.detectModel):null,keyId:d.detectKey?Number(d.detectKey):null,siteId:d.detectSite?Number(d.detectSite):null});message('检测任务已加入队列');await refresh();}if(d.cancel){await api(`/runs/${d.cancel}/cancel`,'POST',{});message('已请求取消');}if(d.activate){await api(`/banks/${d.activate}/activate`,'POST',{});await refresh();}if(d.detail){const r=results.find(x=>x.id===Number(d.detail))||recentModelResults.find(x=>x.id===Number(d.detail));const report=r.attributionJson?JSON.parse(r.attributionJson):null;$('detailBody').innerHTML=`<p>${esc(r.siteName)} / ${esc(r.keyName)} / ${esc(r.modelName)} · ${badge(r.status)} · 总耗时 ${(r.latencyMs/1000).toFixed(1)}s</p><p>Juice（模型自报）：<span class="probe-${esc(r.juiceStatus || 'pending')}" title="${esc(juiceTooltip(r))}">${juiceLabel(r)}</span></p><p>糖果：${probeBadge(r.candyStatus)}</p><details><summary>糖果题目与回复</summary><pre>${esc(candyTooltip(r))}</pre></details>${r.error?`<p>${esc(r.error)}</p>`:''}${report?`<h2>候选模型</h2><p>有效回答 ${report.UsedOutputs} · 校准 β ${report.Beta.toFixed(2)}</p><table><thead><tr><th>模型</th><th>家族</th><th>概率</th></tr></thead><tbody>${report.Candidates.map(c=>`<tr><td>${esc(c.DisplayName)}</td><td>${esc(c.Family)}</td><td>${(c.Probability*100).toFixed(2)}%</td></tr>`).join('')}</tbody></table><h2>家族概率</h2>${Object.entries(report.Families).map(([k,v])=>`<p>${esc(k)}: ${(v*100).toFixed(2)}%</p>`).join('')}`:''}<h2>挑战与响应</h2>${JSON.parse(r.responsesJson).map(o=>`<details><summary>${o.ExpectedCount} 个整数 · ${((o.DurationMs||0)/1000).toFixed(1)}s</summary>${o.Error?`<p>${esc(o.Error)}</p>`:''}<p>${esc(o.Prompt)}</p><pre>${esc(o.Text)}</pre></details>`).join('')}`;$('detail').showModal();}}catch(e){message(e.message);}finally{b.disabled=false;}});
 session().catch(e=>message(e.message));setInterval(()=>{if(!$('application').hidden)refresh().catch(e=>message(e.message));},5000);

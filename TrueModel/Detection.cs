@@ -163,13 +163,13 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             result.JuiceValue = response.TryGetProperty("juice_value", out var juice) && juice.ValueKind == JsonValueKind.Number ? juice.GetInt32() : null;
             result.JuiceStatus = response.TryGetProperty("juice_status", out var juiceStatus) ? juiceStatus.GetString() : null;
             result.JuicePrompt = response.TryGetProperty("juice_prompt", out var juicePrompt) ? juicePrompt.GetString() : null;
-            if (response.TryGetProperty("instruction", out var instruction))
+            if (response.TryGetProperty("candy", out var candy))
             {
-                var probe = instruction.Deserialize<InstructionProbeResult>()!;
-                result.InstructionStatus = probe.InstructionStatus;
-                result.InstructionPrompt = probe.InstructionPrompt;
-                result.InstructionResponse = probe.InstructionResponse;
-                result.InstructionError = probe.InstructionError;
+                var probe = candy.Deserialize<CandyProbeResult>()!;
+                result.CandyStatus = probe.CandyStatus;
+                result.CandyPrompt = probe.CandyPrompt;
+                result.CandyResponse = probe.CandyResponse;
+                result.CandyError = probe.CandyError;
             }
             result.StatusCode = response.TryGetProperty("status_code", out var status) ? status.GetInt32() : 0;
             if (response.TryGetProperty("error", out var error))

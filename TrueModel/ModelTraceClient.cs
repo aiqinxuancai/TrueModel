@@ -128,18 +128,18 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
         }
         return envelope;
     }
-    public async Task<InstructionProbeResult> ProbeInstruction(string baseUrl, string key, string model, CancellationToken token)
+    public async Task<CandyProbeResult> ProbeCandy(string baseUrl, string key, string model, CancellationToken token)
     {
         try
         {
-            var text = await Completion(baseUrl, key, model, InstructionProbe.Prompt, token);
-            return new(InstructionProbe.Passes(text) ? "Success" : "Unavailable", InstructionProbe.Prompt,
+            var text = await Completion(baseUrl, key, model, CandyProbe.Prompt, token);
+            return new(CandyProbe.Passes(text) ? "Success" : "Unavailable", CandyProbe.Prompt,
                 string.IsNullOrEmpty(key) ? text : text.Replace(key, "[REDACTED]", StringComparison.Ordinal), null);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception e) when (e is UpstreamException or HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException or FormatException or IndexOutOfRangeException)
         {
-            return new("Failed", InstructionProbe.Prompt, null,
+            return new("Failed", CandyProbe.Prompt, null,
                 string.IsNullOrEmpty(key) ? e.Message : e.Message.Replace(key, "[REDACTED]", StringComparison.Ordinal));
         }
     }
@@ -163,7 +163,7 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
         }
         var envelope = new Dictionary<string, object?> { ["responses"] = responses, ["duration_ms"] = watch.ElapsedMilliseconds, ["status_code"] = statusCode };
         foreach (var entry in await ProbeJuice(baseUrl, key, model, token)) envelope[entry.Key] = entry.Value;
-        envelope["instruction"] = await ProbeInstruction(baseUrl, key, model, token);
+        envelope["candy"] = await ProbeCandy(baseUrl, key, model, token);
         envelope["duration_ms"] = watch.ElapsedMilliseconds;
         try
         {
