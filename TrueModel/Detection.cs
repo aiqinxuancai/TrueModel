@@ -87,7 +87,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                                 control.Active.Add((run.Id, target.ModelId), cancellation);
                                 run.Status = "Running";
                                 // Each detection holds one global slot through its result commit.
-                                workers.Add(RunDetection(target, run.Id, bank.Json, settings.ChallengeCount, cancellation, stoppingToken));
+                                workers.Add(RunDetection(target, run.Id, bank.Json, settings.ChallengeCount, settings.CandyReasoningEffort, cancellation, stoppingToken));
                             }
                         }
                         await db.SaveChangesAsync(stoppingToken);
@@ -123,11 +123,11 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
         catch (Exception) { logger.LogWarning("Notification delivery could not be recorded for run {RunId}", run.Id); }
     }
 
-    private async Task RunDetection(Target target, int runId, string bank, int challengeCount, CancellationTokenSource cancellation, CancellationToken stoppingToken)
+    private async Task RunDetection(Target target, int runId, string bank, int challengeCount, string candyReasoningEffort, CancellationTokenSource cancellation, CancellationToken stoppingToken)
     {
         try
         {
-            var result = await Probe(target, runId, bank, challengeCount, cancellation.Token);
+            var result = await Probe(target, runId, bank, challengeCount, candyReasoningEffort, cancellation.Token);
             using var scope = scopes.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDb>();
             await control.Gate.WaitAsync(stoppingToken);
@@ -151,14 +151,14 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             finally { control.Gate.Release(); cancellation.Dispose(); }
         }
     }
-    private async Task<DetectionResult> Probe(Target target, int runId, string bank, int challengeCount, CancellationToken token)
+    private async Task<DetectionResult> Probe(Target target, int runId, string bank, int challengeCount, string candyReasoningEffort, CancellationToken token)
     {
         var result = new DetectionResult { RunId = runId, ModelId = target.ModelId, SiteName = target.SiteName, KeyName = target.KeyName, ModelName = target.ModelName };
         var watch = Stopwatch.StartNew();
         try
         {
             var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedKey);
-            var response = await client.Test(target.BaseUrl, key, target.ModelName, bank, challengeCount, token);
+            var response = await client.Test(target.BaseUrl, key, target.ModelName, bank, challengeCount, token, candyReasoningEffort);
             result.ResponsesJson = response.GetProperty("responses").GetRawText();
             result.JuiceValue = response.TryGetProperty("juice_value", out var juice) && juice.ValueKind == JsonValueKind.Number ? juice.GetInt32() : null;
             result.JuiceStatus = response.TryGetProperty("juice_status", out var juiceStatus) ? juiceStatus.GetString() : null;
@@ -170,6 +170,8 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 result.CandyPrompt = probe.CandyPrompt;
                 result.CandyResponse = probe.CandyResponse;
                 result.CandyError = probe.CandyError;
+                result.CandyReasoningEffort = probe.CandyReasoningEffort;
+                result.CandyReasoningTokens = probe.CandyReasoningTokens;
             }
             result.StatusCode = response.TryGetProperty("status_code", out var status) ? status.GetInt32() : 0;
             if (response.TryGetProperty("error", out var error))

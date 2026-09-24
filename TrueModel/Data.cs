@@ -64,6 +64,8 @@ public sealed class DetectionResult
     public string? CandyPrompt { get; set; }
     public string? CandyResponse { get; set; }
     public string? CandyError { get; set; }
+    public string? CandyReasoningEffort { get; set; }
+    public long? CandyReasoningTokens { get; set; }
 }
 public sealed class FingerprintBank
 {
@@ -82,6 +84,7 @@ public sealed class AppSettings
     public int MaxConcurrency { get; set; } = 2;
     public int TimeoutSeconds { get; set; } = 240;
     public int ChallengeCount { get; set; } = 3;
+    public string CandyReasoningEffort { get; set; } = "default";
     public DateTime? NextRunAt { get; set; }
 }
 public sealed class Administrator
@@ -116,6 +119,8 @@ public sealed class MonitoredModel
     public string? CandyPrompt { get; set; }
     public string? CandyResponse { get; set; }
     public string? CandyError { get; set; }
+    public string? CandyReasoningEffort { get; set; }
+    public long? CandyReasoningTokens { get; set; }
     public DateTime? JuiceCheckedAt { get; set; }
     public DateTime? CandyCheckedAt { get; set; }
     public int Id { get; set; }

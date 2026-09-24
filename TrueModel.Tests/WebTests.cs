@@ -40,6 +40,14 @@ public class WebTests
             Assert.Equal(count, settings.GetProperty("challengeCount").GetInt32());
         }
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 7, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240 })).StatusCode);
+        foreach (var effort in new[] { "default", "none", "minimal", "low", "medium", "high", "xhigh" })
+        {
+            Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, candyReasoningEffort = effort })).StatusCode);
+            var settings = await client.GetFromJsonAsync<JsonElement>("/api/settings");
+            Assert.Equal(effort, settings.GetProperty("candyReasoningEffort").GetString());
+        }
+        foreach (var effort in new string?[] { "invalid", "", null })
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, candyReasoningEffort = effort })).StatusCode);
         Assert.True(File.Exists(Path.Combine(directory, "truemodel.db")));
         var notificationInput = new { webhookEnabled = true, webhookUrl = "https://hook.test/secret", pushDeerEnabled = true, pushDeerEndpoint = "https://push.test/message/push", pushKey = "private-pushkey", onlyFailures = true };
         Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/notifications", notificationInput)).StatusCode);

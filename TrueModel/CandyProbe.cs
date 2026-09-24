@@ -4,6 +4,7 @@ namespace TrueModel;
 
 public static class CandyProbe
 {
+    public static bool ValidReasoningEffort(string? value) => value is "default" or "none" or "minimal" or "low" or "medium" or "high" or "xhigh";
     // Reference: haowang02/codex-candy-eval, codex_candy_eval.py @ 29127fa5a12f.
     public const string Prompt = """
         不使用任何外部工具回答以下问题：
@@ -18,4 +19,5 @@ public static class CandyProbe
     public static bool Passes(string response) => AnswerPattern.IsMatch(response);
 }
 
-public sealed record CandyProbeResult(string CandyStatus, string CandyPrompt, string? CandyResponse, string? CandyError);
+public sealed record CandyProbeResult(string CandyStatus, string CandyPrompt, string? CandyResponse, string? CandyError,
+    string CandyReasoningEffort, long? CandyReasoningTokens);

@@ -172,7 +172,19 @@
                   type="number"
                   value="240"
                   readonly /></label
-              ><button>保存设置</button>
+              ><label>糖果思考等级
+                <select name="candyReasoningEffort" aria-describedby="candyEffortHint">
+                  <option value="default">接口默认</option>
+                  <option value="none">none · 不思考</option>
+                  <option value="minimal">minimal · 最低</option>
+                  <option value="low">low · 低</option>
+                  <option value="medium">medium · 中</option>
+                  <option value="high">high · 高</option>
+                  <option value="xhigh">xhigh · 更高</option>
+                </select>
+              </label>
+              <p id="candyEffortHint" class="muted">仅用于糖果题。显式等级需要模型接口支持，不支持时显示错误；仅支持 Anthropic 协议的接口请选择“接口默认”。Reason Tok 为接口返回的推理 token 数，未返回时显示 —。</p>
+              <button>保存设置</button>
             </form>
             <p id="nextRun"></p>
           </section>

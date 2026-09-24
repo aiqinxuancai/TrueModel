@@ -53,7 +53,45 @@ public class CandyProbeTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.ProbeCandy("https://example.test", "secret", "any-model", cancellation.Token));
     }
 
-    private sealed class Handler(string answer, bool error = false) : HttpMessageHandler
+    [Theory]
+    [InlineData("default", null)]
+    [InlineData("none", 0L)]
+    [InlineData("high", 2048L)]
+    [InlineData("xhigh", 4294967296L)]
+    public async Task SendsEffortAndReadsReportedReasoningTokens(string effort, long? tokens)
+    {
+        var handler = new Handler("21", effort: effort, tokens: tokens);
+        var result = await new ModelTraceClient(new HttpClient(handler)).ProbeCandy("https://example.test", "secret", "model", CancellationToken.None, effort);
+        Assert.Equal("Success", result.CandyStatus);
+        Assert.Equal(effort, result.CandyReasoningEffort);
+        Assert.Equal(tokens, result.CandyReasoningTokens);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task UnsupportedEffortIsNotSilentlyDropped()
+    {
+        var handler = new Handler("unsupported reasoning_effort", true, "high");
+        var result = await new ModelTraceClient(new HttpClient(handler)).ProbeCandy("https://example.test", "secret", "model", CancellationToken.None, "high");
+        Assert.Equal("Failed", result.CandyStatus);
+        Assert.Equal("high", result.CandyReasoningEffort);
+        Assert.Null(result.CandyReasoningTokens);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"usage\":null}")]
+    [InlineData("{\"usage\":{\"completion_tokens\":123}}")]
+    [InlineData("{\"usage\":{\"completion_tokens_details\":{\"reasoning_tokens\":-1}}}")]
+    [InlineData("{\"usage\":{\"completion_tokens_details\":{\"reasoning_tokens\":\"123\"}}}")]
+    public void MissingOrInvalidReasoningUsageIsNotAnEstimate(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        Assert.Null(ModelTraceClient.ExtractReasoningTokens(doc.RootElement));
+    }
+
+    private sealed class Handler(string answer, bool error = false, string effort = "default", long? tokens = null) : HttpMessageHandler
     {
         public int Calls { get; private set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -63,9 +101,11 @@ public class CandyProbeTests
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
             Assert.Equal(CandyProbe.Prompt, body.GetProperty("messages")[0].GetProperty("content").GetString());
             Assert.False(body.TryGetProperty("tools", out _));
+            if (effort == "default") Assert.False(body.TryGetProperty("reasoning_effort", out _));
+            else Assert.Equal(effort, body.GetProperty("reasoning_effort").GetString());
             return error
                 ? new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = answer }) }
-                : new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = answer }, finish_reason = "stop" } } }) };
+                : new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = answer }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = tokens } } }) };
         }
     }
 }

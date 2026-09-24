@@ -77,7 +77,7 @@ public class DetectionQueueTests
         await Token();
         (await client.PostAsJsonAsync("/api/login", new { username = "admin", password = "test-password-123!" })).EnsureSuccessStatusCode();
         await Token();
-        (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240 })).EnsureSuccessStatusCode();
+        (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, candyReasoningEffort = "high" })).EnsureSuccessStatusCode();
         var site = await Create("/api/sites", new { name = "site", baseUrl = "https://mock.test" });
         var key = await Create($"/api/sites/{site}/keys", new { name = "first", value = "secret" });
         var first = await Create($"/api/keys/{key}/models", new { name = "first" });
@@ -127,6 +127,15 @@ public class DetectionQueueTests
         var db = scope.ServiceProvider.GetRequiredService<AppDb>();
         Assert.Equal(3, await db.Results.CountAsync());
         Assert.False(await db.Results.AnyAsync(r => r.RunId == cancelledRun));
+        var candyResult = await db.Results.SingleAsync(r => r.ModelId == third);
+        Assert.Equal("Success", candyResult.CandyStatus);
+        Assert.Equal("high", candyResult.CandyReasoningEffort);
+        Assert.Equal(512, candyResult.CandyReasoningTokens);
+        (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, candyReasoningEffort = "low" })).EnsureSuccessStatusCode();
+        var history = await client.GetFromJsonAsync<JsonElement>("/api/results");
+        var historicalCandy = history.EnumerateArray().Single(r => r.GetProperty("modelId").GetInt32() == third);
+        Assert.Equal("high", historicalCandy.GetProperty("candyReasoningEffort").GetString());
+        Assert.Equal(512, historicalCandy.GetProperty("candyReasoningTokens").GetInt64());
         Assert.Equal(batch ? 2 : 1, (await Run(secondRun)).GetProperty("completed").GetInt32());
     }
 
@@ -145,6 +154,12 @@ public class DetectionQueueTests
             started.GetOrAdd(model, _ => Signal()).TrySetResult();
             try { await releases.GetOrAdd(model, _ => Signal()).Task.WaitAsync(token); }
             catch (OperationCanceledException) { Cancelled.TrySetResult(); throw; }
+            if (body.GetProperty("messages")[0].GetProperty("content").GetString() == CandyProbe.Prompt)
+            {
+                Assert.Equal("high", body.GetProperty("reasoning_effort").GetString());
+                return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "21" }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = 512 } } }) };
+            }
+            Assert.False(body.TryGetProperty("reasoning_effort", out _));
             return new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = new { message = "fixture" } }) };
         }
     }

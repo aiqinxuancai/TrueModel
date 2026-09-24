@@ -16,17 +16,20 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
         var suffix = anthropic ? "/messages" : "/chat/completions";
         return normalized.EndsWith(suffix, StringComparison.Ordinal) ? normalized : normalized + (normalized.EndsWith("/v1", StringComparison.Ordinal) ? "" : "/v1") + suffix;
     }
-    public async Task<string> Completion(string url, string key, string model, string prompt, CancellationToken token, Action<int>? observeStatus = null)
+    public async Task<string> Completion(string url, string key, string model, string prompt, CancellationToken token, Action<int>? observeStatus = null,
+        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null)
     {
         var errors = new List<string>();
-        foreach (var anthropic in new[] { false, true })
+        // An explicit OpenAI effort cannot be silently discarded on protocol fallback.
+        foreach (var anthropic in reasoningEffort is null ? new[] { false, true } : new[] { false })
         {
-            try { return await Request(url, key, model, prompt, anthropic, token, observeStatus); }
+            try { return await Request(url, key, model, prompt, anthropic, token, observeStatus, reasoningEffort: reasoningEffort, observeReasoningTokens: observeReasoningTokens); }
             catch (UpstreamException e) { errors.Add($"{(anthropic ? "anthropic" : "openai")}: {e.Message}"); }
         }
         throw new UpstreamException("接口格式自动探测失败；" + string.Join('；', errors));
     }
-    private async Task<string> Request(string url, string key, string model, string prompt, bool anthropic, CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false)
+    private async Task<string> Request(string url, string key, string model, string prompt, bool anthropic, CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false,
+        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null)
     {
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -38,6 +41,7 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
             var agent = Environment.GetEnvironmentVariable("MODELTRACE_USER_AGENT") ?? Environment.GetEnvironmentVariable("GPT56_USER_AGENT");
             request.Headers.TryAddWithoutValidation("User-Agent", string.IsNullOrWhiteSpace(agent) ? DefaultUserAgent : agent.Trim());
             var body = new Dictionary<string, object> { ["model"] = model, ["messages"] = new[] { new { role = "user", content = prompt } } };
+            if (reasoningEffort is not null) body["reasoning_effort"] = reasoningEffort;
             if (anthropic) { body["max_tokens"] = 4096; request.Headers.Add("x-api-key", key); request.Headers.Add("anthropic-version", "2023-06-01"); }
             request.Content = JsonContent.Create(body);
             try
@@ -58,7 +62,9 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
                     if ((message.TryGetProperty("refusal", out var refusal) && refusal.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(refusal.GetString())) ||
                         (choice.TryGetProperty("finish_reason", out var finish) && finish.GetString() is "length" or "content_filter")) return "";
                 }
-                return ExtractContent(payload.RootElement, anthropic);
+                var content = ExtractContent(payload.RootElement, anthropic);
+                observeReasoningTokens?.Invoke(ExtractReasoningTokens(payload.RootElement));
+                return content;
             }
             catch (HttpRequestException e)
             {
@@ -71,6 +77,14 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
         throw new UpstreamException("无法连接接口");
     }
     private static Task Delay(int attempt, CancellationToken token) => Task.Delay(TimeSpan.FromSeconds(attempt + RandomNumberGenerator.GetInt32(500001) / 1_000_000d), token);
+    public static long? ExtractReasoningTokens(JsonElement payload)
+    {
+        if (payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object &&
+            usage.TryGetProperty("completion_tokens_details", out var details) && details.ValueKind == JsonValueKind.Object &&
+            details.TryGetProperty("reasoning_tokens", out var count) && count.ValueKind == JsonValueKind.Number &&
+            count.TryGetInt64(out var value) && value >= 0) return value;
+        return null;
+    }
     public static string ExtractContent(JsonElement payload, bool anthropic)
     {
         if (anthropic)
@@ -128,22 +142,25 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
         }
         return envelope;
     }
-    public async Task<CandyProbeResult> ProbeCandy(string baseUrl, string key, string model, CancellationToken token)
+    public async Task<CandyProbeResult> ProbeCandy(string baseUrl, string key, string model, CancellationToken token, string reasoningEffort = "default")
     {
+        if (!CandyProbe.ValidReasoningEffort(reasoningEffort)) throw new ArgumentException("不支持的糖果思考等级", nameof(reasoningEffort));
+        long? reasoningTokens = null;
         try
         {
-            var text = await Completion(baseUrl, key, model, CandyProbe.Prompt, token);
+            var text = await Completion(baseUrl, key, model, CandyProbe.Prompt, token,
+                reasoningEffort: reasoningEffort == "default" ? null : reasoningEffort, observeReasoningTokens: value => reasoningTokens = value);
             return new(CandyProbe.Passes(text) ? "Success" : "Unavailable", CandyProbe.Prompt,
-                string.IsNullOrEmpty(key) ? text : text.Replace(key, "[REDACTED]", StringComparison.Ordinal), null);
+                string.IsNullOrEmpty(key) ? text : text.Replace(key, "[REDACTED]", StringComparison.Ordinal), null, reasoningEffort, reasoningTokens);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception e) when (e is UpstreamException or HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException or FormatException or IndexOutOfRangeException)
         {
             return new("Failed", CandyProbe.Prompt, null,
-                string.IsNullOrEmpty(key) ? e.Message : e.Message.Replace(key, "[REDACTED]", StringComparison.Ordinal));
+                string.IsNullOrEmpty(key) ? e.Message : e.Message.Replace(key, "[REDACTED]", StringComparison.Ordinal), reasoningEffort, reasoningTokens);
         }
     }
-    public async Task<JsonElement> Test(string baseUrl, string key, string model, string bank, int challengeCount, CancellationToken token)
+    public async Task<JsonElement> Test(string baseUrl, string key, string model, string bank, int challengeCount, CancellationToken token, string candyReasoningEffort = "default")
     {
         var watch = Stopwatch.StartNew();
         var responses = new List<object>();
@@ -163,7 +180,7 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
         }
         var envelope = new Dictionary<string, object?> { ["responses"] = responses, ["duration_ms"] = watch.ElapsedMilliseconds, ["status_code"] = statusCode };
         foreach (var entry in await ProbeJuice(baseUrl, key, model, token)) envelope[entry.Key] = entry.Value;
-        envelope["candy"] = await ProbeCandy(baseUrl, key, model, token);
+        envelope["candy"] = await ProbeCandy(baseUrl, key, model, token, candyReasoningEffort);
         envelope["duration_ms"] = watch.ElapsedMilliseconds;
         try
         {

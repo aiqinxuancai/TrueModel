@@ -1255,3 +1255,5 @@ details pre {
 .probe-Unavailable { color: #b45309; }
 .probe-Failed { color: #dc2626; }
 .probe-pending { color: var(--muted); }
+
+.candy-metrics { display: block; white-space: nowrap; color: var(--muted); font-size: 11px; margin-top: 2px; }

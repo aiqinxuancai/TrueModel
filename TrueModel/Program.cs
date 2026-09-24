@@ -18,7 +18,8 @@ if (args.Contains("--probe-stdin"))
     var request = input.RootElement;
     var engine = new ModelTraceClient(new HttpClient { Timeout = Timeout.InfiniteTimeSpan });
     var bank = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Assets", "unified_bank.json"));
-    var result = await engine.Test(request.GetProperty("base_url").GetString()!, request.GetProperty("api_key").GetString()!, request.GetProperty("model").GetString()!, bank, request.TryGetProperty("challenge_count", out var count) ? count.GetInt32() : 3, CancellationToken.None);
+    var result = await engine.Test(request.GetProperty("base_url").GetString()!, request.GetProperty("api_key").GetString()!, request.GetProperty("model").GetString()!, bank, request.TryGetProperty("challenge_count", out var count) ? count.GetInt32() : 3, CancellationToken.None,
+        request.TryGetProperty("candy_reasoning_effort", out var effort) ? effort.GetString() ?? "default" : "default");
     Console.WriteLine(result.GetRawText());
     return;
 }
@@ -63,8 +64,14 @@ using (var scope = app.Services.CreateScope())
     {
         command.CommandText = "PRAGMA table_info(Settings)";
         var hasCount = false;
+        var hasCandyEffort = false;
         using (var reader = await command.ExecuteReaderAsync())
-            while (await reader.ReadAsync()) hasCount |= reader.GetString(1) == "ChallengeCount";
+            while (await reader.ReadAsync())
+            {
+                hasCount |= reader.GetString(1) == "ChallengeCount";
+                hasCandyEffort |= reader.GetString(1) == "CandyReasoningEffort";
+            }
+        if (!hasCandyEffort) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Settings ADD COLUMN CandyReasoningEffort TEXT NOT NULL DEFAULT 'default'");
         if (!hasCount) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Settings ADD COLUMN ChallengeCount INTEGER NOT NULL DEFAULT 3");
     }
     using (var command = db.Database.GetDbConnection().CreateCommand())
@@ -80,6 +87,8 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("CandyPrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyPrompt TEXT NULL");
         if (!columns.Contains("CandyResponse")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyResponse TEXT NULL");
         if (!columns.Contains("CandyError")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyError TEXT NULL");
+        if (!columns.Contains("CandyReasoningEffort")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyReasoningEffort TEXT NULL");
+        if (!columns.Contains("CandyReasoningTokens")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyReasoningTokens INTEGER NULL");
     }
     await db.Database.CloseConnectionAsync();
     await db.Database.OpenConnectionAsync();
@@ -96,6 +105,8 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("CandyPrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyPrompt TEXT NULL");
         if (!columns.Contains("CandyResponse")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyResponse TEXT NULL");
         if (!columns.Contains("CandyError")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyError TEXT NULL");
+        if (!columns.Contains("CandyReasoningEffort")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyReasoningEffort TEXT NULL");
+        if (!columns.Contains("CandyReasoningTokens")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyReasoningTokens INTEGER NULL");
         if (!columns.Contains("CandyCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyCheckedAt TEXT NULL");
         if (!columns.Contains("JuiceCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceCheckedAt TEXT NULL");
     }
@@ -215,7 +226,7 @@ api.MapPost("/notifications/test", async (AppDb db, NotificationService sender, 
 api.MapGet("/sites", async (AppDb db) => await db.Sites.AsNoTracking().Select(s => new
 {
     s.Id, s.Name, s.BaseUrl, s.Enabled,
-    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyCheckedAt }) })
+    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyCheckedAt }) })
 }).ToListAsync());
 api.MapPost("/sites", async (SiteInput input, AppDb db) =>
 {
@@ -297,15 +308,18 @@ api.MapPost("/models/{id:int}/candy", async (int id, AppDb db, ModelTraceClient 
     string key;
     try { key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue); }
     catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
-    var result = await client.ProbeCandy(target.BaseUrl, key, target.Model.Name, token);
+    var effort = (await db.Settings.AsNoTracking().SingleAsync(token)).CandyReasoningEffort;
+    var result = await client.ProbeCandy(target.BaseUrl, key, target.Model.Name, token, effort);
     var checkedAt = DateTime.UtcNow;
     var updated = await db.Models.Where(m => m.Id == id).ExecuteUpdateAsync(s => s
         .SetProperty(m => m.CandyStatus, result.CandyStatus)
         .SetProperty(m => m.CandyPrompt, result.CandyPrompt)
         .SetProperty(m => m.CandyResponse, result.CandyResponse)
         .SetProperty(m => m.CandyError, result.CandyError)
+        .SetProperty(m => m.CandyReasoningEffort, result.CandyReasoningEffort)
+        .SetProperty(m => m.CandyReasoningTokens, result.CandyReasoningTokens)
         .SetProperty(m => m.CandyCheckedAt, checkedAt), token);
-    return updated == 0 ? Results.NotFound() : Results.Ok(new { result.CandyStatus, result.CandyPrompt, result.CandyResponse, result.CandyError, candyCheckedAt = checkedAt });
+    return updated == 0 ? Results.NotFound() : Results.Ok(new { result.CandyStatus, result.CandyPrompt, result.CandyResponse, result.CandyError, result.CandyReasoningEffort, result.CandyReasoningTokens, candyCheckedAt = checkedAt });
 });
 api.MapPost("/detect", async (DetectionScope input, AppDb db, DetectionControl control) =>
 {
@@ -494,7 +508,9 @@ api.MapGet("/settings", async (AppDb db) => await db.Settings.SingleAsync());
 api.MapPut("/settings", async (AppSettings input, AppDb db) =>
 {
     if (input.IntervalMinutes < 0 || input.IntervalMinutes > 525600 || input.MaxConcurrency is < 1 or > 16 || input.TimeoutSeconds is < 5 or > 600 || input.ChallengeCount is < 3 or > 6) return Results.BadRequest();
+    if (!CandyProbe.ValidReasoningEffort(input.CandyReasoningEffort)) return Results.BadRequest(new { error = "不支持的糖果思考等级" });
     var settings = await db.Settings.SingleAsync();
+    settings.CandyReasoningEffort = input.CandyReasoningEffort;
     settings.IntervalMinutes = input.IntervalMinutes; settings.MaxConcurrency = input.MaxConcurrency; settings.TimeoutSeconds = 240; settings.ChallengeCount = input.ChallengeCount;
     settings.NextRunAt = input.IntervalMinutes > 0 ? DateTime.UtcNow.AddMinutes(input.IntervalMinutes) : null;
     await db.SaveChangesAsync(); return Results.NoContent();
