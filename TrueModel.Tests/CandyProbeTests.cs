@@ -84,11 +84,42 @@ public class CandyProbeTests
     [InlineData("{\"usage\":null}")]
     [InlineData("{\"usage\":{\"completion_tokens\":123}}")]
     [InlineData("{\"usage\":{\"completion_tokens_details\":{\"reasoning_tokens\":-1}}}")]
-    [InlineData("{\"usage\":{\"completion_tokens_details\":{\"reasoning_tokens\":\"123\"}}}")]
+    [InlineData("{\"usage\":{\"completion_tokens_details\":{\"reasoning_tokens\":\"invalid\"}}}")]
+    [InlineData("{\"reasoning_tokens\":1.5}")]
+    [InlineData("{\"reasoning_tokens\":\"-1\"}")]
+    [InlineData("{\"reasoning_tokens\":\"9223372036854775808\"}")]
+    [InlineData("{\"choices\":[{\"message\":{\"content\":\"reasoning_tokens: 123\"}}]}")]
     public void MissingOrInvalidReasoningUsageIsNotAnEstimate(string json)
     {
         using var doc = JsonDocument.Parse(json);
         Assert.Null(ModelTraceClient.ExtractReasoningTokens(doc.RootElement));
+    }
+
+    [Theory]
+    [InlineData("{\"usage\":{\"completion_tokens_details\":{\"reasoning_tokens\":\"123\"}}}", 123L)]
+    [InlineData("{\"usage\":{\"output_tokens_details\":{\"reasoning_tokens\":456}}}", 456L)]
+    [InlineData("{\"usage\":{\"reasoning_tokens\":789}}", 789L)]
+    [InlineData("{\"usage\":{\"reasoning_output_tokens\":512}}", 512L)]
+    [InlineData("{\"reasoning_tokens\":\"42\"}", 42L)]
+    [InlineData("{\"reasoning_output_tokens\":1024}", 1024L)]
+    [InlineData("{\"usage\":{\"completion_tokens_details\":{\"reasoning_tokens\":0},\"reasoning_tokens\":99}}", 0L)]
+    [InlineData("{\"usage\":{\"completion_tokens_details\":null,\"reasoning_tokens\":99}}", 99L)]
+    public async Task CompatibleUsageSurvivesTheProbePipeline(string usageJson, long expected)
+    {
+        using var usage = JsonDocument.Parse(usageJson);
+        Assert.Equal(expected, ModelTraceClient.ExtractReasoningTokens(usage.RootElement));
+        var payload = System.Text.Json.Nodes.JsonNode.Parse(usageJson)!;
+        payload["choices"] = System.Text.Json.Nodes.JsonNode.Parse("""[{"message":{"content":"21"},"finish_reason":"stop"}]""");
+        var client = new ModelTraceClient(new HttpClient(new PayloadHandler(payload.ToJsonString())));
+        var result = await client.ProbeCandy("https://example.test", "secret", "model", CancellationToken.None, "high");
+        Assert.Equal("Success", result.CandyStatus);
+        Assert.Equal(expected, result.CandyReasoningTokens);
+    }
+
+    private sealed class PayloadHandler(string json) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") });
     }
 
     private sealed class Handler(string answer, bool error = false, string effort = "default", long? tokens = null) : HttpMessageHandler

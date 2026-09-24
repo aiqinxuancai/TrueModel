@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -79,10 +80,30 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
     private static Task Delay(int attempt, CancellationToken token) => Task.Delay(TimeSpan.FromSeconds(attempt + RandomNumberGenerator.GetInt32(500001) / 1_000_000d), token);
     public static long? ExtractReasoningTokens(JsonElement payload)
     {
-        if (payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object &&
-            usage.TryGetProperty("completion_tokens_details", out var details) && details.ValueKind == JsonValueKind.Object &&
-            details.TryGetProperty("reasoning_tokens", out var count) && count.ValueKind == JsonValueKind.Number &&
-            count.TryGetInt64(out var value) && value >= 0) return value;
+        // Prefer the standard Chat Completions field, including an explicit zero.
+        // Only read named usage fields; never search message text or infer from output tokens.
+        string[][] paths =
+        [
+            ["usage", "completion_tokens_details", "reasoning_tokens"],
+            ["usage", "output_tokens_details", "reasoning_tokens"],
+            ["usage", "reasoning_tokens"],
+            ["usage", "reasoning_output_tokens"],
+            ["reasoning_tokens"],
+            ["reasoning_output_tokens"]
+        ];
+        foreach (var path in paths)
+        {
+            var count = payload;
+            foreach (var name in path)
+            {
+                if (count.ValueKind != JsonValueKind.Object || !count.TryGetProperty(name, out var next))
+                { count = default; break; }
+                count = next;
+            }
+            long value;
+            if (count.ValueKind == JsonValueKind.Number && count.TryGetInt64(out value) && value >= 0) return value;
+            if (count.ValueKind == JsonValueKind.String && long.TryParse(count.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out value) && value >= 0) return value;
+        }
         return null;
     }
     public static string ExtractContent(JsonElement payload, bool anthropic)

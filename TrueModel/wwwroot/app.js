@@ -24,7 +24,7 @@ function probeBadge(status) {
     return `<span class="probe-${esc(status || 'pending')}">${probeLabel(status)}</span>`;
 }
 function candyTooltip(r) {
-    return `糖果：${probeLabel(r?.candyStatus)}\n请求思考等级：${candyEffortLabel(r)}\nReason Tok：${r?.candyReasoningTokens ?? '—'}（接口返回的推理 token 数）\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${r?.candyPrompt || '尚未检测'}\n回复：${r?.candyResponse ?? '—'}${r?.candyError ? '\n错误：' + r.candyError : ''}`;
+    return `糖果：${probeLabel(r?.candyStatus)}\n请求思考等级：${candyEffortLabel(r)}\nReason Tok：${r?.candyReasoningTokens ?? '—'}${r?.candyReasoningTokens == null ? '（未获取：接口未返回可识别的推理用量，或旧记录未保存）' : '（接口返回的推理 token 数）'}\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${r?.candyPrompt || '尚未检测'}\n回复：${r?.candyResponse ?? '—'}${r?.candyError ? '\n错误：' + r.candyError : ''}`;
 }
 function candyEffortLabel(r) {
     return r?.candyReasoningEffort === 'default' ? '接口默认' : r?.candyReasoningEffort || '—';
