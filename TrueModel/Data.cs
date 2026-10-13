@@ -129,6 +129,7 @@ public sealed class MonitoredModel
     public int SiteKeyId { get; set; }
     public string Name { get; set; } = "";
     public bool Enabled { get; set; } = true;
+    public bool IsFavorite { get; set; }
 }
 public static class Passwords
 {

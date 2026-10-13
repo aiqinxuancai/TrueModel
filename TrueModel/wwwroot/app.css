@@ -1257,3 +1257,34 @@ details pre {
 .probe-pending { color: var(--muted); }
 
 .candy-metrics { display: block; white-space: nowrap; color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+.model-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.model-actions button + button { margin-left: 0; }
+.favorite-button svg { width: 12px; height: 12px; }
+.favorite-button.is-favorite { color: #a56808; border-color: #eed397; background: #fffbeb; }
+.favorite-button.is-favorite svg { fill: #f5c85b; }
+#batchModelEditor { width: min(780px, calc(100vw - 32px)); }
+.batch-model-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.batch-model-filters label { margin-bottom: 14px; }
+#batchModelSearch { margin: 0; }
+.batch-model-replacement { display: grid; grid-template-columns: 160px repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.batch-model-replacement label { margin: 0; }
+.batch-model-hint { font-size: 12px; line-height: 1.7; margin: 12px 0; }
+#batchModelOptions { max-height: min(340px, 36dvh); overflow-y: auto; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.batch-model-option { padding: 10px 8px; align-items: flex-start; }
+.batch-model-option input { margin-top: 5px; }
+.batch-model-info { display: grid; gap: 3px; }
+.batch-model-info small { color: var(--muted); margin: 0; white-space: normal; }
+.batch-model-info code { overflow-wrap: anywhere; }
+.batch-model-preview { color: #15803d; font-size: 12px; }
+.batch-model-preview.invalid, #batchModelMessage { color: #b42332; }
+#batchModelMessage { font-size: 12px; overflow-wrap: anywhere; margin: 12px 0 16px; }
+#batchModelMessage:empty { margin: 0 0 18px; }
+button.danger { color: #b42332; border-color: #efbac0; background: #fff0f1; }
+button.danger:hover { background: #ffe2e5; }
+@media (max-width: 600px) {
+  .batch-model-filters { grid-template-columns: 1fr; gap: 0; }
+  .batch-model-replacement { grid-template-columns: 1fr; gap: 10px; }
+  #batchModelEditor .picker-footer { flex-wrap: wrap; }
+  #batchModelEditor .picker-footer .actions { margin-left: auto; }
+}

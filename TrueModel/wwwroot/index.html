@@ -75,6 +75,28 @@
               </table>
             </div>
             <div class="heading">
+              <h2>收藏模型<span id="favoriteModelCount" class="count">0</span></h2>
+            </div>
+            <div class="table-wrap" aria-label="收藏模型状态表">
+              <table>
+                <thead>
+                  <tr>
+                    <th>站点</th>
+                    <th>Key</th>
+                    <th>模型</th>
+                    <th>状态</th>
+                    <th>耗时</th>
+                    <th>归因模型</th>
+                    <th title="模型自报值，仅供参考">Juice</th>
+                    <th>糖果</th>
+                    <th>最近检测</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="favoriteModelRows"></tbody>
+              </table>
+            </div>
+            <div class="heading">
               <h2>模型状态</h2>
               <input
                 id="search"
@@ -107,7 +129,10 @@
           <section id="configuration" class="view" hidden>
             <div class="heading">
               <h1>站点配置</h1>
-              <button id="addSite">添加站点</button>
+              <div class="actions">
+                <button id="manageModels" data-manage-models><i data-lucide="list-checks"></i>批量管理模型</button>
+                <button id="addSite">添加站点</button>
+              </div>
             </div>
             <div id="siteRows"></div>
           </section>
@@ -351,11 +376,44 @@
         </button>
       </div>
     </dialog>
+    <dialog id="batchModelEditor" aria-labelledby="batchModelTitle">
+      <div class="heading">
+        <h2 id="batchModelTitle">批量管理模型 ID</h2>
+        <button id="closeBatchModelEditor" class="icon-button" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button>
+      </div>
+      <div class="picker-body">
+        <div class="batch-model-filters">
+          <label>站点<select id="batchModelSite"></select></label>
+          <label>Key<select id="batchModelKey"></select></label>
+        </div>
+        <input id="batchModelSearch" type="search" placeholder="搜索模型 ID" aria-label="搜索批量管理的模型" />
+        <div class="batch-model-replacement">
+          <label>匹配方式<select id="batchModelMatch"><option value="partial">替换部分文本</option><option value="whole">精确匹配模型 ID</option></select></label>
+          <label>查找内容<input id="batchModelFind" autocomplete="off" placeholder="如：旧前缀或模型 ID" /></label>
+          <label>替换为<input id="batchModelReplacement" autocomplete="off" placeholder="留空可移除匹配文本" /></label>
+        </div>
+        <p class="muted batch-model-hint">区分大小写；部分文本模式会替换所有匹配处。仅处理勾选项，每次最多 500 个；下方预览替换结果。</p>
+        <div class="picker-selection">
+          <label><input id="selectBatchModels" type="checkbox" />全选当前结果</label>
+          <span id="batchModelVisibleCount" class="muted"></span>
+        </div>
+        <div id="batchModelOptions"></div>
+        <p id="batchModelMessage" role="status" aria-live="polite"></p>
+      </div>
+      <div class="picker-footer">
+        <span id="batchModelSelectedCount">已选 0 个</span>
+        <div class="actions">
+          <button id="deleteBatchModels" class="danger" disabled><i data-lucide="trash-2"></i>删除所选</button>
+          <button id="replaceBatchModels" class="primary" disabled><i data-lucide="replace"></i>替换所选 ID</button>
+        </div>
+      </div>
+    </dialog>
     <script src="/vendor/lucide.min.js"></script>
     <script src="/app.js"></script>
     <script src="/notifications.js"></script>
     <script src="/ui.js"></script>
     <script src="/models.js"></script>
+    <script src="/batch-models.js"></script>
     <script src="/fingerprints.js"></script>
   </body>
 </html>

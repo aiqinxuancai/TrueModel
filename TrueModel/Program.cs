@@ -99,6 +99,7 @@ using (var scope = app.Services.CreateScope())
         var columns = new HashSet<string>();
         using (var reader = await command.ExecuteReaderAsync())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
+        if (!columns.Contains("IsFavorite")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN IsFavorite INTEGER NOT NULL DEFAULT 0");
         if (!columns.Contains("JuiceValue")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceValue INTEGER NULL");
         if (!columns.Contains("JuiceStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceStatus TEXT NULL");
         if (!columns.Contains("JuicePrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuicePrompt TEXT NULL");
@@ -229,7 +230,7 @@ api.MapPost("/notifications/test", async (AppDb db, NotificationService sender, 
 api.MapGet("/sites", async (AppDb db) => await db.Sites.AsNoTracking().Select(s => new
 {
     s.Id, s.Name, s.BaseUrl, s.Enabled,
-    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyCheckedAt, m.CandyRefreshStatus, m.CandyRequestedEffort }) })
+    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.IsFavorite, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyCheckedAt, m.CandyRefreshStatus, m.CandyRequestedEffort }) })
 }).ToListAsync());
 api.MapPost("/sites", async (SiteInput input, AppDb db) =>
 {
@@ -282,6 +283,7 @@ api.MapPost("/keys/{id:int}/models/batch", async (int id, ModelBatchInput input,
     return Results.Ok(new { added = additions.Length, skipped = names.Length - additions.Length });
 });
 api.MapDelete("/models/{id:int}", async (int id, AppDb db, DetectionControl control) => { await control.Delete(db, modelId: id); return Results.NoContent(); });
+api.MapModelManagement();
 api.MapGet("/juice-methods", () => JuiceProbe.Methods);
 api.MapPost("/models/{id:int}/juice", async (int id, string? methodId, AppDb db, ModelTraceClient client, IDataProtectionProvider protection, CancellationToken token) =>
 {
@@ -299,7 +301,7 @@ api.MapPost("/models/{id:int}/juice", async (int id, string? methodId, AppDb db,
     var status = result.GetValueOrDefault("juice_status") as string;
     var prompt = result.GetValueOrDefault("juice_prompt") as string;
     var checkedAt = DateTime.UtcNow;
-    var updated = await db.Models.Where(m => m.Id == id).ExecuteUpdateAsync(s => s
+    var updated = await db.Models.Where(m => m.Id == id && m.Name == target.Model.Name).ExecuteUpdateAsync(s => s
         .SetProperty(m => m.JuiceValue, value).SetProperty(m => m.JuicePrompt, prompt).SetProperty(m => m.JuiceStatus, status).SetProperty(m => m.JuiceCheckedAt, checkedAt), token);
     return updated == 0 ? Results.NotFound() : Results.Ok(new { juiceValue = value, juiceStatus = status, juicePrompt = prompt, juiceCheckedAt = checkedAt });
 });
@@ -364,7 +366,7 @@ api.MapGet("/results", async (int? runId, int? modelId, bool? perModel, AppDb db
 {
     var query = db.Results.AsNoTracking().Where(r => (runId == null || r.RunId == runId) && (modelId == null || r.ModelId == modelId));
     if (perModel == true)
-        return await query.Where(r => db.Models.Any(m => m.Id == r.ModelId) && db.Results.Count(newer => newer.ModelId == r.ModelId && newer.Id > r.Id) < 10).OrderByDescending(r => r.Id).ToArrayAsync();
+        return await query.Where(r => db.Models.Any(m => m.Id == r.ModelId && m.Name == r.ModelName) && db.Results.Count(newer => newer.ModelId == r.ModelId && newer.ModelName == r.ModelName && newer.Id > r.Id) < 10).OrderByDescending(r => r.Id).ToArrayAsync();
     return await query.OrderByDescending(r => r.Id).Take(200).ToArrayAsync();
 });
 api.MapGet("/banks", async (AppDb db) => await db.Banks.Select(b => new { b.Id, b.Name, b.Sha256, b.ImportedAt, b.Active }).ToArrayAsync());

@@ -9,14 +9,17 @@ public sealed class DetectionControl
     public SemaphoreSlim Gate { get; } = new(1, 1);
     public Dictionary<(int RunId, int ModelId), CancellationTokenSource> Active { get; } = [];
 
-    public async Task Delete(AppDb db, int? siteId = null, int? keyId = null, int? modelId = null)
+    public async Task<int> Delete(AppDb db, int? siteId = null, int? keyId = null, int? modelId = null, int[]? selectedIds = null)
     {
+        if (siteId == null && keyId == null && modelId == null && selectedIds == null)
+            throw new ArgumentException("A deletion scope is required.");
         await Gate.WaitAsync();
         try
         {
             await using var transaction = await db.Database.BeginTransactionAsync();
             var modelIds = await (from model in db.Models join key in db.Keys on model.SiteKeyId equals key.Id
                 where (siteId == null || key.SiteId == siteId) && (keyId == null || key.Id == keyId) && (modelId == null || model.Id == modelId)
+                    && (selectedIds == null || selectedIds.Contains(model.Id))
                 select model.Id).ToArrayAsync();
             var removed = modelIds.ToHashSet();
             var runs = await db.Runs.Where(r => r.Status == "Queued" || r.Status == "Running").ToArrayAsync();
@@ -39,10 +42,11 @@ public sealed class DetectionControl
             await db.SaveChangesAsync();
             if (siteId != null) await db.Sites.Where(s => s.Id == siteId).ExecuteDeleteAsync();
             else if (keyId != null) await db.Keys.Where(k => k.Id == keyId).ExecuteDeleteAsync();
-            else await db.Models.Where(m => m.Id == modelId).ExecuteDeleteAsync();
+            else await db.Models.Where(m => modelIds.Contains(m.Id)).ExecuteDeleteAsync();
             await transaction.CommitAsync();
             foreach (var entry in Active.Where(entry => removed.Contains(entry.Key.ModelId)))
                 await entry.Value.CancelAsync();
+            return modelIds.Length;
         }
         finally { Gate.Release(); }
     }

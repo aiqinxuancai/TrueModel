@@ -191,6 +191,7 @@ function configuredKeyGroup(key) {
       <span class="key-name"><span class="config-level key-level">${icon("key-round")}Key</span><b>${esc(key.name)}</b><code>${esc(key.mask)}</code><span class="key-count">${key.models.length} 个模型</span></span>
       <span class="actions key-actions">
         <button data-model="${key.id}">${icon("plus")}添加模型</button>
+        <button data-manage-models data-manage-key="${key.id}" ${key.models.length ? "" : "disabled"}>${icon("list-checks")}批量管理</button>
         <button data-detect-key="${key.id}" ${key.models.length ? "" : "disabled"}>${icon("play")}检测 Key</button>
         <button class="icon-button" data-delete="keys/${key.id}" aria-label="删除 Key ${esc(key.name)}" title="删除 Key">${icon("trash-2")}</button>
       </span>
@@ -209,6 +210,7 @@ function configuredSiteCard(site) {
       </div>
       <div class="actions">
         <button data-key="${site.id}">${icon("plus")}添加 Key</button>
+        <button data-manage-models data-manage-site="${site.id}" ${modelCount ? "" : "disabled"}>${icon("list-checks")}批量管理</button>
         <button data-detect-site="${site.id}" ${modelCount ? "" : "disabled"}>${icon("play")}检测站点</button>
         <button class="icon-button" data-delete="sites/${site.id}" aria-label="删除站点 ${esc(site.name)}" title="删除站点">${icon("trash-2")}</button>
       </div>
