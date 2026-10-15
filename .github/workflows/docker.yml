@@ -6,18 +6,29 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/*.csproj'
       - run: dotnet test TrueModel.slnx -c Release
   desktop:
     needs: test
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -32,19 +43,29 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - run: dotnet publish TrueModel/TrueModel.csproj -c Release -r ${{ matrix.rid }} --self-contained true -o artifacts/native-app
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+      - name: Publish self-contained single executable
+        run: dotnet publish TrueModel/TrueModel.csproj -c Release -r ${{ matrix.rid }} -p:PublishProfile=Desktop -o artifacts/single-file-app
       - shell: pwsh
         run: ./scripts/package.ps1 -Rid ${{ matrix.rid }}
-      - shell: pwsh
-        run: ./scripts/smoke-release.ps1
+      - name: Test packaged executable in isolation
+        shell: pwsh
+        run: ./scripts/smoke-release.ps1 -Rid ${{ matrix.rid }}
       - uses: actions/upload-artifact@v4
         with:
           name: TrueModel-${{ matrix.rid }}
-          path: artifacts/TrueModel-*.zip
+          path: |
+            artifacts/TrueModel-*.zip
+            artifacts/TrueModel-*.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
   container:
     if: startsWith(github.ref, 'refs/tags/')
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -69,10 +90,13 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
   release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: [desktop, container]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -83,5 +107,8 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/TrueModel-*.zip
+          files: |
+            artifacts/TrueModel-*.zip
+            artifacts/TrueModel-*.zip.sha256
+          fail_on_unmatched_files: true
           generate_release_notes: true

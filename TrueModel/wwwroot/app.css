@@ -195,10 +195,33 @@ header > span {
   font-size: 12px;
 }
 header #logout {
-  margin-left: auto;
   background: transparent;
   border-color: transparent;
   font-size: 12px;
+  white-space: nowrap;
+}
+header .github-link {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 7px 10px;
+  color: #454d59;
+  border-radius: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+header .github-link:hover {
+  color: var(--primary);
+  background: #f1f4f8;
+}
+header .github-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+header #logout:not([hidden]) {
+  margin-left: auto;
+}
+header #logout:not([hidden]) + .github-link {
+  margin-left: 0;
 }
 main {
   padding: 30px 34px 44px;
@@ -1006,6 +1029,10 @@ details pre {
     display: none;
   }
   header #logout {
+    padding: 6px;
+    font-size: 11px;
+  }
+  header .github-link {
     padding: 6px;
     font-size: 11px;
   }

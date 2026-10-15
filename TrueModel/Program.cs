@@ -23,7 +23,8 @@ if (args.Contains("--probe-stdin"))
     Console.WriteLine(result.GetRawText());
     return;
 }
-var desktop = builder.Configuration.GetValue<bool>("Desktop:Enabled");
+AppContext.TryGetSwitch("TrueModel.Desktop", out var desktopDefault);
+var desktop = builder.Configuration.GetValue("Desktop:Enabled", desktopDefault);
 if (desktop) builder.WebHost.UseUrls("http://127.0.0.1:0");
 var data = Path.GetFullPath(builder.Configuration["DataDirectory"] ?? (desktop ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TrueModel") : "data"));
 Directory.CreateDirectory(data);

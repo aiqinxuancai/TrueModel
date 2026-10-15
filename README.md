@@ -32,7 +32,7 @@
 - **糖果后台刷新**：单个/全部刷新先写入 SQLite 队列，由后台执行，刷新或关闭页面不会取消任务。页面恢复后显示排队/运行状态，同一模型正在排队或运行时拒绝重复提交；全部刷新自动跳过这些模型。按并发模型数限制糖果刷新并发。程序重启后，未开始的任务继续排队，已运行但未完成的任务显示中断，可手动重新开始。
 - **糖果思考等级与用量**：在“检测设置”选择接口默认（初始值）、`none`、`minimal`、`low`、`medium`、`high` 或 `xhigh`，仅作用于糖果请求。显式等级通过 OpenAI Chat Completions 的 `reasoning_effort` 发送，需接口和模型支持；失败时不会去掉等级或切换到不支持该参数的协议。仅支持 Anthropic 协议时请选择接口默认。自动检测和单独刷新均保存当次请求等级及 `usage.completion_tokens_details.reasoning_tokens`，模型表、浮层和详情显示 `Reason Tok`；未返回用量或旧记录显示 `—`，返回 `0` 则显示 `0`，不以总输出 token 估算。修改设置不改变历史记录，记录的等级是请求值，并非服务端执行等级的证明。字段参考 [OpenAI 官方文档](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)。
 - **结果通知**：Webhook、PushDeer，支持仅失败通知、测试发送和发送记录。
-- **本地运行**：Windows、macOS 自包含版本，启动后自动打开浏览器，SQLite 持久化。
+- **本地运行**：Windows、macOS 单文件自包含版本，启动后自动打开浏览器，SQLite 持久化。
 - **容器部署**：Docker Compose、GHCR 镜像，推送版本 tag 自动构建 Release。
 
 > 归因概率是当前指纹库内的候选比较，不能独立证明模型真实身份。超过 3 份有效回答时，沿用 ModelTrace 的 3 查询校准参数。
@@ -49,7 +49,7 @@
 | macOS Intel | `TrueModel-osx-x64.zip` | 双击 `Start TrueModel.command` |
 | macOS Apple Silicon | `TrueModel-osx-arm64.zip` | 双击 `Start TrueModel.command` |
 
-无需安装 .NET 或 Python。首次启动在网页创建管理员账号；服务仅监听本机，关闭程序即停止服务。macOS 包尚未签名、公证，首次运行可能需要在系统安全设置中允许。
+程序为单个自包含可执行文件，内含 .NET 运行时、网页、默认指纹库和 SQLite 原生库，无需安装 .NET 或 Python。首次运行会将内置文件释放到系统缓存目录。压缩包额外附带说明、许可和 macOS 启动脚本；每个压缩包提供 `.sha256` 校验文件。首次启动在网页创建管理员账号；服务仅监听本机，关闭程序即停止服务。macOS 包尚未签名、公证，首次运行可能需要在系统安全设置中允许。
 
 数据保存在用户本地应用数据目录的 `TrueModel` 文件夹（Windows 通常为 `%LOCALAPPDATA%/TrueModel`），启动窗口显示具体路径。升级仅替换程序目录；备份时同时保留数据库和 `keys` 目录。
 
@@ -149,10 +149,20 @@ Webhook 示例：
 
 检测使用 ModelTrace 的请求格式、有效阈值和重试规则，单次请求超时 240 秒。Web 设置保存每次题目数、调度间隔和并发数。
 
-推送 `v*` tag 后，GitHub Actions 运行测试、生成三个桌面发行包并创建 GitHub Release，同时发布 `ghcr.io/<owner>/<repo>:<version>` 和 `latest` 镜像。
+提交 PR、手动触发或推送 `v*` tag 时，GitHub Actions 运行测试，并分别构建、打包和验证 Windows x64、macOS Intel、macOS Apple Silicon 三个单文件桌面版本。版本 tag 额外创建 GitHub Release，上传压缩包和 SHA-256 校验文件，同时发布 `ghcr.io/<owner>/<repo>:<version>` 和 `latest` 镜像。NuGet 依赖和 Docker 构建使用缓存。
 
 ```bash
 dotnet test TrueModel.slnx -c Release
 ```
 
-测试包含真实响应的 ModelTrace 归因对照、3/6 题配置、协议回退、管理员鉴权、配置持久化和通知结果；桌面构建额外验证首次启动与重启后的数据保留。
+本地验证 Windows 单文件发行包（PowerShell 7）：
+
+```powershell
+dotnet publish TrueModel/TrueModel.csproj -c Release -r win-x64 -p:PublishProfile=Desktop -o artifacts/single-file-app
+./scripts/package.ps1 -Rid win-x64
+./scripts/smoke-release.ps1 -Rid win-x64
+```
+
+macOS 在对应架构的机器上将 RID 替换为 `osx-x64` 或 `osx-arm64`。`Desktop` 发布配置启用自包含单文件和默认桌面模式；环境变量 `Desktop__Enabled` 仍可覆盖桌面模式。
+
+测试包含真实响应的 ModelTrace 归因对照、3/6 题配置、协议回退、管理员鉴权、配置持久化和通知结果；桌面构建额外从压缩包提取单个程序到空目录运行，验证校验和、内置网页和指纹库，以及重启后的管理员、设置、站点、Key 和模型持久化。
