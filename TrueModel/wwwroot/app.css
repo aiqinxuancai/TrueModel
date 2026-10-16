@@ -1287,8 +1287,10 @@ details pre {
 
 .model-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .model-actions button + button { margin-left: 0; }
+.model-actions .favorite-button { width: 28px; height: 28px; min-height: 28px; margin-left: auto; padding: 6px; gap: 0; border-color: transparent; background: transparent; color: var(--muted); }
+.model-actions .favorite-button:hover { background: #f1f4f8; }
 .favorite-button svg { width: 12px; height: 12px; }
-.favorite-button.is-favorite { color: #a56808; border-color: #eed397; background: #fffbeb; }
+.model-actions .favorite-button.is-favorite { color: #a56808; }
 .favorite-button.is-favorite svg { fill: #f5c85b; }
 #batchModelEditor { width: min(780px, calc(100vw - 32px)); }
 .batch-model-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
