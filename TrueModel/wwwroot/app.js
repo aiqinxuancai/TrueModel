@@ -209,7 +209,7 @@ function attributionLabel(winner, modelName) {
     if (!winner) return '—';
     const normalize = value => String(value || '').trim().toLowerCase();
     const mismatch = normalize(winner.Model || winner.DisplayName) !== normalize(modelName);
-    const label = esc(winner.DisplayName || winner.Model || '—') + ` · ${detectionMetric(winner)} ${(detectionScore(winner) * 100).toFixed(1)}%`;
+    const label = esc(winner.DisplayName || winner.Model || '—') + ` · ${(detectionScore(winner) * 100).toFixed(1)}%`;
     return mismatch ? `<span class="attribution-mismatch" title="归因候选与配置模型不一致；匹配度或归因概率不代表身份已验证" aria-label="${label}，与配置模型不一致">${label}</span>` : `<span class="attribution-match" title="归因候选与配置模型一致；匹配度或归因概率不代表身份已验证" aria-label="${label}，与配置模型一致">${label}</span>`;
 }
 function modelStatus(modelId, latestResult) {
