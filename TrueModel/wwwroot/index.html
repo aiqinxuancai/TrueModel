@@ -240,18 +240,18 @@
                     </label>
                     <div class="file-input-wrapper">
                       <input id="hlwy-import" name="hlwyImport" type="file" accept=".json,application/json" />
-                      <span class="file-input-hint">仅接受 JSON 格式；导入后替代内置基准</span>
+                      <span class="file-input-hint">仅接受 JSON 格式；导入后优先使用自定义基准</span>
                     </div>
                   </div>
 
                   <div class="setting-group">
                     <label for="hlwy-baseline">
                       <span class="label-text">自定义基准（高级）</span>
-                      <span class="label-hint">留空则使用内置基准，或粘贴来自可信来源的基准数据</span>
+                      <span class="label-hint">留空则自动使用上游默认基准，或粘贴来自可信来源的基准数据</span>
                     </label>
                     <div class="textarea-wrapper">
                       <textarea id="hlwy-baseline" name="hlwyBaselinesJson" rows="5" placeholder="支持上游导出的基准数组或单个基准对象，如：[{&quot;name&quot;: &quot;gpt-4&quot;, ...}]"></textarea>
-                      <span class="textarea-hint">仅在从检测详情导出并经过验证的基准导入此处；与 ModelTrace 指纹库独立</span>
+                      <span class="textarea-hint">默认从 <a href="https://github.com/hanlinwenyuan/hlwy-ai-checker/tree/main/baselines" target="_blank" rel="noopener noreferrer">hlwy-ai-checker</a> 自动同步，每 6 小时更新；离线使用缓存或内置基准。清空并保存可恢复默认；与 ModelTrace 指纹库独立</span>
                     </div>
                   </div>
                 </div>

@@ -50,6 +50,19 @@ builder.Services.AddHttpClient<DefaultBankUpdater>(c =>
     c.MaxResponseContentBufferSize = 10_000_000;
     c.DefaultRequestHeaders.UserAgent.ParseAdd("TrueModel/1.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddHttpClient("hlwy-baselines", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(30);
+    c.MaxResponseContentBufferSize = 2_000_000;
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddSingleton(sp =>
+{
+    var updater = new HlwyBaselineUpdater(sp.GetRequiredService<IHttpClientFactory>().CreateClient("hlwy-baselines"),
+        Path.Combine(data, "hlwy-default-baselines.json"), sp.GetRequiredService<ILogger<HlwyBaselineUpdater>>());
+    updater.LoadCache();
+    return updater;
+});
+builder.Services.AddHostedService(sp => sp.GetRequiredService<HlwyBaselineUpdater>());
 builder.Services.AddHttpClient<ModelDiscovery>(c => { c.Timeout = TimeSpan.FromSeconds(20); c.MaxResponseContentBufferSize = 2_000_000; })
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false }).RemoveAllLoggers();
 builder.Services.AddHttpClient<NotificationService>(c => { c.Timeout = TimeSpan.FromSeconds(15); c.MaxResponseContentBufferSize = 1_000_000; })
@@ -340,10 +353,10 @@ api.MapPost("/candy/refresh-all", async (AppDb db, CancellationToken token) =>
         .ExecuteUpdateAsync(s => s.SetProperty(m => m.CandyRefreshStatus, "Queued").SetProperty(m => m.CandyRequestedEffort, effort), token);
     return Results.Accepted("/api/sites", new { queued });
 });
-api.MapPost("/detect", async (DetectionScope input, AppDb db, DetectionControl control) =>
+api.MapPost("/detect", async (DetectionScope input, AppDb db, DetectionControl control, HlwyBaselineUpdater baselines) =>
 {
     await control.Gate.WaitAsync();
-    try { var run = await DetectionJobs.Enqueue(db, input, "Manual"); return Results.Accepted($"/api/runs/{run.Id}", new { run.Id }); }
+    try { var run = await DetectionJobs.Enqueue(db, input, "Manual", baselines); return Results.Accepted($"/api/runs/{run.Id}", new { run.Id }); }
     catch (InvalidOperationException e) { return Results.Conflict(new { error = e.Message }); }
     finally { control.Gate.Release(); }
 });

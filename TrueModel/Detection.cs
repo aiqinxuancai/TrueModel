@@ -9,12 +9,12 @@ public sealed record DetectionScope(int? SiteId, int? KeyId, int? ModelId);
 public sealed record Target(int ModelId, string ModelName, string KeyName, string SiteName, string BaseUrl, string ProtectedKey);
 public static class DetectionJobs
 {
-    public static async Task<DetectionRun> Enqueue(AppDb db, DetectionScope scope, string source)
+    public static async Task<DetectionRun> Enqueue(AppDb db, DetectionScope scope, string source, HlwyBaselineUpdater? baselines = null)
     {
         var settings = await db.Settings.AsNoTracking().SingleOrDefaultAsync() ?? new AppSettings();
         var bank = await db.Banks.SingleOrDefaultAsync(b => b.Active);
         if (settings.DetectionMethod == "modeltrace" && bank is null) throw new InvalidOperationException("No active fingerprint bank.");
-        if (settings.DetectionMethod == "hlwy") settings.HlwyBaselinesJson = JsonSerializer.Serialize(HlwyFingerprint.Baselines(settings.HlwyBaselinesJson));
+        if (settings.DetectionMethod == "hlwy") settings.HlwyBaselinesJson = JsonSerializer.Serialize(baselines?.Baselines(settings.HlwyBaselinesJson) ?? HlwyFingerprint.Baselines(settings.HlwyBaselinesJson));
         var targets = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
             where m.Enabled && k.Enabled && s.Enabled && (scope.SiteId == null || s.Id == scope.SiteId) && (scope.KeyId == null || k.Id == scope.KeyId) && (scope.ModelId == null || m.Id == scope.ModelId)
             select new Target(m.Id, m.Name, k.Name, s.Name, s.BaseUrl, k.ProtectedValue)).ToArrayAsync();
@@ -58,7 +58,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                     {
                         if (settings.IntervalMinutes > 0 && settings.NextRunAt <= DateTime.UtcNow)
                         {
-                            try { await DetectionJobs.Enqueue(db, new(null, null, null), "Scheduled"); }
+                            try { await DetectionJobs.Enqueue(db, new(null, null, null), "Scheduled", scope.ServiceProvider.GetRequiredService<HlwyBaselineUpdater>()); }
                             catch (InvalidOperationException) { }
                             settings.NextRunAt = DateTime.UtcNow.AddMinutes(settings.IntervalMinutes);
                             await db.SaveChangesAsync(stoppingToken);
