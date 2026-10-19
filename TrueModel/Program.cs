@@ -97,7 +97,7 @@ using (var scope = app.Services.CreateScope())
         using (var reader = await command.ExecuteReaderAsync())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
         var additions = table == "Settings"
-            ? new Dictionary<string, string> { ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''" }
+            ? new Dictionary<string, string> { ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''" }
             : new Dictionary<string, string> { ["DetectionSettingsJson"] = "TEXT NULL" };
         foreach (var column in additions)
             if (!columns.Contains(column.Key))
@@ -574,13 +574,14 @@ api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
     if (input.IntervalMinutes < 0 || input.IntervalMinutes > 525600 || input.MaxConcurrency is < 1 or > 16 || input.TimeoutSeconds is < 5 or > 600 || input.ChallengeCount is < 3 or > 6) return Results.BadRequest();
     if (!CandyProbe.ValidReasoningEffort(input.CandyReasoningEffort)) return Results.BadRequest(new { error = "不支持的糖果思考等级" });
     var settings = await db.Settings.SingleAsync();
-    if (input.DetectionMethod is not ("modeltrace" or "hlwy") || input.HlwySampleCount is < 40 or > 1000 || input.HlwyBaselinesJson is null)
-        return Results.BadRequest(new { error = "检测方式无效，或 HLWY 采样次数不在 40–1000 之间。" });
+    if (input.DetectionMethod is not ("modeltrace" or "hlwy") || input.HlwySampleCount is < 40 or > 1000 || input.HlwyConcurrency is < 1 or > 50 || input.HlwyBaselinesJson is null)
+        return Results.BadRequest(new { error = "检测方式无效，或 HLWY 采样次数不在 40–1000、采样并发不在 1–50 之间。" });
     try { HlwyFingerprint.Baselines(input.HlwyBaselinesJson); }
     catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException)
     { return Results.BadRequest(new { error = "HLWY 基准格式无效，需要名称、355 项分布及 stats.mode。" }); }
     settings.DetectionMethod = input.DetectionMethod;
     settings.HlwySampleCount = input.HlwySampleCount;
+    settings.HlwyConcurrency = input.HlwyConcurrency;
     settings.HlwyAntiTarget = input.HlwyAntiTarget;
     if (payload.EnumerateObject().Any(p => p.Name.Equals("hlwyBaselinesJson", StringComparison.OrdinalIgnoreCase)))
         settings.HlwyBaselinesJson = input.HlwyBaselinesJson;

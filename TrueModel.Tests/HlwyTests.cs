@@ -85,7 +85,7 @@ public class HlwyTests
     {
         var handler = new SamplingHandler { Text = "无法回答" };
         var client = new ModelTraceClient(new HttpClient(handler));
-        var result = await client.TestHlwy("https://example.test", "secret", "mock", new AppSettings(), CancellationToken.None);
+        var result = await client.TestHlwy("https://example.test", "secret", "mock", new AppSettings { HlwyConcurrency = 1 }, CancellationToken.None);
         Assert.Contains("至少需要 40", result.GetProperty("error").GetString());
         Assert.Equal(5, result.GetProperty("responses").GetArrayLength());
         using var cancellation = new CancellationTokenSource();
@@ -101,7 +101,7 @@ public class HlwyTests
         await connection.OpenAsync();
         await using var db = new AppDb(new DbContextOptionsBuilder<AppDb>().UseSqlite(connection).Options);
         await db.Database.EnsureCreatedAsync();
-        var settings = new AppSettings { DetectionMethod = "hlwy", HlwyAntiTarget = true, HlwySampleCount = 40 };
+        var settings = new AppSettings { DetectionMethod = "hlwy", HlwyAntiTarget = true, HlwySampleCount = 40, HlwyConcurrency = 7 };
         db.Settings.Add(settings);
         db.Sites.Add(new Site { Keys = [new SiteKey { Models = [new MonitoredModel { Name = "mock" }] }] });
         await db.SaveChangesAsync();
@@ -111,6 +111,7 @@ public class HlwyTests
         var snapshot = JsonSerializer.Deserialize<AppSettings>(run.DetectionSettingsJson!)!;
         Assert.Equal("hlwy", snapshot.DetectionMethod);
         Assert.True(snapshot.HlwyAntiTarget);
+        Assert.Equal(7, snapshot.HlwyConcurrency);
         Assert.Equal(7, HlwyFingerprint.Baselines(snapshot.HlwyBaselinesJson).Length);
         Assert.Equal(0, run.BankId);
     }

@@ -260,6 +260,14 @@
                     </div>
                   </div>
 
+                  <div class="setting-group">
+                    <label for="hlwy-concurrency"><span class="label-text">单模型采样并发</span><span class="label-hint">范围 1–50，默认 5，与上游一键检测一致</span></label>
+                    <div class="input-wrapper">
+                      <input id="hlwy-concurrency" name="hlwyConcurrency" type="number" min="1" max="50" value="5" required />
+                      <span class="input-hint">每个模型同时发出的采样请求数；遇到限流可调低。统计报告先显示，Juice 和糖果结果随后补充。</span>
+                    </div>
+                  </div>
+
                   <div class="setting-group checkbox-group">
                     <label>
                       <input name="hlwyAntiTarget" type="checkbox" />

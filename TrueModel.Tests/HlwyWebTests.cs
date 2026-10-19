@@ -43,7 +43,7 @@ public class HlwyWebTests
         {
             using var client = factory.CreateClient();
             await Login(client);
-            (await client.PutAsJsonAsync("/api/settings", new { detectionMethod = "hlwy", hlwyAntiTarget = true, hlwySampleCount = 40 })).EnsureSuccessStatusCode();
+            (await client.PutAsJsonAsync("/api/settings", new { detectionMethod = "hlwy", hlwyAntiTarget = true, hlwySampleCount = 40, hlwyConcurrency = 7 })).EnsureSuccessStatusCode();
             async Task<int> Create(string path, object value)
             {
                 var response = await client.PostAsJsonAsync(path, value); response.EnsureSuccessStatusCode();
@@ -73,12 +73,13 @@ public class HlwyWebTests
             var settings = await client.GetFromJsonAsync<JsonElement>("/api/settings");
             Assert.Equal("hlwy", settings.GetProperty("detectionMethod").GetString());
             Assert.True(settings.GetProperty("hlwyAntiTarget").GetBoolean());
+            Assert.Equal(7, settings.GetProperty("hlwyConcurrency").GetInt32());
         }
         // Emulate a database produced by v1.0.19; upgrade must preserve existing data.
         using (var connection = new SqliteConnection($"Data Source={database}"))
         {
             await connection.OpenAsync();
-            foreach (var column in new[] { "DetectionMethod", "HlwyAntiTarget", "HlwySampleCount", "HlwyBaselinesJson" })
+            foreach (var column in new[] { "DetectionMethod", "HlwyAntiTarget", "HlwySampleCount", "HlwyBaselinesJson", "HlwyConcurrency" })
             {
                 using var command = connection.CreateCommand();
                 command.CommandText = $"ALTER TABLE Settings DROP COLUMN {column}";
@@ -95,6 +96,7 @@ public class HlwyWebTests
             Assert.Equal("modeltrace", settings.GetProperty("detectionMethod").GetString());
             Assert.False(settings.GetProperty("hlwyAntiTarget").GetBoolean());
             Assert.Equal(100, settings.GetProperty("hlwySampleCount").GetInt32());
+            Assert.Equal(5, settings.GetProperty("hlwyConcurrency").GetInt32());
             Assert.Single((await client.GetFromJsonAsync<JsonElement>("/api/results")).EnumerateArray());
         }
     }

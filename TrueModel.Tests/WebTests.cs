@@ -69,7 +69,7 @@ public class WebTests
             Assert.Equal(40, settings.GetProperty("hlwySampleCount").GetInt32());
             Assert.Equal(antiTarget, settings.GetProperty("hlwyAntiTarget").GetBoolean());
         }
-        foreach (var input in new object[] { new { detectionMethod = "invalid" }, new { detectionMethod = "hlwy", hlwySampleCount = 39 }, new { hlwySampleCount = 1001 }, new { hlwyBaselinesJson = "[]" }, new { hlwyBaselinesJson = "{}" }, new { hlwyBaselinesJson = "null" } })
+        foreach (var input in new object[] { new { detectionMethod = "invalid" }, new { hlwyConcurrency = 0 }, new { hlwyConcurrency = 51 }, new { detectionMethod = "hlwy", hlwySampleCount = 39 }, new { hlwySampleCount = 1001 }, new { hlwyBaselinesJson = "[]" }, new { hlwyBaselinesJson = "{}" }, new { hlwyBaselinesJson = "null" } })
             Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/settings", input)).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings", new { detectionMethod = "modeltrace" })).StatusCode);
         Assert.Equal("modeltrace", (await client.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("detectionMethod").GetString());

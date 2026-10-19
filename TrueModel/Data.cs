@@ -81,6 +81,7 @@ public sealed class FingerprintBank
 public sealed class AppSettings
 {
     public string DetectionMethod { get; set; } = "modeltrace";
+    public int HlwyConcurrency { get; set; } = 5;
     public int HlwySampleCount { get; set; } = 100;
     public bool HlwyAntiTarget { get; set; }
     public string HlwyBaselinesJson { get; set; } = "";

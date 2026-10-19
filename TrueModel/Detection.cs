@@ -22,7 +22,7 @@ public static class DetectionJobs
         // Callers hold DetectionControl.Gate through this check and the insert.
         var pendingRuns = await db.Runs.AsNoTracking().Where(r => r.Status == "Queued" || r.Status == "Running").ToArrayAsync();
         var pendingIds = pendingRuns.Select(r => r.Id).ToArray();
-        var completed = (await db.Results.Where(r => pendingIds.Contains(r.RunId))
+        var completed = (await db.Results.Where(r => pendingIds.Contains(r.RunId) && r.CandyStatus != "Running")
             .Select(r => new { r.RunId, r.ModelId }).ToArrayAsync()).Select(r => (r.RunId, r.ModelId)).ToHashSet();
         var busyModels = pendingRuns.SelectMany(r => (JsonSerializer.Deserialize<Target[]>(r.TargetsJson) ?? [])
             .Where(t => !completed.Contains((r.Id, t.ModelId))).Select(t => t.ModelId)).ToHashSet();
@@ -40,6 +40,9 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
         using (var startup = scopes.CreateScope())
         {
             var db = startup.ServiceProvider.GetRequiredService<AppDb>();
+            await db.Results.Where(r => r.CandyStatus == "Running").ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.CandyStatus, "Interrupted")
+                .SetProperty(r => r.JuiceStatus, r => r.JuiceStatus == "Running" ? "Interrupted" : r.JuiceStatus), stoppingToken);
             await db.Runs.Where(r => r.Status == "Running").ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "Interrupted").SetProperty(r => r.CompletedAt, DateTime.UtcNow), stoppingToken);
         }
         try
@@ -90,7 +93,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                                 var cancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
                                 control.Active.Add((run.Id, target.ModelId), cancellation);
                                 run.Status = "Running";
-                                // Each detection holds one global slot through its result commit.
+                                // Each detection holds one global slot through its result commit and supplemental probes.
                                 workers.Add(RunDetection(target, run.Id, bank, runSettings, cancellation, stoppingToken));
                             }
                         }
@@ -145,6 +148,8 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 await transaction.CommitAsync(stoppingToken);
             }
             finally { control.Gate.Release(); }
+            if (settings.DetectionMethod == "hlwy" && result.CandyStatus == "Running")
+                await CompleteHlwySupplemental(target, result, settings, cancellation.Token);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
         catch (Exception e) { logger.LogError(e, "Detection failed for run {RunId}, model {ModelId}", runId, target.ModelId); }
@@ -155,6 +160,49 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             finally { control.Gate.Release(); cancellation.Dispose(); }
         }
     }
+    private async Task CompleteHlwySupplemental(Target target, DetectionResult result, AppSettings settings, CancellationToken token)
+    {
+        try
+        {
+            var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedKey);
+            var juice = await client.ProbeJuice(target.BaseUrl, key, target.ModelName, token);
+            result.JuiceValue = juice.TryGetValue("juice_value", out var value) ? value as int? : null;
+            result.JuiceStatus = juice.TryGetValue("juice_status", out var status) ? status as string : null;
+            result.JuicePrompt = juice.TryGetValue("juice_prompt", out var prompt) ? prompt as string : null;
+            var candy = await client.ProbeCandy(target.BaseUrl, key, target.ModelName, token, settings.CandyReasoningEffort);
+            result.CandyStatus = candy.CandyStatus;
+            result.CandyPrompt = candy.CandyPrompt;
+            result.CandyResponse = candy.CandyResponse;
+            result.CandyError = candy.CandyError;
+            result.CandyReasoningEffort = candy.CandyReasoningEffort;
+            result.CandyReasoningTokens = candy.CandyReasoningTokens;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            result.CandyStatus = "Interrupted";
+            if (result.JuiceStatus == "Running") result.JuiceStatus = "Interrupted";
+        }
+        catch (Exception)
+        {
+            result.CandyStatus = "Failed";
+            result.CandyError = "附加检测失败，HLWY 统计报告不受影响。";
+            if (result.JuiceStatus == "Running") result.JuiceStatus = "Failed";
+        }
+        // Update only supplemental fields: cancellation/deletion must never replace or resurrect a report.
+        using var scope = scopes.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<AppDb>().Results.Where(r => r.Id == result.Id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.JuiceValue, result.JuiceValue)
+                .SetProperty(r => r.JuiceStatus, result.JuiceStatus)
+                .SetProperty(r => r.JuicePrompt, result.JuicePrompt)
+                .SetProperty(r => r.CandyStatus, result.CandyStatus)
+                .SetProperty(r => r.CandyPrompt, result.CandyPrompt)
+                .SetProperty(r => r.CandyResponse, result.CandyResponse)
+                .SetProperty(r => r.CandyError, result.CandyError)
+                .SetProperty(r => r.CandyReasoningEffort, result.CandyReasoningEffort)
+                .SetProperty(r => r.CandyReasoningTokens, result.CandyReasoningTokens));
+    }
+
     private async Task<DetectionResult> Probe(Target target, int runId, string bank, AppSettings settings, CancellationToken token)
     {
         var result = new DetectionResult { RunId = runId, ModelId = target.ModelId, SiteName = target.SiteName, KeyName = target.KeyName, ModelName = target.ModelName };
@@ -163,7 +211,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
         {
             var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedKey);
             var response = settings.DetectionMethod == "hlwy"
-                ? await client.TestHlwy(target.BaseUrl, key, target.ModelName, settings, token)
+                ? await client.TestHlwy(target.BaseUrl, key, target.ModelName, settings, token, includeSupplemental: false)
                 : await client.Test(target.BaseUrl, key, target.ModelName, bank, settings.ChallengeCount, token, settings.CandyReasoningEffort);
             result.ResponsesJson = response.GetProperty("responses").GetRawText();
             result.JuiceValue = response.TryGetProperty("juice_value", out var juice) && juice.ValueKind == JsonValueKind.Number ? juice.GetInt32() : null;
@@ -189,6 +237,9 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             if (settings.DetectionMethod == "hlwy")
             {
                 result.AttributionJson = report.GetRawText();
+                result.CandyStatus = "Running";
+                result.CandyReasoningEffort = settings.CandyReasoningEffort;
+                result.JuiceStatus = JuiceProbe.Supports(target.ModelName) ? "Running" : null;
                 result.Status = "Success";
                 result.LatencyMs = watch.ElapsedMilliseconds;
                 return result;
