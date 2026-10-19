@@ -276,9 +276,48 @@ $('importBank').onclick=()=>edit('导入指纹库',[['name','版本名称'],['fi
 $('createEmptyBank').onclick=()=>edit('新建空指纹库',[['name','指纹库名称']],async v=>{await api('/banks/empty','POST',{name:v.name});message('空指纹库已创建，可手动新增或采集指纹；至少两个模型后可设为当前库');});
 const manualFingerprintDialog=document.createElement('dialog');manualFingerprintDialog.innerHTML=`<form id="manualFingerprintForm"><h2>手动新增指纹</h2><p class="notice">填写模型信息，并粘贴 355 个非负整数频次的 JSON 数组。频次总数至少为 80。</p><label>模型标识<input name="model" required maxlength="200"></label><label>显示名称<input name="displayName" required maxlength="200"></label><label>家族<input name="family" required maxlength="100" value="custom"></label><label>counts（355 个整数）<textarea name="counts" rows="6" required placeholder="[0, 0, ...]"></textarea></label><div class="actions"><button type="button" id="closeManualFingerprint">关闭</button><button class="primary">新增</button></div></form>`;document.body.append(manualFingerprintDialog);
 let manualBankId=0;function openManualFingerprint(id){manualBankId=id;manualFingerprintDialog.showModal();}$('closeManualFingerprint').onclick=()=>manualFingerprintDialog.close();$('manualFingerprintForm').onsubmit=async e=>{e.preventDefault();try{const v=Object.fromEntries(new FormData(e.target));const counts=JSON.parse(v.counts);if(!Array.isArray(counts))throw Error('counts 必须是 JSON 数组');await api(`/banks/${manualBankId}/models`,'POST',{model:v.model,displayName:v.displayName,family:v.family,counts});manualFingerprintDialog.close();message('指纹已新增');await refresh();}catch(error){message(error.message);}};
-function updateDetectionSettings() { $('hlwySettings').hidden = $('settingsForm').elements.detectionMethod.value !== 'hlwy'; }
+function updateDetectionSettings() {
+  const form = $('settingsForm');
+  // Hidden the old hlwySettings fieldset if it exists
+  const hlwySettings = form.querySelector('#hlwySettings');
+  if (hlwySettings) hlwySettings.hidden = form.elements.detectionMethod.value !== 'hlwy';
+}
+
+// Initialize settings tabs
+function initSettingsTabs() {
+  const tabs = document.querySelectorAll('.settings-tab');
+  const panels = document.querySelectorAll('.settings-panel');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', (e) => {
+      e.preventDefault();
+      const panelId = tab.id.replace('Tab', 'Panel');
+      const panel = $(panelId);
+
+      // Update all tabs
+      tabs.forEach(t => t.classList.toggle('selected', t === tab));
+
+      // Update all panels
+      panels.forEach(p => {
+        if (p.id === panelId) {
+          p.hidden = false;
+          p.setAttribute('aria-selected', 'true');
+        } else {
+          p.hidden = true;
+          p.setAttribute('aria-selected', 'false');
+        }
+      });
+    });
+  });
+}
+
+// Initialize on page load
+if (document.querySelector('.settings-tab')) {
+  initSettingsTabs();
+}
+
 $('settingsForm').elements.detectionMethod.onchange=updateDetectionSettings;
-$('hlwyImport').onchange=async e=>{const file=e.target.files[0];if(!file)return;if(file.size>2000000){message('基准文件不能超过 2 MB');return;}$('settingsForm').elements.hlwyBaselinesJson.value=await file.text();message('基准已载入，请保存设置');};
+$('hlwy-import').onchange=async e=>{const file=e.target.files[0];if(!file)return;if(file.size>2000000){message('基准文件不能超过 2 MB');return;}$('hlwy-baseline').value=await file.text();message('基准已载入，请保存设置');};
 $('settingsForm').onsubmit=async e=>{e.preventDefault();try{await api('/settings','PUT',Object.fromEntries([...new FormData(e.target)].map(([k,v])=>[k,['candyReasoningEffort','detectionMethod','hlwyBaselinesJson'].includes(k)?v:k==='hlwyAntiTarget'?true:Number(v)])));message('设置已保存');await refresh();}catch(e){message(e.message);}};
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;if(!['key','model','delete','detect','detectModel','detectKey','detectSite','cancel','activate','detail','bankDetail','deleteBank','manualBank'].some(k=>d[k]!==undefined))return;try{if(d.key)edit('添加 Key',[['name','Key 名称'],['value','API Key','password']],v=>api(`/sites/${d.key}/keys`,'POST',v));if(d.model)edit('添加模型',[['name','模型 ID']],v=>api(`/keys/${d.model}/models`,'POST',v));if(d.delete&&confirm('确认删除？此操作会删除下级配置，历史记录仍然保留。')){await api('/'+d.delete,'DELETE');await refresh();}if(d.deleteBank&&confirm('确认删除此指纹库？删除后无法恢复。')){await api(`/banks/${d.deleteBank}`,'DELETE');await refresh();}if(d.manualBank)openManualFingerprint(Number(d.manualBank));if(d.bankDetail){const bank=await api(`/banks/${d.bankDetail}`);$('detailBody').innerHTML=`<h2>${esc(bank.name)}</h2><p>版本：${esc(bank.builtAt||'—')} · SHA256 ${esc(bank.sha256)}</p><table><thead><tr><th>模型标识</th><th>名称</th><th>家族</th><th>有效数字</th></tr></thead><tbody>${bank.models.map(m=>`<tr><td>${esc(m.id)}</td><td>${esc(m.displayName)}</td><td>${esc(m.family)}</td><td>${m.validNumberCount}</td></tr>`).join('')}</tbody></table>`;$('detail').showModal();}if(d.detect||d.detectModel||d.detectKey||d.detectSite){b.disabled=true;await api('/detect','POST',{modelId:d.detectModel?Number(d.detectModel):null,keyId:d.detectKey?Number(d.detectKey):null,siteId:d.detectSite?Number(d.detectSite):null});message('检测任务已加入队列');await refresh();}if(d.cancel){await api(`/runs/${d.cancel}/cancel`,'POST',{});message('已请求取消');}if(d.activate){await api(`/banks/${d.activate}/activate`,'POST',{});await refresh();}if(d.detail){const r=results.find(x=>x.id===Number(d.detail))||recentModelResults.find(x=>x.id===Number(d.detail));const report=r.attributionJson?JSON.parse(r.attributionJson):null;$('detailBody').innerHTML=`<p>${esc(r.siteName)} / ${esc(r.keyName)} / ${esc(r.modelName)} · ${badge(r.status)} · 总耗时 ${(r.latencyMs/1000).toFixed(1)}s</p><p>Juice（模型自报）：<span class="probe-${esc(r.juiceStatus || 'pending')}" title="${esc(juiceTooltip(r))}">${juiceLabel(r)}</span></p><p>糖果：${candySummary(r)}</p><details><summary>糖果题目与回复</summary><pre>${esc(candyTooltip(r))}</pre></details>${r.error?`<p>${esc(r.error)}</p>`:''}${report?`${renderDetectionReport(report)}`:''}<h2>挑战与响应</h2>${JSON.parse(r.responsesJson).map(o=>`<details><summary>${o.ExpectedCount} 个整数 · ${((o.DurationMs||0)/1000).toFixed(1)}s</summary>${o.Error?`<p>${esc(o.Error)}</p>`:''}<p>${esc(o.Prompt)}</p><pre>${esc(o.Text)}</pre></details>`).join('')}`;$('detail').showModal();if(report?.Method==='hlwy')$('exportHlwyBaseline').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify([report.Baseline],null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='hlwy-baseline.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};}}catch(e){message(e.message);}finally{b.disabled=false;}});
 session().catch(e=>message(e.message));setInterval(()=>{if(!$('application').hidden)refresh().catch(e=>message(e.message));},5000);

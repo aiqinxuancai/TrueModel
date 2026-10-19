@@ -169,66 +169,180 @@
             <p id="bankUpdateStatus" role="status" aria-live="polite"></p>
             <div id="bankRows"></div>
           </section>
-          <section id="settings" class="view" hidden>
-            <h1>检测设置</h1>
-            <form id="settingsForm">
-              <label>主要检测方式
-                <select name="detectionMethod">
-                  <option value="modeltrace">ModelTrace · 挑战指纹归因</option>
-                  <option value="hlwy">HLWY · 随机数统计指纹</option>
-                </select>
-              </label>
-              <fieldset id="hlwySettings" hidden>
-                <legend>HLWY 检测设置</legend>
-                <label>采样次数（40–1000）<input name="hlwySampleCount" type="number" min="40" max="1000" value="100" required /></label>
-                <label><input name="hlwyAntiTarget" type="checkbox" />反针对模式</label>
-                <p class="muted">每次在提示词内部随机插入一个空格，不拆开数字。每个样本单独请求，至少获得 40 个有效样本才生成报告；连续失败 5 次提前停止。匹配度是统计相似性，不是身份概率。</p>
-                <label>导入 HLWY 基准 JSON<input id="hlwyImport" type="file" accept=".json,application/json" /></label>
-                <label>自定义基准（留空使用内置基准）<textarea name="hlwyBaselinesJson" rows="4" placeholder="支持上游导出的基准数组或单个基准对象"></textarea></label>
-                <p class="muted">保存后生效。使用可信来源运行 HLWY 检测，可在检测详情导出基准，再导入此处。自定义基准替代内置基准，与 ModelTrace 指纹库独立。</p>
-              </fieldset>
-              <label
-                >ModelTrace 挑战题目数（3–6）<input
-                  name="challengeCount"
-                  type="number"
-                  min="3"
-                  max="6"
-                  required /></label
-              ><label
-                >定时间隔（分钟，0 为关闭）<input
-                  name="intervalMinutes"
-                  type="number"
-                  min="0"
-                  max="525600"
-                  required /></label
-              ><label
-                >并发模型数<input
-                  name="maxConcurrency"
-                  type="number"
-                  min="1"
-                  max="16"
-                  required /></label
-              ><label
-                >单次请求超时（固定 240 秒）<input
-                  name="timeoutSeconds"
-                  type="number"
-                  value="240"
-                  readonly /></label
-              ><label>糖果思考等级
-                <select name="candyReasoningEffort" aria-describedby="candyEffortHint">
-                  <option value="default">接口默认</option>
-                  <option value="none">none · 不思考</option>
-                  <option value="minimal">minimal · 最低</option>
-                  <option value="low">low · 低</option>
-                  <option value="medium">medium · 中</option>
-                  <option value="high">high · 高</option>
-                  <option value="xhigh">xhigh · 更高</option>
-                </select>
-              </label>
-              <p id="candyEffortHint" class="muted">仅用于糖果题。显式等级需要模型接口支持，不支持时显示错误；仅支持 Anthropic 协议的接口请选择“接口默认”。Reason Tok 为接口返回的推理 token 数，未返回时显示 —。</p>
-              <button>保存设置</button>
+          <section id=”settings” class=”view” hidden>
+            <div class=”heading”>
+              <h1>检测设置</h1>
+            </div>
+
+            <div class=”settings-tabs” role=”tablist”>
+              <button id=”mtTab” class=”settings-tab selected” role=”tab” aria-selected=”true” aria-controls=”mtPanel”>
+                <i data-lucide=”target”></i>ModelTrace 方式
+              </button>
+              <button id=”hlwyTab” class=”settings-tab” role=”tab” aria-selected=”false” aria-controls=”hlwyPanel”>
+                <i data-lucide=”bar-chart-3”></i>HLWY 方式
+              </button>
+              <button id=”commonTab” class=”settings-tab” role=”tab” aria-selected=”false” aria-controls=”commonPanel”>
+                <i data-lucide=”sliders”></i>通用设置
+              </button>
+            </div>
+
+            <form id=”settingsForm”>
+              <!-- ModelTrace 配置 -->
+              <div id=”mtPanel” class=”settings-panel” role=”tabpanel” aria-labelledby=”mtTab”>
+                <div class=”settings-section”>
+                  <h2>ModelTrace 挑战指纹检测</h2>
+                  <p class=”section-hint”>通过向模型发送一系列挑战题目，根据回复指纹进行模型身份归因</p>
+
+                  <div class=”setting-group”>
+                    <label for=”mt-challenge”>
+                      <span class=”label-text”>挑战题目数</span>
+                      <span class=”label-hint”>生成多少道题目，范围 3–6</span>
+                    </label>
+                    <div class=”input-wrapper”>
+                      <input id=”mt-challenge” name=”challengeCount” type=”number” min=”3” max=”6” required />
+                      <span class=”input-hint”>题目数量越多，检测越精准但耗时越长</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- HLWY 配置 -->
+              <div id=”hlwyPanel” class=”settings-panel” role=”tabpanel” aria-labelledby=”hlwyTab” hidden>
+                <div class=”settings-section”>
+                  <h2>HLWY 统计指纹检测</h2>
+                  <p class=”section-hint”>通过采样模型随机数分布，进行统计意义上的身份识别</p>
+
+                  <div class=”setting-group”>
+                    <label for=”hlwy-sample”>
+                      <span class=”label-text”>采样次数</span>
+                      <span class=”label-hint”>每次检测获取多少个样本，范围 40–1000</span>
+                    </label>
+                    <div class=”input-wrapper”>
+                      <input id=”hlwy-sample” name=”hlwySampleCount” type=”number” min=”40” max=”1000” value=”100” required />
+                      <span class=”input-hint”>样本数越多越精准，但耗时更长；默认 100 为平衡方案</span>
+                    </div>
+                  </div>
+
+                  <div class=”setting-group checkbox-group”>
+                    <label>
+                      <input name=”hlwyAntiTarget” type=”checkbox” />
+                      <span class=”label-text”>启用反针对模式</span>
+                    </label>
+                    <p class=”feature-hint”>每次在提示词内部随机插入一个空格（不拆开数字）以规避某些针对性对策</p>
+                  </div>
+
+                  <div class=”settings-divider”></div>
+
+                  <div class=”setting-group”>
+                    <label for=”hlwy-import”>
+                      <span class=”label-text”>导入基准文件</span>
+                      <span class=”label-hint”>可选，从检测详情导出的基准 JSON</span>
+                    </label>
+                    <div class=”file-input-wrapper”>
+                      <input id=”hlwy-import” name=”hlwyImport” type=”file” accept=”.json,application/json” />
+                      <span class=”file-input-hint”>仅接受 JSON 格式；导入后替代内置基准</span>
+                    </div>
+                  </div>
+
+                  <div class=”setting-group”>
+                    <label for=”hlwy-baseline”>
+                      <span class=”label-text”>自定义基准（高级）</span>
+                      <span class=”label-hint”>留空则使用内置基准，或粘贴来自可信来源的基准数据</span>
+                    </label>
+                    <div class=”textarea-wrapper”>
+                      <textarea id=”hlwy-baseline” name=”hlwyBaselinesJson” rows=”5” placeholder=”支持上游导出的基准数组或单个基准对象，如：[{&quot;name&quot;: &quot;gpt-4&quot;, ...}]”></textarea>
+                      <span class=”textarea-hint”>仅在从检测详情导出并经过验证的基准导入此处；与 ModelTrace 指纹库独立</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 通用设置 -->
+              <div id=”commonPanel” class=”settings-panel” role=”tabpanel” aria-labelledby=”commonTab” hidden>
+                <div class=”settings-section”>
+                  <h2>基础检测参数</h2>
+                  <p class=”section-hint”>对所有检测方式生效的通用参数设置</p>
+
+                  <div class=”setting-group”>
+                    <label for=”main-method”>
+                      <span class=”label-text”>主要检测方式</span>
+                    </label>
+                    <div class=”input-wrapper”>
+                      <select id=”main-method” name=”detectionMethod”>
+                        <option value=”modeltrace”>ModelTrace · 挑战指纹归因</option>
+                        <option value=”hlwy”>HLWY · 随机数统计指纹</option>
+                      </select>
+                      <span class=”input-hint”>选择定时检测时使用的默认方式</span>
+                    </div>
+                  </div>
+
+                  <div class=”setting-group”>
+                    <label for=”common-interval”>
+                      <span class=”label-text”>定时检测间隔</span>
+                      <span class=”label-hint”>以分钟为单位，0 表示关闭定时</span>
+                    </label>
+                    <div class=”input-wrapper”>
+                      <input id=”common-interval” name=”intervalMinutes” type=”number” min=”0” max=”525600” required />
+                      <span class=”input-hint”>最小 1 分钟，最大 1 年</span>
+                    </div>
+                  </div>
+
+                  <div class=”settings-divider”></div>
+
+                  <h3>并发与超时</h3>
+
+                  <div class=”setting-group”>
+                    <label for=”common-concurrency”>
+                      <span class=”label-text”>并发模型数</span>
+                      <span class=”label-hint”>同时检测的模型数量</span>
+                    </label>
+                    <div class=”input-wrapper”>
+                      <input id=”common-concurrency” name=”maxConcurrency” type=”number” min=”1” max=”16” required />
+                      <span class=”input-hint”>数值越大速度越快，但对系统负荷越大</span>
+                    </div>
+                  </div>
+
+                  <div class=”setting-group”>
+                    <label for=”common-timeout”>
+                      <span class=”label-text”>单次请求超时</span>
+                      <span class=”label-hint”>固定值</span>
+                    </label>
+                    <div class=”input-wrapper”>
+                      <input id=”common-timeout” name=”timeoutSeconds” type=”number” value=”240” readonly />
+                      <span class=”input-hint”>为保证稳定性，超时时间固定为 240 秒</span>
+                    </div>
+                  </div>
+
+                  <div class=”settings-divider”></div>
+
+                  <h3>高级选项</h3>
+
+                  <div class=”setting-group”>
+                    <label for=”candy-effort”>
+                      <span class=”label-text”>糖果思考等级</span>
+                      <span class=”label-hint”>仅影响糖果检测的推理深度</span>
+                    </label>
+                    <div class=”input-wrapper”>
+                      <select id=”candy-effort” name=”candyReasoningEffort”>
+                        <option value=”default”>接口默认</option>
+                        <option value=”none”>none · 不思考</option>
+                        <option value=”minimal”>minimal · 最低</option>
+                        <option value=”low”>low · 低</option>
+                        <option value=”medium”>medium · 中</option>
+                        <option value=”high”>high · 高</option>
+                        <option value=”xhigh”>xhigh · 更高</option>
+                      </select>
+                      <span class=”input-hint”>显式等级需要模型接口支持；仅支持 Anthropic 协议的接口建议选择”接口默认”</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </form>
-            <p id="nextRun"></p>
+
+            <div class=”settings-footer”>
+              <button form=”settingsForm” class=”primary”>💾 保存所有设置</button>
+              <p id=”nextRun” class=”settings-status”></p>
+            </div>
           </section>
           <section id="notifications" class="view" hidden>
             <h1>结果通知</h1>
