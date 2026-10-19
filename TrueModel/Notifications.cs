@@ -24,7 +24,7 @@ public sealed class NotificationDelivery
     public string Message { get; set; } = "";
 }
 public sealed record NotificationInput(bool WebhookEnabled, string? WebhookUrl, bool PushDeerEnabled, string PushDeerEndpoint, string? PushKey, bool OnlyFailures, bool ClearWebhook = false, bool ClearPushKey = false);
-public sealed record ResultSummary(string Site, string KeyName, string Model, string Status, long DurationMs, string? Prediction, double? Probability);
+public sealed record ResultSummary(string Site, string KeyName, string Model, string Status, long DurationMs, string? Prediction, double? Probability, string Method = "modeltrace", double? Similarity = null);
 public sealed record NotificationPayload(string Event, int? RunId, string Status, long DurationMs, int Total, int Succeeded, ResultSummary[] Results);
 
 public sealed class NotificationService(HttpClient client, IDataProtectionProvider provider)
@@ -40,14 +40,14 @@ public sealed class NotificationService(HttpClient client, IDataProtectionProvid
         if (settings.OnlyFailures && run.Status == "Completed" && results.Length == run.Total && results.All(r => r.Status == "Success")) return;
         var summaries = results.Select(r =>
         {
-            string? prediction = null; double? probability = null;
+            string? prediction = null; double? probability = null; double? similarity = null; var method = run.DetectionSettingsJson is null ? "modeltrace" : JsonSerializer.Deserialize<AppSettings>(run.DetectionSettingsJson)!.DetectionMethod;
             if (r.AttributionJson is not null)
             {
                 using var json = JsonDocument.Parse(r.AttributionJson);
                 var winner = json.RootElement.GetProperty("Candidates")[0];
-                prediction = winner.GetProperty("DisplayName").GetString(); probability = winner.GetProperty("Probability").GetDouble();
+                prediction = winner.GetProperty("DisplayName").GetString(); if (winner.TryGetProperty("Similarity", out var score)) { similarity = score.GetDouble(); method = "hlwy"; } else probability = winner.GetProperty("Probability").GetDouble();
             }
-            return new ResultSummary(r.SiteName, r.KeyName, r.ModelName, r.Status, r.LatencyMs, prediction, probability);
+            return new ResultSummary(r.SiteName, r.KeyName, r.ModelName, r.Status, r.LatencyMs, prediction, probability, method, similarity);
         }).ToArray();
         var payload = new NotificationPayload("detection.completed", run.Id, run.Status, (long)((run.CompletedAt ?? DateTime.UtcNow) - run.StartedAt).TotalMilliseconds, run.Total, results.Count(r => r.Status == "Success"), summaries);
         await Deliver(db, settings, payload, token);
@@ -68,7 +68,7 @@ public sealed class NotificationService(HttpClient client, IDataProtectionProvid
                 }
                 else
                 {
-                    var summary = string.Join('\n', payload.Results.Select(r => $"{r.Site} / {r.KeyName} / {r.Model}: {r.Status}，{r.DurationMs / 1000d:F1}s，归因 {r.Prediction ?? "无"} {(r.Probability.HasValue ? r.Probability.Value.ToString("P2") : "")}"));
+                    var summary = string.Join('\n', payload.Results.Select(r => $"{r.Site} / {r.KeyName} / {r.Model}: {r.Status}，{r.DurationMs / 1000d:F1}s，归因 {r.Prediction ?? "无"} {(r.Similarity.HasValue ? "HLWY 匹配度 " + r.Similarity.Value.ToString("P2") : r.Probability.HasValue ? r.Probability.Value.ToString("P2") : "")}"));
                     request = new(HttpMethod.Post, settings.PushDeerEndpoint)
                     {
                         Content = new FormUrlEncodedContent(new Dictionary<string, string> {

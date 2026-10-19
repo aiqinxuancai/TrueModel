@@ -48,6 +48,18 @@ public class WebTests
         }
         foreach (var effort in new string?[] { "invalid", "", null })
             Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, candyReasoningEffort = effort })).StatusCode);
+        foreach (var antiTarget in new[] { true, false })
+        {
+            Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings", new { detectionMethod = "hlwy", hlwySampleCount = 40, hlwyAntiTarget = antiTarget })).StatusCode);
+            var settings = await client.GetFromJsonAsync<JsonElement>("/api/settings");
+            Assert.Equal("hlwy", settings.GetProperty("detectionMethod").GetString());
+            Assert.Equal(40, settings.GetProperty("hlwySampleCount").GetInt32());
+            Assert.Equal(antiTarget, settings.GetProperty("hlwyAntiTarget").GetBoolean());
+        }
+        foreach (var input in new object[] { new { detectionMethod = "invalid" }, new { detectionMethod = "hlwy", hlwySampleCount = 39 }, new { hlwySampleCount = 1001 }, new { hlwyBaselinesJson = "[]" }, new { hlwyBaselinesJson = "{}" }, new { hlwyBaselinesJson = "null" } })
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/settings", input)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings", new { detectionMethod = "modeltrace" })).StatusCode);
+        Assert.Equal("modeltrace", (await client.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("detectionMethod").GetString());
         Assert.True(File.Exists(Path.Combine(directory, "truemodel.db")));
         var notificationInput = new { webhookEnabled = true, webhookUrl = "https://hook.test/secret", pushDeerEnabled = true, pushDeerEndpoint = "https://push.test/message/push", pushKey = "private-pushkey", onlyFailures = true };
         Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/notifications", notificationInput)).StatusCode);

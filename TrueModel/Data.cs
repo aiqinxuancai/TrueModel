@@ -41,6 +41,7 @@ public sealed class DetectionRun
     public int BankId { get; set; }
     public bool CancelRequested { get; set; }
     public string TargetsJson { get; set; } = "[]";
+    public string? DetectionSettingsJson { get; set; }
 }
 public sealed class DetectionResult
 {
@@ -79,6 +80,10 @@ public sealed class FingerprintBank
 }
 public sealed class AppSettings
 {
+    public string DetectionMethod { get; set; } = "modeltrace";
+    public int HlwySampleCount { get; set; } = 100;
+    public bool HlwyAntiTarget { get; set; }
+    public string HlwyBaselinesJson { get; set; } = "";
     public int Id { get; set; } = 1;
     public int IntervalMinutes { get; set; }
     public int MaxConcurrency { get; set; } = 2;

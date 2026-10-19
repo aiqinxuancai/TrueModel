@@ -76,6 +76,24 @@ using (var scope = app.Services.CreateScope())
         if (!hasCandyEffort) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Settings ADD COLUMN CandyReasoningEffort TEXT NOT NULL DEFAULT 'default'");
         if (!hasCount) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Settings ADD COLUMN ChallengeCount INTEGER NOT NULL DEFAULT 3");
     }
+    foreach (var table in new[] { "Settings", "Runs" })
+    {
+        using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table})";
+        var columns = new HashSet<string>();
+        using (var reader = await command.ExecuteReaderAsync())
+            while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
+        var additions = table == "Settings"
+            ? new Dictionary<string, string> { ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''" }
+            : new Dictionary<string, string> { ["DetectionSettingsJson"] = "TEXT NULL" };
+        foreach (var column in additions)
+            if (!columns.Contains(column.Key))
+            {
+                // Identifiers and types come exclusively from the fixed dictionaries above.
+                command.CommandText = $"ALTER TABLE {table} ADD COLUMN {column.Key} {column.Value}";
+                await command.ExecuteNonQueryAsync();
+            }
+    }
     using (var command = db.Database.GetDbConnection().CreateCommand())
     {
         command.CommandText = "PRAGMA table_info(Results)";
@@ -511,6 +529,15 @@ api.MapPut("/settings", async (AppSettings input, AppDb db) =>
     if (input.IntervalMinutes < 0 || input.IntervalMinutes > 525600 || input.MaxConcurrency is < 1 or > 16 || input.TimeoutSeconds is < 5 or > 600 || input.ChallengeCount is < 3 or > 6) return Results.BadRequest();
     if (!CandyProbe.ValidReasoningEffort(input.CandyReasoningEffort)) return Results.BadRequest(new { error = "不支持的糖果思考等级" });
     var settings = await db.Settings.SingleAsync();
+    if (input.DetectionMethod is not ("modeltrace" or "hlwy") || input.HlwySampleCount is < 40 or > 1000 || input.HlwyBaselinesJson is null)
+        return Results.BadRequest(new { error = "检测方式无效，或 HLWY 采样次数不在 40–1000 之间。" });
+    try { HlwyFingerprint.Baselines(input.HlwyBaselinesJson); }
+    catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException)
+    { return Results.BadRequest(new { error = "HLWY 基准格式无效，需要名称、355 项分布及 stats.mode。" }); }
+    settings.DetectionMethod = input.DetectionMethod;
+    settings.HlwySampleCount = input.HlwySampleCount;
+    settings.HlwyAntiTarget = input.HlwyAntiTarget;
+    settings.HlwyBaselinesJson = input.HlwyBaselinesJson;
     settings.CandyReasoningEffort = input.CandyReasoningEffort;
     settings.IntervalMinutes = input.IntervalMinutes; settings.MaxConcurrency = input.MaxConcurrency; settings.TimeoutSeconds = 240; settings.ChallengeCount = input.ChallengeCount;
     settings.NextRunAt = input.IntervalMinutes > 0 ? DateTime.UtcNow.AddMinutes(input.IntervalMinutes) : null;

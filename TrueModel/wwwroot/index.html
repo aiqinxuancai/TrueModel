@@ -172,8 +172,23 @@
           <section id="settings" class="view" hidden>
             <h1>检测设置</h1>
             <form id="settingsForm">
+              <label>主要检测方式
+                <select name="detectionMethod">
+                  <option value="modeltrace">ModelTrace · 挑战指纹归因</option>
+                  <option value="hlwy">HLWY · 随机数统计指纹</option>
+                </select>
+              </label>
+              <fieldset id="hlwySettings" hidden>
+                <legend>HLWY 检测设置</legend>
+                <label>采样次数（40–1000）<input name="hlwySampleCount" type="number" min="40" max="1000" value="100" required /></label>
+                <label><input name="hlwyAntiTarget" type="checkbox" />反针对模式</label>
+                <p class="muted">每次在提示词内部随机插入一个空格，不拆开数字。每个样本单独请求，至少获得 40 个有效样本才生成报告；连续失败 5 次提前停止。匹配度是统计相似性，不是身份概率。</p>
+                <label>导入 HLWY 基准 JSON<input id="hlwyImport" type="file" accept=".json,application/json" /></label>
+                <label>自定义基准（留空使用内置基准）<textarea name="hlwyBaselinesJson" rows="4" placeholder="支持上游导出的基准数组或单个基准对象"></textarea></label>
+                <p class="muted">保存后生效。使用可信来源运行 HLWY 检测，可在检测详情导出基准，再导入此处。自定义基准替代内置基准，与 ModelTrace 指纹库独立。</p>
+              </fieldset>
               <label
-                >每次挑战题目数（3–6）<input
+                >ModelTrace 挑战题目数（3–6）<input
                   name="challengeCount"
                   type="number"
                   min="3"
@@ -194,7 +209,7 @@
                   max="16"
                   required /></label
               ><label
-                >ModelTrace 单次请求超时（固定 240 秒）<input
+                >单次请求超时（固定 240 秒）<input
                   name="timeoutSeconds"
                   type="number"
                   value="240"

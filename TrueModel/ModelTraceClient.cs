@@ -7,7 +7,7 @@ using System.Text.Json;
 namespace TrueModel;
 
 // Native port of ModelTrace enrollment.py's completion adapter.
-public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHistory = null)
+public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? juiceHistory = null)
 {
     public const string DefaultUserAgent = "Codex Desktop/0.147.0-alpha.1.2 (Windows 10.0.26200; x86_64) unknown (codex_exec; 0.147.0-alpha.1.2)";
     private static readonly int[] Retryable = [408, 429, 500, 502, 503, 504];
@@ -18,19 +18,19 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
         return normalized.EndsWith(suffix, StringComparison.Ordinal) ? normalized : normalized + (normalized.EndsWith("/v1", StringComparison.Ordinal) ? "" : "/v1") + suffix;
     }
     public async Task<string> Completion(string url, string key, string model, string prompt, CancellationToken token, Action<int>? observeStatus = null,
-        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null)
+        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false)
     {
         var errors = new List<string>();
         // An explicit OpenAI effort cannot be silently discarded on protocol fallback.
         foreach (var anthropic in reasoningEffort is null ? new[] { false, true } : new[] { false })
         {
-            try { return await Request(url, key, model, prompt, anthropic, token, observeStatus, reasoningEffort: reasoningEffort, observeReasoningTokens: observeReasoningTokens); }
+            try { return await Request(url, key, model, prompt, anthropic, token, observeStatus, reasoningEffort: reasoningEffort, observeReasoningTokens: observeReasoningTokens, statistical: statistical); }
             catch (UpstreamException e) { errors.Add($"{(anthropic ? "anthropic" : "openai")}: {e.Message}"); }
         }
         throw new UpstreamException("接口格式自动探测失败；" + string.Join('；', errors));
     }
     private async Task<string> Request(string url, string key, string model, string prompt, bool anthropic, CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false,
-        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null)
+        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false)
     {
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -44,6 +44,7 @@ public sealed class ModelTraceClient(HttpClient client, JuiceHistory? juiceHisto
             var body = new Dictionary<string, object> { ["model"] = model, ["messages"] = new[] { new { role = "user", content = prompt } } };
             if (reasoningEffort is not null) body["reasoning_effort"] = reasoningEffort;
             if (anthropic) { body["max_tokens"] = 4096; request.Headers.Add("x-api-key", key); request.Headers.Add("anthropic-version", "2023-06-01"); }
+            if (statistical) { body["temperature"] = 1.0; body["max_tokens"] = 256; }
             request.Content = JsonContent.Create(body);
             try
             {
