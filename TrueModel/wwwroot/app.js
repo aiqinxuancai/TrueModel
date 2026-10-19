@@ -229,7 +229,7 @@ async function session(){const data=await api('/session');token=data.token;setup
 $('loginForm').onsubmit=async e=>{e.preventDefault();try{const credentials=Object.fromEntries(new FormData(e.target));if(setupRequired)await api('/setup','POST',credentials);await api('/login','POST',credentials);await session();}catch(e){message(e.message);}};
 $('logout').onclick=async()=>{await api('/logout','POST',{});await session();};
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!==b.dataset.tab);document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('selected',x===b));});
-async function refresh(){[sites,results,runs,banks,recentModelResults]=await Promise.all(['/sites','/results','/runs','/banks','/results?perModel=true'].map(p=>api(p)));render();const settings=await api('/settings');if(!document.querySelector('#settingsForm:focus-within'))for(const name of ['challengeCount','intervalMinutes','maxConcurrency','timeoutSeconds','candyReasoningEffort','detectionMethod','hlwySampleCount','hlwyBaselinesJson','hlwyAntiTarget']){const field=$('settingsForm').elements[name];if(field.type==='checkbox')field.checked=settings[name];else field.value=name==='timeoutSeconds'?240:settings[name];}updateDetectionSettings();$('nextRun').textContent=`${settings.detectionMethod==='hlwy'?`HLWY · ${settings.hlwySampleCount} 次采样 · 反针对${settings.hlwyAntiTarget?'开启':'关闭'}`:`ModelTrace · ${settings.challengeCount} 个挑战`} · 下次定时检测：${time(settings.nextRunAt)}`;}
+async function refresh(){[sites,results,runs,banks,recentModelResults]=await Promise.all(['/sites','/results','/runs','/banks','/results?perModel=true'].map(p=>api(p)));render();await refreshHlwyBaselines();const settings=await api('/settings');if(!document.querySelector('#settingsForm:focus-within'))for(const name of ['challengeCount','intervalMinutes','maxConcurrency','timeoutSeconds','candyReasoningEffort','detectionMethod','hlwySampleCount','hlwyAntiTarget']){const field=$('settingsForm').elements[name];if(field.type==='checkbox')field.checked=settings[name];else field.value=name==='timeoutSeconds'?240:settings[name];}updateDetectionSettings();$('nextRun').textContent=`${settings.detectionMethod==='hlwy'?`HLWY · ${settings.hlwySampleCount} 次采样 · 反针对${settings.hlwyAntiTarget?'开启':'关闭'}`:`ModelTrace · ${settings.challengeCount} 个挑战`} · 下次定时检测：${time(settings.nextRunAt)}`;}
 const updatingFavorites = new Set();
 function favoriteButton(m) {
     const label = m.isFavorite ? '取消收藏' : '收藏';
@@ -317,7 +317,51 @@ if (document.querySelector('.settings-tab')) {
 }
 
 $('settingsForm').elements.detectionMethod.onchange=updateDetectionSettings;
-$('hlwy-import').onchange=async e=>{const file=e.target.files[0];if(!file)return;if(file.size>2000000){message('基准文件不能超过 2 MB');return;}$('hlwy-baseline').value=await file.text();message('基准已载入，请保存设置');};
+let hlwyBaselineDirty = false;
+async function refreshHlwyBaselines() {
+  const data = await api('/hlwy/baselines');
+  if (!hlwyBaselineDirty) $('hlwy-baseline').value = data.customJson;
+  $('hlwyBaselineSummary').textContent = `当前使用${data.custom ? '自定义' : '默认'}基准（${data.models.length} 个）：${data.models.join('、')}。上游默认基准 ${data.defaultCount} 个。`;
+}
+$('hlwy-baseline').oninput = () => { hlwyBaselineDirty = true; };
+$('hlwy-import').onchange = async e => {
+  try {
+    const file = e.target.files[0]; if (!file) return;
+    if (file.size > 2000000) throw Error('基准文件不能超过 2 MB');
+    $('hlwy-baseline').value = await file.text(); hlwyBaselineDirty = true;
+    message('基准已载入，请点击保存基准');
+  } catch (e) { message(e.message); }
+};
+$('updateHlwyBaselines').onclick = async e => {
+  const button = e.currentTarget; button.disabled = true;
+  $('hlwyUpdateStatus').textContent = '正在从上游下载基准…';
+  try {
+    const result = await api('/hlwy/baselines/update', 'POST', {});
+    $('hlwyUpdateStatus').textContent = `已更新 ${result.count} 个默认基准；如正在使用自定义基准，可点击“恢复默认基准”切换。`;
+    await refreshHlwyBaselines();
+  } catch (e) { $('hlwyUpdateStatus').textContent = e.message; }
+  finally { button.disabled = false; }
+};
+async function saveHlwyBaselines(json) {
+  await api('/hlwy/baselines', 'PUT', { json });
+  hlwyBaselineDirty = false;
+  $('hlwy-import').value = '';
+  await refreshHlwyBaselines();
+  message(json.trim() ? '自定义基准已保存' : '已恢复默认基准');
+}
+$('hlwyBaselineForm').onsubmit = async e => {
+  e.preventDefault();
+  const button = e.submitter; if (button) button.disabled = true;
+  try { await saveHlwyBaselines($('hlwy-baseline').value); }
+  catch (e) { message(e.message); }
+  finally { if (button) button.disabled = false; }
+};
+$('resetHlwyBaselines').onclick = async e => {
+  if (!confirm('恢复默认基准将清除自定义基准，确认继续？')) return;
+  const button = e.currentTarget; button.disabled = true;
+  try { await saveHlwyBaselines(''); } catch (e) { message(e.message); }
+  finally { button.disabled = false; }
+};
 $('settingsForm').onsubmit=async e=>{e.preventDefault();try{await api('/settings','PUT',Object.fromEntries([...new FormData(e.target)].map(([k,v])=>[k,['candyReasoningEffort','detectionMethod','hlwyBaselinesJson'].includes(k)?v:k==='hlwyAntiTarget'?true:Number(v)])));message('设置已保存');await refresh();}catch(e){message(e.message);}};
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;if(!['key','model','delete','detect','detectModel','detectKey','detectSite','cancel','activate','detail','bankDetail','deleteBank','manualBank'].some(k=>d[k]!==undefined))return;try{if(d.key)edit('添加 Key',[['name','Key 名称'],['value','API Key','password']],v=>api(`/sites/${d.key}/keys`,'POST',v));if(d.model)edit('添加模型',[['name','模型 ID']],v=>api(`/keys/${d.model}/models`,'POST',v));if(d.delete&&confirm('确认删除？此操作会删除下级配置，历史记录仍然保留。')){await api('/'+d.delete,'DELETE');await refresh();}if(d.deleteBank&&confirm('确认删除此指纹库？删除后无法恢复。')){await api(`/banks/${d.deleteBank}`,'DELETE');await refresh();}if(d.manualBank)openManualFingerprint(Number(d.manualBank));if(d.bankDetail){const bank=await api(`/banks/${d.bankDetail}`);$('detailBody').innerHTML=`<h2>${esc(bank.name)}</h2><p>版本：${esc(bank.builtAt||'—')} · SHA256 ${esc(bank.sha256)}</p><table><thead><tr><th>模型标识</th><th>名称</th><th>家族</th><th>有效数字</th></tr></thead><tbody>${bank.models.map(m=>`<tr><td>${esc(m.id)}</td><td>${esc(m.displayName)}</td><td>${esc(m.family)}</td><td>${m.validNumberCount}</td></tr>`).join('')}</tbody></table>`;$('detail').showModal();}if(d.detect||d.detectModel||d.detectKey||d.detectSite){b.disabled=true;await api('/detect','POST',{modelId:d.detectModel?Number(d.detectModel):null,keyId:d.detectKey?Number(d.detectKey):null,siteId:d.detectSite?Number(d.detectSite):null});message('检测任务已加入队列');await refresh();}if(d.cancel){await api(`/runs/${d.cancel}/cancel`,'POST',{});message('已请求取消');}if(d.activate){await api(`/banks/${d.activate}/activate`,'POST',{});await refresh();}if(d.detail){const r=results.find(x=>x.id===Number(d.detail))||recentModelResults.find(x=>x.id===Number(d.detail));const report=r.attributionJson?JSON.parse(r.attributionJson):null;$('detailBody').innerHTML=`<p>${esc(r.siteName)} / ${esc(r.keyName)} / ${esc(r.modelName)} · ${badge(r.status)} · 总耗时 ${(r.latencyMs/1000).toFixed(1)}s</p><p>Juice（模型自报）：<span class="probe-${esc(r.juiceStatus || 'pending')}" title="${esc(juiceTooltip(r))}">${juiceLabel(r)}</span></p><p>糖果：${candySummary(r)}</p><details><summary>糖果题目与回复</summary><pre>${esc(candyTooltip(r))}</pre></details>${r.error?`<p>${esc(r.error)}</p>`:''}${report?`${renderDetectionReport(report)}`:''}<h2>挑战与响应</h2>${JSON.parse(r.responsesJson).map(o=>`<details><summary>${o.ExpectedCount} 个整数 · ${((o.DurationMs||0)/1000).toFixed(1)}s</summary>${o.Error?`<p>${esc(o.Error)}</p>`:''}<p>${esc(o.Prompt)}</p><pre>${esc(o.Text)}</pre></details>`).join('')}`;$('detail').showModal();if(report?.Method==='hlwy')$('exportHlwyBaseline').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify([report.Baseline],null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='hlwy-baseline.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};}}catch(e){message(e.message);}finally{b.disabled=false;}});
 session().catch(e=>message(e.message));setInterval(()=>{if(!$('application').hidden)refresh().catch(e=>message(e.message));},5000);

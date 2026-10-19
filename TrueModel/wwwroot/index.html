@@ -161,13 +161,50 @@
           <section id="banks" class="view" hidden>
             <div class="heading">
               <h1>指纹库</h1>
-              <div class="actions"><button id="updateDefaultBank">更新默认库</button><button id="createEmptyBank">新建空指纹库</button><button id="collectFingerprint">采集模型指纹</button><button id="importBank">导入指纹库</button></div>
+            </div>
+            <div class="heading">
+              <h2>ModelTrace 指纹库</h2>
+              <div class="actions"><button id="updateDefaultBank">从上游更新默认库</button><button id="createEmptyBank">新建空指纹库</button><button id="collectFingerprint">采集模型指纹</button><button id="importBank">导入指纹库</button></div>
             </div>
             <p class="notice">
               归因概率仅在当前候选库内比较，不代表模型身份已得到独立验证。
             </p>
             <p id="bankUpdateStatus" role="status" aria-live="polite"></p>
             <div id="bankRows"></div>
+            <div class="settings-divider"></div>
+            <div class="heading">
+              <h2>HLWY 基准</h2>
+              <button id="updateHlwyBaselines" type="button">从上游更新基准</button>
+            </div>
+            <p id="hlwyBaselineSummary" class="notice"></p>
+            <p id="hlwyUpdateStatus" role="status" aria-live="polite"></p>
+            <form id="hlwyBaselineForm">
+                  <div class="setting-group">
+                    <label for="hlwy-import">
+                      <span class="label-text">导入基准文件</span>
+                      <span class="label-hint">可选，从检测详情导出的基准 JSON</span>
+                    </label>
+                    <div class="file-input-wrapper">
+                      <input id="hlwy-import" name="hlwyImport" type="file" accept=".json,application/json" />
+                      <span class="file-input-hint">仅接受 JSON 格式；导入后优先使用自定义基准</span>
+                    </div>
+                  </div>
+
+                  <div class="setting-group">
+                    <label for="hlwy-baseline">
+                      <span class="label-text">自定义基准（高级）</span>
+                      <span class="label-hint">留空则自动使用上游默认基准，或粘贴来自可信来源的基准数据</span>
+                    </label>
+                    <div class="textarea-wrapper">
+                      <textarea id="hlwy-baseline" name="hlwyBaselinesJson" rows="5" placeholder="支持上游导出的基准数组或单个基准对象，如：[{&quot;name&quot;: &quot;gpt-4&quot;, ...}]"></textarea>
+                      <span class="textarea-hint">默认从 <a href="https://github.com/hanlinwenyuan/hlwy-ai-checker/tree/main/baselines" target="_blank" rel="noopener noreferrer">hlwy-ai-checker</a> 自动同步，每 6 小时更新；离线使用缓存或内置基准。清空并保存可恢复默认；与 ModelTrace 指纹库独立</span>
+                    </div>
+                  </div>
+              <div class="actions">
+                <button class="primary">保存基准</button>
+                <button id="resetHlwyBaselines" type="button">恢复默认基准</button>
+              </div>
+            </form>
           </section>
           <section id="settings" class="view" hidden>
             <div class="heading">
@@ -231,29 +268,7 @@
                     <p class="feature-hint">每次在提示词内部随机插入一个空格（不拆开数字）以规避某些针对性对策</p>
                   </div>
 
-                  <div class="settings-divider"></div>
-
-                  <div class="setting-group">
-                    <label for="hlwy-import">
-                      <span class="label-text">导入基准文件</span>
-                      <span class="label-hint">可选，从检测详情导出的基准 JSON</span>
-                    </label>
-                    <div class="file-input-wrapper">
-                      <input id="hlwy-import" name="hlwyImport" type="file" accept=".json,application/json" />
-                      <span class="file-input-hint">仅接受 JSON 格式；导入后优先使用自定义基准</span>
-                    </div>
-                  </div>
-
-                  <div class="setting-group">
-                    <label for="hlwy-baseline">
-                      <span class="label-text">自定义基准（高级）</span>
-                      <span class="label-hint">留空则自动使用上游默认基准，或粘贴来自可信来源的基准数据</span>
-                    </label>
-                    <div class="textarea-wrapper">
-                      <textarea id="hlwy-baseline" name="hlwyBaselinesJson" rows="5" placeholder="支持上游导出的基准数组或单个基准对象，如：[{&quot;name&quot;: &quot;gpt-4&quot;, ...}]"></textarea>
-                      <span class="textarea-hint">默认从 <a href="https://github.com/hanlinwenyuan/hlwy-ai-checker/tree/main/baselines" target="_blank" rel="noopener noreferrer">hlwy-ai-checker</a> 自动同步，每 6 小时更新；离线使用缓存或内置基准。清空并保存可恢复默认；与 ModelTrace 指纹库独立</span>
-                    </div>
-                  </div>
+                  <p class="section-hint">默认基准更新、导入和恢复默认请前往“指纹库 → HLWY 基准”。</p>
                 </div>
               </div>
 

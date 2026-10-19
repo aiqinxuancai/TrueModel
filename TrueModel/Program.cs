@@ -412,6 +412,34 @@ api.MapPost("/banks/update-default", async (AppDb db, DefaultBankUpdater updater
     catch (Exception e) when (e is JsonException or FormatException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException)
     { return Results.BadRequest(new { error = "GitHub 指纹库格式不兼容或内容无效，未保存更新" }); }
 });
+api.MapGet("/hlwy/baselines", async (AppDb db, HlwyBaselineUpdater updater) =>
+{
+    var custom = (await db.Settings.AsNoTracking().SingleAsync()).HlwyBaselinesJson;
+    return Results.Ok(new { customJson = custom, custom = !string.IsNullOrWhiteSpace(custom),
+        models = updater.Baselines(custom).Select(b => b.GetProperty("name").GetString()),
+        defaultCount = updater.Baselines("").Length });
+});
+api.MapPost("/hlwy/baselines/update", async (HlwyBaselineUpdater updater, CancellationToken token) =>
+{
+    try { await updater.RefreshAsync(token); return Results.Ok(new { count = updater.Baselines("").Length }); }
+    catch (OperationCanceledException) when (!token.IsCancellationRequested)
+    { return Results.Json(new { error = "连接 GitHub 超时，已保留原有基准" }, statusCode: 504); }
+    catch (HttpRequestException)
+    { return Results.Json(new { error = "无法从 GitHub 下载基准，已保留原有基准，请稍后重试" }, statusCode: 502); }
+    catch (Exception e) when (e is JsonException or FormatException or KeyNotFoundException or InvalidOperationException or OverflowException)
+    { return Results.BadRequest(new { error = "上游基准格式无效，未保存更新" }); }
+    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+    { return Results.Json(new { error = "基准缓存写入失败，已保留原有基准" }, statusCode: 500); }
+});
+api.MapPut("/hlwy/baselines", async (HlwyBaselineInput input, AppDb db) =>
+{
+    if (input.Json is null) return Results.BadRequest(new { error = "请提供基准 JSON，留空恢复默认" });
+    try { HlwyFingerprint.Baselines(input.Json); }
+    catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException)
+    { return Results.BadRequest(new { error = "HLWY 基准格式无效，需要名称、355 项分布及 stats.mode。" }); }
+    await db.Settings.ExecuteUpdateAsync(s => s.SetProperty(x => x.HlwyBaselinesJson, input.Json));
+    return Results.NoContent();
+});
 api.MapGet("/banks/{id:int}", async (int id, AppDb db) =>
 {
     var bank = await db.Banks.AsNoTracking().SingleOrDefaultAsync(b => b.Id == id);
@@ -537,8 +565,12 @@ api.MapPost("/banks/{id:int}/activate", async (int id, AppDb db) =>
     await transaction.CommitAsync(); return Results.NoContent();
 });
 api.MapGet("/settings", async (AppDb db) => await db.Settings.SingleAsync());
-api.MapPut("/settings", async (AppSettings input, AppDb db) =>
+api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
 {
+    AppSettings? input;
+    try { input = payload.Deserialize<AppSettings>(new JsonSerializerOptions(JsonSerializerDefaults.Web)); }
+    catch (JsonException) { return Results.BadRequest(); }
+    if (input is null) return Results.BadRequest();
     if (input.IntervalMinutes < 0 || input.IntervalMinutes > 525600 || input.MaxConcurrency is < 1 or > 16 || input.TimeoutSeconds is < 5 or > 600 || input.ChallengeCount is < 3 or > 6) return Results.BadRequest();
     if (!CandyProbe.ValidReasoningEffort(input.CandyReasoningEffort)) return Results.BadRequest(new { error = "不支持的糖果思考等级" });
     var settings = await db.Settings.SingleAsync();
@@ -550,7 +582,8 @@ api.MapPut("/settings", async (AppSettings input, AppDb db) =>
     settings.DetectionMethod = input.DetectionMethod;
     settings.HlwySampleCount = input.HlwySampleCount;
     settings.HlwyAntiTarget = input.HlwyAntiTarget;
-    settings.HlwyBaselinesJson = input.HlwyBaselinesJson;
+    if (payload.EnumerateObject().Any(p => p.Name.Equals("hlwyBaselinesJson", StringComparison.OrdinalIgnoreCase)))
+        settings.HlwyBaselinesJson = input.HlwyBaselinesJson;
     settings.CandyReasoningEffort = input.CandyReasoningEffort;
     settings.IntervalMinutes = input.IntervalMinutes; settings.MaxConcurrency = input.MaxConcurrency; settings.TimeoutSeconds = 240; settings.ChallengeCount = input.ChallengeCount;
     settings.NextRunAt = input.IntervalMinutes > 0 ? DateTime.UtcNow.AddMinutes(input.IntervalMinutes) : null;
@@ -575,3 +608,5 @@ record ModelInput(string Name);
 record ModelBatchInput(string[]? Names);
 public partial class Program { }
 
+
+record HlwyBaselineInput(string? Json);

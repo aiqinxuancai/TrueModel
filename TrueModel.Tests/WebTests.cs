@@ -24,6 +24,8 @@ public class WebTests
         Directory.CreateDirectory(directory);
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/settings")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/hlwy/baselines")).StatusCode);
+        Assert.False((await client.PostAsJsonAsync("/api/hlwy/baselines/update", new { })).IsSuccessStatusCode);
         async Task RefreshToken()
         {
             var session = await client.GetFromJsonAsync<JsonElement>("/api/session");
@@ -33,6 +35,17 @@ public class WebTests
         await RefreshToken();
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/login", new { username = "admin", password = "test-password-123!" })).StatusCode);
         await RefreshToken();
+        var customBaseline = JsonSerializer.Serialize(new { name = "custom-test", distribution = Enumerable.Repeat(1d, 355), stats = new { mode = 42 } });
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/hlwy/baselines", new { json = customBaseline })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/hlwy/baselines", new { json = "{}" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 4 })).StatusCode);
+        var baselineState = await client.GetFromJsonAsync<JsonElement>("/api/hlwy/baselines");
+        Assert.True(baselineState.GetProperty("custom").GetBoolean());
+        Assert.Equal(customBaseline, baselineState.GetProperty("customJson").GetString());
+        Assert.Equal("custom-test", baselineState.GetProperty("models")[0].GetString());
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/hlwy/baselines", new { json = "" })).StatusCode);
+        Assert.Equal(4, (await client.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("challengeCount").GetInt32());
+        Assert.False((await client.GetFromJsonAsync<JsonElement>("/api/hlwy/baselines")).GetProperty("custom").GetBoolean());
         foreach (var count in new[] { 3, 6 })
         {
             Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings", new { challengeCount = count, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240 })).StatusCode);
