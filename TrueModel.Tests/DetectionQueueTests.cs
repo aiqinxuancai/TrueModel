@@ -131,11 +131,13 @@ public class DetectionQueueTests
         Assert.Equal("Success", candyResult.CandyStatus);
         Assert.Equal("high", candyResult.CandyReasoningEffort);
         Assert.Equal(512, candyResult.CandyReasoningTokens);
+        Assert.NotNull(candyResult.CandyLatencyMs);
         (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, candyReasoningEffort = "low" })).EnsureSuccessStatusCode();
         var history = await client.GetFromJsonAsync<JsonElement>("/api/results");
         var historicalCandy = history.EnumerateArray().Single(r => r.GetProperty("modelId").GetInt32() == third);
         Assert.Equal("high", historicalCandy.GetProperty("candyReasoningEffort").GetString());
         Assert.Equal(512, historicalCandy.GetProperty("candyReasoningTokens").GetInt64());
+        Assert.Equal(candyResult.CandyLatencyMs, historicalCandy.GetProperty("candyLatencyMs").GetInt64());
         Assert.Equal(batch ? 2 : 1, (await Run(secondRun)).GetProperty("completed").GetInt32());
     }
 

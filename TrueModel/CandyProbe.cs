@@ -20,4 +20,4 @@ public static class CandyProbe
 }
 
 public sealed record CandyProbeResult(string CandyStatus, string CandyPrompt, string? CandyResponse, string? CandyError,
-    string CandyReasoningEffort, long? CandyReasoningTokens);
+    string CandyReasoningEffort, long? CandyReasoningTokens, long? CandyLatencyMs = null);

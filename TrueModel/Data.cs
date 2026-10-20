@@ -67,6 +67,7 @@ public sealed class DetectionResult
     public string? CandyError { get; set; }
     public string? CandyReasoningEffort { get; set; }
     public long? CandyReasoningTokens { get; set; }
+    public long? CandyLatencyMs { get; set; }
 }
 public sealed class FingerprintBank
 {
@@ -129,6 +130,7 @@ public sealed class MonitoredModel
     public string? CandyError { get; set; }
     public string? CandyReasoningEffort { get; set; }
     public long? CandyReasoningTokens { get; set; }
+    public long? CandyLatencyMs { get; set; }
     public DateTime? JuiceCheckedAt { get; set; }
     public DateTime? CandyCheckedAt { get; set; }
     public int Id { get; set; }

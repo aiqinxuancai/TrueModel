@@ -48,6 +48,8 @@ public class JuiceTests
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyRequestedEffort");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyReasoningEffort");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyReasoningTokens");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyLatencyMs");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyLatencyMs");
             // Existing yes/no results must not become candy passes during the upgrade.
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN InstructionStatus TEXT NULL");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN InstructionResponse TEXT NULL");
@@ -157,6 +159,8 @@ public class JuiceTests
         Assert.Equal("Success", publicModel.GetProperty("candyStatus").GetString());
         Assert.Equal("high", publicModel.GetProperty("candyReasoningEffort").GetString());
         Assert.Equal(1234, publicModel.GetProperty("candyReasoningTokens").GetInt64());
+        Assert.NotNull(saved.CandyLatencyMs);
+        Assert.Equal(saved.CandyLatencyMs, publicModel.GetProperty("candyLatencyMs").GetInt64());
         Assert.False(publicModel.TryGetProperty("instructionStatus", out _));
         var results = await http.GetFromJsonAsync<JsonElement>("/api/results");
         Assert.Equal(JsonValueKind.Null, results[0].GetProperty("candyStatus").ValueKind);

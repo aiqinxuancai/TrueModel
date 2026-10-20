@@ -23,14 +23,17 @@ function probeLabel(status) {
 function probeBadge(status) {
     return `<span class="probe-${esc(status || 'pending')}">${probeLabel(status)}</span>`;
 }
+function candyDuration(r) {
+    return r?.candyLatencyMs != null ? ` ${(r.candyLatencyMs / 1000).toFixed(1)}s` : '';
+}
 function candyTooltip(r) {
-    return `糖果：${probeLabel(r?.candyStatus)}\n请求思考等级：${candyEffortLabel(r)}\nReason Tok：${r?.candyReasoningTokens ?? '—'}${r?.candyReasoningTokens == null ? '（未获取：接口未返回可识别的推理用量，或旧记录未保存）' : '（接口返回的推理 token 数）'}\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${r?.candyPrompt || '尚未检测'}\n回复：${r?.candyResponse ?? '—'}${r?.candyError ? '\n错误：' + r.candyError : ''}`;
+    return `糖果：${probeLabel(r?.candyStatus)}${candyDuration(r)}\n请求思考等级：${candyEffortLabel(r)}\nReason Tok：${r?.candyReasoningTokens ?? '—'}${r?.candyReasoningTokens == null ? '（未获取：接口未返回可识别的推理用量，或旧记录未保存）' : '（接口返回的推理 token 数）'}\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${r?.candyPrompt || '尚未检测'}\n回复：${r?.candyResponse ?? '—'}${r?.candyError ? '\n错误：' + r.candyError : ''}`;
 }
 function candyEffortLabel(r) {
     return r?.candyReasoningEffort === 'default' ? '接口默认' : r?.candyReasoningEffort || '—';
 }
 function candySummary(r) {
-    return `${probeBadge(r?.candyStatus)}<small class="candy-metrics">${esc(candyEffortLabel(r))} · Reason Tok: ${esc(r?.candyReasoningTokens ?? '—')}</small>`;
+    return `${probeBadge(r?.candyStatus)}${candyDuration(r)}<small class="candy-metrics">${esc(candyEffortLabel(r))} · Reason Tok: ${esc(r?.candyReasoningTokens ?? '—')}</small>`;
 }
 const refreshingCandy = new Set();
 function candyIsBusy(m) {
@@ -62,9 +65,9 @@ document.addEventListener('click', async event => {
     try { const result = await refreshProbe(Number(button.dataset.candy), 'candy'); if (result) message('糖果检测已加入后台队列，刷新或关闭页面不会中断检测'); }
     catch (error) { message(error.message); refresh().catch(() => {}); }
 });
-async function refreshAllProbes(kind, button) {
+async function refreshAllProbes(kind, button, group = 'all') {
     if (button.disabled) return;
-    if (kind === 'candy') {
+    if (kind === 'candy' && group === 'all') {
         button.disabled = true;
         try {
             const result = await api('/candy/refresh-all', 'POST', {});
@@ -76,7 +79,7 @@ async function refreshAllProbes(kind, button) {
     }
     const models = sites.flatMap(s => s.keys.flatMap(k => k.models)).filter(m => kind !== 'juice' || /(?:^|[/\s:_-])(?:chat)?gpt(?:$|[-_.\s\d])/i.test(m.name));
     const busy = kind === 'juice' ? refreshingJuice : refreshingCandy;
-    const pending = models.filter(m => !busy.has(m.id));
+    const pending = models.filter(m => (group === 'all' || (group === 'favorite' ? m.isFavorite : recentAttributionAccuracy(m.id) >= 0.8)) && !busy.has(m.id) && (kind !== 'candy' || !candyIsBusy(m)));
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
     let errors = 0, completed = 0;
@@ -89,11 +92,14 @@ async function refreshAllProbes(kind, button) {
                 catch { errors++; }
             }
         }));
-        message(`${kind === 'juice' ? 'Juice' : '糖果'}全部刷新完成：已更新 ${completed} 个，错误 ${errors} 个`);
+        message(kind === 'candy' ? `已将 ${completed} 个模型加入糖果后台检测队列，错误 ${errors} 个` : `Juice 刷新完成：已更新 ${completed} 个，错误 ${errors} 个`);
     } finally { button.disabled = false; button.removeAttribute('aria-busy'); }
 }
 $('refreshAllJuice').onclick = event => refreshAllProbes('juice', event.currentTarget);
 $('refreshAllCandy').onclick = event => refreshAllProbes('candy', event.currentTarget);
+document.querySelectorAll('[data-refresh-group]').forEach(button => {
+    button.onclick = () => refreshAllProbes(button.dataset.probe, button, button.dataset.refreshGroup);
+});
 const juicePicker = document.createElement('dialog');
 juicePicker.id = 'juicePromptPicker';
 juicePicker.setAttribute('aria-labelledby', 'juicePickerTitle');

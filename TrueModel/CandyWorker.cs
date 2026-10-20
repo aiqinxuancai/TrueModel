@@ -58,6 +58,7 @@ public sealed class CandyWorker(IServiceScopeFactory scopes, IDataProtectionProv
                 .SetProperty(m => m.CandyError, result.CandyError)
                 .SetProperty(m => m.CandyReasoningEffort, result.CandyReasoningEffort)
                 .SetProperty(m => m.CandyReasoningTokens, result.CandyReasoningTokens)
+                .SetProperty(m => m.CandyLatencyMs, result.CandyLatencyMs)
                 .SetProperty(m => m.CandyCheckedAt, DateTime.UtcNow)
                 .SetProperty(m => m.CandyRefreshStatus, "Completed"), token);
         }
@@ -76,6 +77,7 @@ public sealed class CandyWorker(IServiceScopeFactory scopes, IDataProtectionProv
                 .SetProperty(m => m.CandyError, "糖果后台检测失败，请检查模型配置后重试")
                 .SetProperty(m => m.CandyReasoningEffort, m => m.CandyRequestedEffort)
                 .SetProperty(m => m.CandyReasoningTokens, (long?)null)
+                .SetProperty(m => m.CandyLatencyMs, (long?)null)
                 .SetProperty(m => m.CandyCheckedAt, DateTime.UtcNow));
         }
     }

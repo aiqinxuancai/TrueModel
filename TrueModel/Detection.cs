@@ -176,6 +176,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             result.CandyError = candy.CandyError;
             result.CandyReasoningEffort = candy.CandyReasoningEffort;
             result.CandyReasoningTokens = candy.CandyReasoningTokens;
+            result.CandyLatencyMs = candy.CandyLatencyMs;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -200,6 +201,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 .SetProperty(r => r.CandyResponse, result.CandyResponse)
                 .SetProperty(r => r.CandyError, result.CandyError)
                 .SetProperty(r => r.CandyReasoningEffort, result.CandyReasoningEffort)
+                .SetProperty(r => r.CandyLatencyMs, result.CandyLatencyMs)
                 .SetProperty(r => r.CandyReasoningTokens, result.CandyReasoningTokens));
     }
 
@@ -226,6 +228,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 result.CandyError = probe.CandyError;
                 result.CandyReasoningEffort = probe.CandyReasoningEffort;
                 result.CandyReasoningTokens = probe.CandyReasoningTokens;
+                result.CandyLatencyMs = probe.CandyLatencyMs;
             }
             result.StatusCode = response.TryGetProperty("status_code", out var status) ? status.GetInt32() : 0;
             if (response.TryGetProperty("error", out var error))

@@ -78,7 +78,7 @@ public static class ModelManagement
                 // Results still describe the old ID in history, never the newly configured ID.
                 model.JuiceValue = null; model.JuiceStatus = null; model.JuicePrompt = null; model.JuiceCheckedAt = null;
                 model.CandyStatus = null; model.CandyPrompt = null; model.CandyResponse = null; model.CandyError = null;
-                model.CandyReasoningEffort = null; model.CandyReasoningTokens = null; model.CandyCheckedAt = null;
+                model.CandyReasoningEffort = null; model.CandyReasoningTokens = null; model.CandyLatencyMs = null; model.CandyCheckedAt = null;
                 model.CandyRefreshStatus = null; model.CandyRequestedEffort = null;
             }
             await db.SaveChangesAsync(token);

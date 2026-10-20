@@ -33,6 +33,18 @@ public class CandyProbeTests
         Assert.Equal(1, handler.Calls);
     }
 
+    [Theory]
+    [InlineData("21", false)]
+    [InlineData("29", false)]
+    [InlineData("error", true)]
+    public async Task MeasuresCandyRequestDuration(string answer, bool error)
+    {
+        var client = new ModelTraceClient(new HttpClient(new Handler(answer, error, delayMs: 30)));
+        var result = await client.ProbeCandy("https://example.test", "secret", "model", CancellationToken.None);
+        Assert.NotNull(result.CandyLatencyMs);
+        Assert.True(result.CandyLatencyMs >= 20);
+    }
+
     [Fact]
     public async Task ErrorsAreDistinctAndSecretsAreRedacted()
     {
@@ -122,13 +134,14 @@ public class CandyProbeTests
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") });
     }
 
-    private sealed class Handler(string answer, bool error = false, string effort = "default", long? tokens = null) : HttpMessageHandler
+    private sealed class Handler(string answer, bool error = false, string effort = "default", long? tokens = null, int delayMs = 0) : HttpMessageHandler
     {
         public int Calls { get; private set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             Calls++;
+            if (delayMs > 0) await Task.Delay(delayMs, token);
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
             Assert.Equal(CandyProbe.Prompt, body.GetProperty("messages")[0].GetProperty("content").GetString());
             Assert.False(body.TryGetProperty("tools", out _));
