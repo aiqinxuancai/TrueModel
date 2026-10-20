@@ -72,6 +72,12 @@ public class CandyWorkerTests
             Assert.Equal("high", model.CandyReasoningEffort);
             Assert.Equal(512, model.CandyReasoningTokens);
             Assert.NotNull(model.CandyCheckedAt);
+            Assert.Equal(2, handler.Calls);
+            Assert.Equal("Success", model.Candy2Status);
+            Assert.Equal(512, model.Candy2ReasoningTokens);
+            Assert.NotNull(model.Candy2LatencyMs);
+            Assert.True(CandyTestPrompts.IsCandy(model.Candy2Prompt));
+            Assert.NotEqual(CandyProbe.Prompt, model.Candy2Prompt);
         }
     }
 
@@ -98,7 +104,10 @@ public class CandyWorkerTests
         {
             Interlocked.Increment(ref Calls);
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            Assert.Equal(CandyProbe.Prompt, body.GetProperty("messages")[0].GetProperty("content").GetString());
+            var prompt = body.GetProperty("messages")[0].GetProperty("content").GetString();
+            Assert.True(CandyTestPrompts.IsCandy(prompt));
+            if (Calls == 1) Assert.Equal(CandyProbe.Prompt, prompt);
+            else Assert.NotEqual(CandyProbe.Prompt, prompt);
             Assert.Equal("high", body.GetProperty("reasoning_effort").GetString());
             Started.TrySetResult();
             try { await Release.Task.WaitAsync(token); }

@@ -59,6 +59,12 @@ public sealed class CandyWorker(IServiceScopeFactory scopes, IDataProtectionProv
                 .SetProperty(m => m.CandyReasoningEffort, result.CandyReasoningEffort)
                 .SetProperty(m => m.CandyReasoningTokens, result.CandyReasoningTokens)
                 .SetProperty(m => m.CandyLatencyMs, result.CandyLatencyMs)
+                .SetProperty(m => m.Candy2Status, result.Candy2Status)
+                .SetProperty(m => m.Candy2Prompt, result.Candy2Prompt)
+                .SetProperty(m => m.Candy2Response, result.Candy2Response)
+                .SetProperty(m => m.Candy2Error, result.Candy2Error)
+                .SetProperty(m => m.Candy2ReasoningTokens, result.Candy2ReasoningTokens)
+                .SetProperty(m => m.Candy2LatencyMs, result.Candy2LatencyMs)
                 .SetProperty(m => m.CandyCheckedAt, DateTime.UtcNow)
                 .SetProperty(m => m.CandyRefreshStatus, "Completed"), token);
         }
@@ -78,6 +84,12 @@ public sealed class CandyWorker(IServiceScopeFactory scopes, IDataProtectionProv
                 .SetProperty(m => m.CandyReasoningEffort, m => m.CandyRequestedEffort)
                 .SetProperty(m => m.CandyReasoningTokens, (long?)null)
                 .SetProperty(m => m.CandyLatencyMs, (long?)null)
+                .SetProperty(m => m.Candy2Status, "Failed")
+                .SetProperty(m => m.Candy2Prompt, (string?)null)
+                .SetProperty(m => m.Candy2Response, (string?)null)
+                .SetProperty(m => m.Candy2Error, (string?)null)
+                .SetProperty(m => m.Candy2ReasoningTokens, (long?)null)
+                .SetProperty(m => m.Candy2LatencyMs, (long?)null)
                 .SetProperty(m => m.CandyCheckedAt, DateTime.UtcNow));
         }
     }

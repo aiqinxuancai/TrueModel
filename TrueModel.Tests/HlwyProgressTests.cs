@@ -55,6 +55,7 @@ public class HlwyProgressTests
             var result = Assert.Single((await client.GetFromJsonAsync<JsonElement>($"/api/results?runId={run}")).EnumerateArray());
             Assert.Equal("Success", result.GetProperty("status").GetString());
             Assert.Equal("Running", result.GetProperty("candyStatus").GetString());
+            Assert.Equal("Running", result.GetProperty("candy2Status").GetString());
             var report = result.GetProperty("attributionJson").GetString();
             Assert.Equal(40, JsonDocument.Parse(report!).RootElement.GetProperty("UsedOutputs").GetInt32());
             Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/detect", new { modelId = model })).StatusCode);
@@ -71,6 +72,7 @@ public class HlwyProgressTests
             Assert.Equal("Success", final.GetProperty("status").GetString());
             Assert.Equal(report, final.GetProperty("attributionJson").GetString());
             Assert.Equal(cancel ? "Interrupted" : "Success", final.GetProperty("candyStatus").GetString());
+            Assert.Equal(cancel ? "Interrupted" : "Success", final.GetProperty("candy2Status").GetString());
             Assert.Equal("Success", final.GetProperty("juiceStatus").GetString());
         }
         finally { handler.Release.TrySetResult(); }
@@ -83,7 +85,7 @@ public class HlwyProgressTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            var candy = body.GetProperty("messages")[0].GetProperty("content").GetString() == CandyProbe.Prompt;
+            var candy = CandyTestPrompts.IsCandy(body.GetProperty("messages")[0].GetProperty("content").GetString());
             if (candy) { Started.TrySetResult(); await Release.Task.WaitAsync(token); }
             return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = candy ? "21" : "42" }, finish_reason = "stop" } } }) };
         }

@@ -1462,7 +1462,9 @@ details pre {
 .probe-Failed { color: #dc2626; }
 .probe-pending { color: var(--muted); }
 
-.candy-metrics { display: block; white-space: nowrap; color: var(--muted); font-size: 11px; margin-top: 2px; }
+.candy-cell-content, .candy-summary { white-space: nowrap; }
+.candy-summary { display: inline-flex; gap: 8px; }
+.candy-progress { color: var(--muted); font-size: 11px; }
 
 .model-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .model-actions button + button { margin-left: 0; }

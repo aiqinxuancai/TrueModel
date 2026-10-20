@@ -69,7 +69,8 @@ public class HlwyTests
         Assert.Equal(40, result.GetProperty("result").GetProperty("UsedOutputs").GetInt32());
         Assert.Equal(antiTarget, result.GetProperty("result").GetProperty("AntiTarget").GetBoolean());
         Assert.Equal("Success", result.GetProperty("candy").GetProperty("CandyStatus").GetString());
-        Assert.Equal(41, handler.Bodies.Count);
+        Assert.Equal(42, handler.Bodies.Count);
+        Assert.Equal("Success", result.GetProperty("candy").GetProperty("Candy2Status").GetString());
         foreach (var request in handler.Bodies.Take(40))
         {
             Assert.Equal(1, request.GetProperty("temperature").GetDouble());
@@ -91,7 +92,7 @@ public class HlwyTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.TestHlwy("https://example.test", "secret", "mock", new AppSettings(), cancellation.Token));
-        Assert.Equal(6, handler.Bodies.Count);
+        Assert.Equal(7, handler.Bodies.Count);
     }
 
     [Fact]
@@ -124,7 +125,7 @@ public class HlwyTests
         {
             var body = JsonSerializer.Deserialize<JsonElement>(await request.Content!.ReadAsStringAsync(cancellationToken));
             Bodies.Add(body);
-            var candy = body.GetProperty("messages")[0].GetProperty("content").GetString() == CandyProbe.Prompt;
+            var candy = CandyTestPrompts.IsCandy(body.GetProperty("messages")[0].GetProperty("content").GetString());
             return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = candy ? "21" : Text }, finish_reason = "stop" } } }) };
         }
     }

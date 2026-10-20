@@ -167,19 +167,34 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
     public async Task<CandyProbeResult> ProbeCandy(string baseUrl, string key, string model, CancellationToken token, string reasoningEffort = "default")
     {
         if (!CandyProbe.ValidReasoningEffort(reasoningEffort)) throw new ArgumentException("不支持的糖果思考等级", nameof(reasoningEffort));
+        var first = await ProbeCandyAttempt(baseUrl, key, model, CandyProbe.Prompt, token, reasoningEffort);
+        var second = await ProbeCandyAttempt(baseUrl, key, model, CandyProbe.CreateObfuscatedPrompt(), token, reasoningEffort);
+        return first with
+        {
+            Candy2Status = second.CandyStatus,
+            Candy2Prompt = second.CandyPrompt,
+            Candy2Response = second.CandyResponse,
+            Candy2Error = second.CandyError,
+            Candy2ReasoningTokens = second.CandyReasoningTokens,
+            Candy2LatencyMs = second.CandyLatencyMs
+        };
+    }
+    private async Task<CandyProbeResult> ProbeCandyAttempt(string baseUrl, string key, string model, string prompt, CancellationToken token, string reasoningEffort)
+    {
+        token.ThrowIfCancellationRequested();
         var watch = Stopwatch.StartNew();
         long? reasoningTokens = null;
         try
         {
-            var text = await Completion(baseUrl, key, model, CandyProbe.Prompt, token,
+            var text = await Completion(baseUrl, key, model, prompt, token,
                 reasoningEffort: reasoningEffort == "default" ? null : reasoningEffort, observeReasoningTokens: value => reasoningTokens = value);
-            return new(CandyProbe.Passes(text) ? "Success" : "Unavailable", CandyProbe.Prompt,
+            return new(CandyProbe.Passes(text) ? "Success" : "Unavailable", prompt,
                 string.IsNullOrEmpty(key) ? text : text.Replace(key, "[REDACTED]", StringComparison.Ordinal), null, reasoningEffort, reasoningTokens, watch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception e) when (e is UpstreamException or HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException or FormatException or IndexOutOfRangeException)
         {
-            return new("Failed", CandyProbe.Prompt, null,
+            return new("Failed", prompt, null,
                 string.IsNullOrEmpty(key) ? e.Message : e.Message.Replace(key, "[REDACTED]", StringComparison.Ordinal), reasoningEffort, reasoningTokens, watch.ElapsedMilliseconds);
         }
     }

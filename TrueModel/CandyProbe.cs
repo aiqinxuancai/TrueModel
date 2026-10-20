@@ -15,9 +15,19 @@ public static class CandyProbe
         圆形       7      9      8
         五角星形   7      6      4
         """;
+    // Split only words, preserving every non-whitespace character and all counts.
+    private static readonly Regex Keywords = new("糖果|苹果味|桃子味|西瓜味|五角星形|五角星|圆形|最少取出", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+    public static string CreateObfuscatedPrompt() => Keywords.Replace(Prompt, match =>
+    {
+        var separators = new[] { " ", "\t", "\n" };
+        var offset = Random.Shared.Next(separators.Length);
+        return string.Concat(match.Value.Select((character, index) =>
+            (index == 0 ? "" : separators[(offset + index - 1) % separators.Length]) + character));
+    });
     private static readonly Regex AnswerPattern = new(@"(?<!\d)21(?!\d)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
     public static bool Passes(string response) => AnswerPattern.IsMatch(response);
 }
 
 public sealed record CandyProbeResult(string CandyStatus, string CandyPrompt, string? CandyResponse, string? CandyError,
-    string CandyReasoningEffort, long? CandyReasoningTokens, long? CandyLatencyMs = null);
+    string CandyReasoningEffort, long? CandyReasoningTokens, long? CandyLatencyMs = null,
+    string? Candy2Status = null, string? Candy2Prompt = null, string? Candy2Response = null, string? Candy2Error = null, long? Candy2ReasoningTokens = null, long? Candy2LatencyMs = null);

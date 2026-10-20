@@ -50,6 +50,18 @@ public class JuiceTests
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyReasoningTokens");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN CandyLatencyMs");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyLatencyMs");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN Candy2Status");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN Candy2Prompt");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN Candy2Response");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN Candy2Error");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN Candy2ReasoningTokens");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN Candy2LatencyMs");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN Candy2Status");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN Candy2Prompt");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN Candy2Response");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN Candy2Error");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN Candy2ReasoningTokens");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN Candy2LatencyMs");
             // Existing yes/no results must not become candy passes during the upgrade.
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN InstructionStatus TEXT NULL");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN InstructionResponse TEXT NULL");
@@ -73,6 +85,8 @@ public class JuiceTests
         Assert.Null(old.JuiceStatus);
         Assert.Null(old.JuicePrompt);
         Assert.Null(old.CandyStatus);
+        Assert.Null(old.Candy2Status);
+        Assert.Null(old.Candy2ReasoningTokens);
         Assert.Null(old.CandyPrompt);
         Assert.Null(old.CandyResponse);
         Assert.Null(old.CandyError);
@@ -161,6 +175,10 @@ public class JuiceTests
         Assert.Equal(1234, publicModel.GetProperty("candyReasoningTokens").GetInt64());
         Assert.NotNull(saved.CandyLatencyMs);
         Assert.Equal(saved.CandyLatencyMs, publicModel.GetProperty("candyLatencyMs").GetInt64());
+        Assert.Equal("Success", publicModel.GetProperty("candy2Status").GetString());
+        Assert.Equal(1234, publicModel.GetProperty("candy2ReasoningTokens").GetInt64());
+        Assert.Equal(saved.Candy2Prompt, publicModel.GetProperty("candy2Prompt").GetString());
+        Assert.NotNull(saved.Candy2LatencyMs);
         Assert.False(publicModel.TryGetProperty("instructionStatus", out _));
         var results = await http.GetFromJsonAsync<JsonElement>("/api/results");
         Assert.Equal(JsonValueKind.Null, results[0].GetProperty("candyStatus").ValueKind);
@@ -190,7 +208,7 @@ public class JuiceTests
         var engine = new ModelTraceClient(new HttpClient(handler));
         var bank = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets/unified_bank.json"));
         var report = await engine.Test("https://example.test", "secret", "gpt-5", bank, 3, CancellationToken.None);
-        Assert.Equal(6, handler.Calls);
+        Assert.Equal(7, handler.Calls);
         Assert.Equal(64, report.GetProperty("juice_value").GetInt32());
         Assert.Equal("direct", report.GetProperty("juice_method").GetString());
         Assert.Equal(JuiceProbe.Prompt, report.GetProperty("juice_prompt").GetString());
@@ -242,10 +260,11 @@ public class JuiceTests
         var client = new ModelTraceClient(new HttpClient(handler));
         var bank = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets/unified_bank.json"));
         var report = await client.Test("https://example.test", "secret", model, bank, count, CancellationToken.None, "xhigh");
-        Assert.Equal(count + 1 + (status is null ? 0 : status == "Unavailable" ? JuiceProbe.Methods.Count : 1), handler.Calls);
+        Assert.Equal(count + 2 + (status is null ? 0 : status == "Unavailable" ? JuiceProbe.Methods.Count : 1), handler.Calls);
         Assert.Equal(count, report.GetProperty("responses").GetArrayLength());
         Assert.Equal(invalidChallenges, report.TryGetProperty("error", out _));
         Assert.Equal("Success", report.GetProperty("candy").GetProperty("CandyStatus").GetString());
+        Assert.Equal("Success", report.GetProperty("candy").GetProperty("Candy2Status").GetString());
         Assert.Equal("xhigh", report.GetProperty("candy").GetProperty("CandyReasoningEffort").GetString());
         Assert.Equal(1234, report.GetProperty("candy").GetProperty("CandyReasoningTokens").GetInt64());
         if (status is null) Assert.False(report.TryGetProperty("juice_status", out _));
@@ -265,7 +284,7 @@ public class JuiceTests
             Calls++;
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
             var prompt = body.GetProperty("messages")[0].GetProperty("content").GetString();
-            if (prompt == CandyProbe.Prompt)
+            if (CandyTestPrompts.IsCandy(prompt))
             {
                 if (ExpectedCandyEffort == "default") Assert.False(body.TryGetProperty("reasoning_effort", out _));
                 else Assert.Equal(ExpectedCandyEffort, body.GetProperty("reasoning_effort").GetString());

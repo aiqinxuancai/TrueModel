@@ -132,12 +132,17 @@ public class DetectionQueueTests
         Assert.Equal("high", candyResult.CandyReasoningEffort);
         Assert.Equal(512, candyResult.CandyReasoningTokens);
         Assert.NotNull(candyResult.CandyLatencyMs);
+        Assert.Equal("Success", candyResult.Candy2Status);
+        Assert.Equal(512, candyResult.Candy2ReasoningTokens);
+        Assert.True(CandyTestPrompts.IsCandy(candyResult.Candy2Prompt));
         (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, candyReasoningEffort = "low" })).EnsureSuccessStatusCode();
         var history = await client.GetFromJsonAsync<JsonElement>("/api/results");
         var historicalCandy = history.EnumerateArray().Single(r => r.GetProperty("modelId").GetInt32() == third);
         Assert.Equal("high", historicalCandy.GetProperty("candyReasoningEffort").GetString());
         Assert.Equal(512, historicalCandy.GetProperty("candyReasoningTokens").GetInt64());
         Assert.Equal(candyResult.CandyLatencyMs, historicalCandy.GetProperty("candyLatencyMs").GetInt64());
+        Assert.Equal(candyResult.Candy2Prompt, historicalCandy.GetProperty("candy2Prompt").GetString());
+        Assert.Equal(512, historicalCandy.GetProperty("candy2ReasoningTokens").GetInt64());
         Assert.Equal(batch ? 2 : 1, (await Run(secondRun)).GetProperty("completed").GetInt32());
     }
 
@@ -156,7 +161,7 @@ public class DetectionQueueTests
             started.GetOrAdd(model, _ => Signal()).TrySetResult();
             try { await releases.GetOrAdd(model, _ => Signal()).Task.WaitAsync(token); }
             catch (OperationCanceledException) { Cancelled.TrySetResult(); throw; }
-            if (body.GetProperty("messages")[0].GetProperty("content").GetString() == CandyProbe.Prompt)
+            if (CandyTestPrompts.IsCandy(body.GetProperty("messages")[0].GetProperty("content").GetString()))
             {
                 Assert.Equal("high", body.GetProperty("reasoning_effort").GetString());
                 return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "21" }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = 512 } } }) };

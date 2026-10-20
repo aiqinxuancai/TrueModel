@@ -30,7 +30,9 @@ public class CandyProbeTests
         var result = await client.ProbeCandy("https://example.test", "secret", "any-model", CancellationToken.None);
         Assert.Equal(passes ? "Success" : "Unavailable", result.CandyStatus);
         Assert.Equal(answer, result.CandyResponse);
-        Assert.Equal(1, handler.Calls);
+        Assert.Equal(result.CandyStatus, result.Candy2Status);
+        Assert.Equal(answer, result.Candy2Response);
+        Assert.Equal(2, handler.Calls);
     }
 
     [Theory]
@@ -43,6 +45,8 @@ public class CandyProbeTests
         var result = await client.ProbeCandy("https://example.test", "secret", "model", CancellationToken.None);
         Assert.NotNull(result.CandyLatencyMs);
         Assert.True(result.CandyLatencyMs >= 20);
+        Assert.NotNull(result.Candy2LatencyMs);
+        Assert.True(result.Candy2LatencyMs >= 20);
     }
 
     [Fact]
@@ -54,6 +58,8 @@ public class CandyProbeTests
         Assert.Null(result.CandyResponse);
         Assert.DoesNotContain("secret", result.CandyError!);
         Assert.Contains("HTTP 400", result.CandyError!);
+        Assert.Equal("Failed", result.Candy2Status);
+        Assert.DoesNotContain("secret", result.Candy2Error!);
     }
 
     [Fact]
@@ -77,7 +83,8 @@ public class CandyProbeTests
         Assert.Equal("Success", result.CandyStatus);
         Assert.Equal(effort, result.CandyReasoningEffort);
         Assert.Equal(tokens, result.CandyReasoningTokens);
-        Assert.Equal(1, handler.Calls);
+        Assert.Equal(tokens, result.Candy2ReasoningTokens);
+        Assert.Equal(2, handler.Calls);
     }
 
     [Fact]
@@ -88,7 +95,7 @@ public class CandyProbeTests
         Assert.Equal("Failed", result.CandyStatus);
         Assert.Equal("high", result.CandyReasoningEffort);
         Assert.Null(result.CandyReasoningTokens);
-        Assert.Equal(1, handler.Calls);
+        Assert.Equal(2, handler.Calls);
     }
 
     [Theory]
@@ -126,6 +133,7 @@ public class CandyProbeTests
         var result = await client.ProbeCandy("https://example.test", "secret", "model", CancellationToken.None, "high");
         Assert.Equal("Success", result.CandyStatus);
         Assert.Equal(expected, result.CandyReasoningTokens);
+        Assert.Equal(expected, result.Candy2ReasoningTokens);
     }
 
     private sealed class PayloadHandler(string json) : HttpMessageHandler
@@ -143,7 +151,10 @@ public class CandyProbeTests
             Calls++;
             if (delayMs > 0) await Task.Delay(delayMs, token);
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            Assert.Equal(CandyProbe.Prompt, body.GetProperty("messages")[0].GetProperty("content").GetString());
+            var prompt = body.GetProperty("messages")[0].GetProperty("content").GetString();
+            Assert.True(CandyTestPrompts.IsCandy(prompt));
+            if (Calls <= (error && effort == "default" ? 2 : 1)) Assert.Equal(CandyProbe.Prompt, prompt);
+            else Assert.NotEqual(CandyProbe.Prompt, prompt);
             Assert.False(body.TryGetProperty("tools", out _));
             if (effort == "default") Assert.False(body.TryGetProperty("reasoning_effort", out _));
             else Assert.Equal(effort, body.GetProperty("reasoning_effort").GetString());

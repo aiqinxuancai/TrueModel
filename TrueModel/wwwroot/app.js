@@ -20,20 +20,22 @@ function juiceCell(m, r) {
 function probeLabel(status) {
     return {Success:'通过', Unavailable:'未通过', Failed:'错误', Running:'检测中', Interrupted:'已中断'}[status] || '—';
 }
-function probeBadge(status) {
-    return `<span class="probe-${esc(status || 'pending')}">${probeLabel(status)}</span>`;
-}
-function candyDuration(r) {
-    return r?.candyLatencyMs != null ? ` ${(r.candyLatencyMs / 1000).toFixed(1)}s` : '';
+function candyAttempt(r, number) {
+    const prefix = number === 1 ? 'candy' : 'candy2';
+    return {status:r?.[prefix + 'Status'], prompt:r?.[prefix + 'Prompt'], response:r?.[prefix + 'Response'],
+        error:r?.[prefix + 'Error'], tokens:r?.[prefix + 'ReasoningTokens'], latency:r?.[prefix + 'LatencyMs']};
 }
 function candyTooltip(r) {
-    return `糖果：${probeLabel(r?.candyStatus)}${candyDuration(r)}\n请求思考等级：${candyEffortLabel(r)}\nReason Tok：${r?.candyReasoningTokens ?? '—'}${r?.candyReasoningTokens == null ? '（未获取：接口未返回可识别的推理用量，或旧记录未保存）' : '（接口返回的推理 token 数）'}\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${r?.candyPrompt || '尚未检测'}\n回复：${r?.candyResponse ?? '—'}${r?.candyError ? '\n错误：' + r.candyError : ''}`;
-}
-function candyEffortLabel(r) {
-    return r?.candyReasoningEffort === 'default' ? '接口默认' : r?.candyReasoningEffort || '—';
+    return [1, 2].map(number => {
+        const test = candyAttempt(r, number);
+        return `第 ${number} 测（${number === 1 ? '原题' : '关键词空白扰动'}）：${probeLabel(test.status)}\n用时：${test.latency == null ? '—' : (test.latency / 1000).toFixed(1) + 's'}\nReason Tok：${test.tokens ?? '—'}${test.tokens == null ? '（接口未返回或旧记录未保存）' : ''}\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${test.prompt || '尚未检测'}\n回复：${test.response ?? '—'}${test.error ? '\n错误：' + test.error : ''}`;
+    }).join('\n\n');
 }
 function candySummary(r) {
-    return `${probeBadge(r?.candyStatus)}${candyDuration(r)}<small class="candy-metrics">${esc(candyEffortLabel(r))} · Reason Tok: ${esc(r?.candyReasoningTokens ?? '—')}</small>`;
+    return `<span class="candy-summary">${[1, 2].map(number => {
+        const test = candyAttempt(r, number);
+        return `<span class="probe-${esc(test.status || 'pending')}">${test.status ? probeLabel(test.status) : '未测'}${number}(${esc(test.tokens ?? '—')})</span>`;
+    }).join(' ')}</span>`;
 }
 const refreshingCandy = new Set();
 function candyIsBusy(m) {
@@ -42,9 +44,9 @@ function candyIsBusy(m) {
 function candyCell(m, r) {
     const latest = m.candyCheckedAt && (!r || new Date(m.candyCheckedAt).getTime() > new Date(r.startedAt).getTime() + r.latencyMs) ? m : r;
     const busy = candyIsBusy(m);
-    const progress = busy ? `${m.candyRefreshStatus === 'Running' ? '检测中' : '排队中'} · ${candyEffortLabel({candyReasoningEffort:m.candyRequestedEffort})}` : m.candyRefreshStatus === 'Interrupted' ? '检测已中断，请重新开始' : '';
+    const progress = busy ? `${m.candyRefreshStatus === 'Running' ? '检测中' : '排队中'}` : m.candyRefreshStatus === 'Interrupted' ? '检测已中断，请重新开始' : '';
     const tooltip = (progress ? progress + '\n以下为上次结果：\n' : '') + candyTooltip(latest);
-    return `<span class="juice-cell"><span tabindex="0" data-tooltip-key="candy-${m.id}" data-tooltip="${esc(tooltip)}">${progress ? `<small class="candy-metrics">${esc(progress)}</small>` : ''}${candySummary(latest)}</span><button class="icon-button juice-refresh" data-candy="${m.id}" title="单独刷新糖果" aria-label="刷新 ${esc(m.name)} 的糖果" ${busy ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button></span>`;
+    return `<span class="juice-cell"><span class="candy-cell-content" tabindex="0" data-tooltip-key="candy-${m.id}" data-tooltip="${esc(tooltip)}">${progress ? `<small class="candy-progress">${esc(progress)}</small> ` : ''}${candySummary(latest)}</span><button class="icon-button juice-refresh" data-candy="${m.id}" title="单独刷新糖果" aria-label="刷新 ${esc(m.name)} 的糖果" ${busy ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button></span>`;
 }
 async function refreshProbe(id, kind) {
     const busy = kind === 'juice' ? refreshingJuice : refreshingCandy;
