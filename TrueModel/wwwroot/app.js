@@ -15,7 +15,7 @@ const refreshingJuice = new Set();
 function juiceCell(m, r) {
     const latest = m.juiceCheckedAt && (!r || new Date(m.juiceCheckedAt).getTime() > new Date(r.startedAt).getTime() + r.latencyMs) ? m : r;
     const supported = /(?:^|[/\s:_-])(?:chat)?gpt(?:$|[-_.\s\d])/i.test(m.name);
-    return `<span class="juice-cell"><span class="probe-${esc(latest?.juiceStatus || 'pending')}" tabindex="0" data-tooltip="${esc(juiceTooltip(latest))}">${juiceLabel(latest)}</span>${supported ? `<button class="icon-button juice-refresh" data-juice="${m.id}" title="单独刷新 Juice" aria-label="刷新 ${esc(m.name)} 的 Juice" ${refreshingJuice.has(m.id) ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button>` : ''}</span>`;
+    return `<span class="juice-cell"><span class="probe-${esc(latest?.juiceStatus || 'pending')}" tabindex="0" data-tooltip-key="juice-${m.id}" data-tooltip="${esc(juiceTooltip(latest))}">${juiceLabel(latest)}</span>${supported ? `<button class="icon-button juice-refresh" data-juice="${m.id}" title="单独刷新 Juice" aria-label="刷新 ${esc(m.name)} 的 Juice" ${refreshingJuice.has(m.id) ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button>` : ''}</span>`;
 }
 function probeLabel(status) {
     return {Success:'通过', Unavailable:'未通过', Failed:'错误', Running:'检测中', Interrupted:'已中断'}[status] || '—';
@@ -41,7 +41,7 @@ function candyCell(m, r) {
     const busy = candyIsBusy(m);
     const progress = busy ? `${m.candyRefreshStatus === 'Running' ? '检测中' : '排队中'} · ${candyEffortLabel({candyReasoningEffort:m.candyRequestedEffort})}` : m.candyRefreshStatus === 'Interrupted' ? '检测已中断，请重新开始' : '';
     const tooltip = (progress ? progress + '\n以下为上次结果：\n' : '') + candyTooltip(latest);
-    return `<span class="juice-cell"><span tabindex="0" data-tooltip="${esc(tooltip)}">${progress ? `<small class="candy-metrics">${esc(progress)}</small>` : ''}${candySummary(latest)}</span><button class="icon-button juice-refresh" data-candy="${m.id}" title="单独刷新糖果" aria-label="刷新 ${esc(m.name)} 的糖果" ${busy ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button></span>`;
+    return `<span class="juice-cell"><span tabindex="0" data-tooltip-key="candy-${m.id}" data-tooltip="${esc(tooltip)}">${progress ? `<small class="candy-metrics">${esc(progress)}</small>` : ''}${candySummary(latest)}</span><button class="icon-button juice-refresh" data-candy="${m.id}" title="单独刷新糖果" aria-label="刷新 ${esc(m.name)} 的糖果" ${busy ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button></span>`;
 }
 async function refreshProbe(id, kind) {
     const busy = kind === 'juice' ? refreshingJuice : refreshingCandy;
@@ -175,7 +175,7 @@ function recentModelHistory(modelId) {
         const type = attributionResultType(r);
         const meaning = {success:'归因一致',mismatch:'归因不符',failure:'检测失败',unknown:'暂无归因结果'}[type];
         const info = `${r.modelName} · ${meaning}（${statuses[r.status] || r.status}）\n${time(r.startedAt)} · 批次 #${r.runId} · ${(r.latencyMs / 1000).toFixed(1)}s${winner ? `\n归因：${winner.DisplayName || winner.Model} · ${detectionMetric(winner)} ${(detectionScore(winner) * 100).toFixed(1)}%` : ''}\nJuice（模型自报）：${juiceLabel(r)}${r.juicePrompt ? `\nJuice Prompt：${r.juicePrompt}` : ''}\n${candyTooltip(r)}${type === 'failure' ? `\n${failureReason(r)}` : ''}`;
-        return `<span class="recent-dot ${type}" tabindex="0" data-tooltip="${esc(info)}" aria-label="${esc(info)}"></span>`;
+        return `<span class="recent-dot ${type}" tabindex="0" data-tooltip-key="result-${r.id}" data-tooltip="${esc(info)}" aria-label="${esc(info)}"></span>`;
     }).join('');
     return `<div class="recent-dots" aria-label="最近十次检测，从左到右由新到旧">${dots}</div><small class="recent-model-time" title="${esc(time(recent[0].startedAt))}">${relativeTime(recent[0].startedAt)}</small>`;
 }

@@ -380,16 +380,20 @@ recentTooltip.className = "recent-tooltip";
 recentTooltip.setAttribute("role", "tooltip");
 recentTooltip.hidden = true;
 document.body.append(recentTooltip);
-let tooltipAnchor, tooltipCloseTimer;
+let tooltipAnchor, tooltipScope, tooltipCloseTimer;
 function closeRecentTooltip() {
   clearTimeout(tooltipCloseTimer);
   tooltipAnchor?.removeAttribute("aria-describedby");
   tooltipAnchor = null;
+  tooltipScope = null;
   recentTooltip.hidden = true;
 }
 function showRecentTooltip(anchor) {
+  clearTimeout(tooltipCloseTimer);
+  if (tooltipAnchor === anchor) return;
   closeRecentTooltip();
   tooltipAnchor = anchor;
+  tooltipScope = anchor.closest("tbody");
   recentTooltip.textContent = anchor.dataset.tooltip;
   anchor.setAttribute("aria-describedby", recentTooltip.id);
   recentTooltip.style.left = "12px";
@@ -411,6 +415,8 @@ document.addEventListener("pointerover", event => {
 document.addEventListener("pointerout", event => {
   if (event.target.closest("[data-tooltip]") || recentTooltip.contains(event.target)) {
     clearTimeout(tooltipCloseTimer);
+    if (event.relatedTarget instanceof Node &&
+        (tooltipAnchor?.contains(event.relatedTarget) || recentTooltip.contains(event.relatedTarget))) return;
     tooltipCloseTimer = setTimeout(closeRecentTooltip, 150);
   }
 });
@@ -427,5 +433,16 @@ document.addEventListener("scroll", event => {
 }, true);
 window.addEventListener("resize", closeRecentTooltip);
 new MutationObserver(() => {
-  if (tooltipAnchor && !tooltipAnchor.isConnected) closeRecentTooltip();
+  if (!tooltipAnchor || tooltipAnchor.isConnected) return;
+  // Polling replaces table rows. Keep the open tooltip attached to the same
+  // item in the same table (a model can also appear in favorites).
+  const key = tooltipAnchor.dataset.tooltipKey;
+  const replacement = key && [...(tooltipScope?.querySelectorAll("[data-tooltip-key]") || [])]
+    .find(anchor => anchor.dataset.tooltipKey === key && anchor.getClientRects().length);
+  if (!replacement) { closeRecentTooltip(); return; }
+  tooltipAnchor.removeAttribute("aria-describedby");
+  tooltipAnchor = replacement;
+  replacement.setAttribute("aria-describedby", recentTooltip.id);
+  if (recentTooltip.textContent !== replacement.dataset.tooltip)
+    recentTooltip.textContent = replacement.dataset.tooltip;
 }).observe($("overview"), { childList: true, subtree: true });
