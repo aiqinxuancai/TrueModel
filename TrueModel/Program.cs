@@ -124,11 +124,17 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("CandyReasoningTokens")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyReasoningTokens INTEGER NULL");
         if (!columns.Contains("CandyLatencyMs")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyLatencyMs INTEGER NULL");
         if (!columns.Contains("Candy2Status")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy2Status TEXT NULL");
+        if (!columns.Contains("Candy3Status")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy3Status TEXT NULL");
         if (!columns.Contains("Candy2Prompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy2Prompt TEXT NULL");
+        if (!columns.Contains("Candy3Prompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy3Prompt TEXT NULL");
         if (!columns.Contains("Candy2Response")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy2Response TEXT NULL");
+        if (!columns.Contains("Candy3Response")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy3Response TEXT NULL");
         if (!columns.Contains("Candy2Error")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy2Error TEXT NULL");
+        if (!columns.Contains("Candy3Error")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy3Error TEXT NULL");
         if (!columns.Contains("Candy2ReasoningTokens")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy2ReasoningTokens INTEGER NULL");
+        if (!columns.Contains("Candy3ReasoningTokens")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy3ReasoningTokens INTEGER NULL");
         if (!columns.Contains("Candy2LatencyMs")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy2LatencyMs INTEGER NULL");
+        if (!columns.Contains("Candy3LatencyMs")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN Candy3LatencyMs INTEGER NULL");
     }
     await db.Database.CloseConnectionAsync();
     await db.Database.OpenConnectionAsync();
@@ -150,11 +156,17 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("CandyReasoningTokens")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyReasoningTokens INTEGER NULL");
         if (!columns.Contains("CandyLatencyMs")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyLatencyMs INTEGER NULL");
         if (!columns.Contains("Candy2Status")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy2Status TEXT NULL");
+        if (!columns.Contains("Candy3Status")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy3Status TEXT NULL");
         if (!columns.Contains("Candy2Prompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy2Prompt TEXT NULL");
+        if (!columns.Contains("Candy3Prompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy3Prompt TEXT NULL");
         if (!columns.Contains("Candy2Response")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy2Response TEXT NULL");
+        if (!columns.Contains("Candy3Response")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy3Response TEXT NULL");
         if (!columns.Contains("Candy2Error")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy2Error TEXT NULL");
+        if (!columns.Contains("Candy3Error")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy3Error TEXT NULL");
         if (!columns.Contains("Candy2ReasoningTokens")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy2ReasoningTokens INTEGER NULL");
+        if (!columns.Contains("Candy3ReasoningTokens")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy3ReasoningTokens INTEGER NULL");
         if (!columns.Contains("Candy2LatencyMs")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy2LatencyMs INTEGER NULL");
+        if (!columns.Contains("Candy3LatencyMs")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy3LatencyMs INTEGER NULL");
         if (!columns.Contains("CandyRefreshStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyRefreshStatus TEXT NULL");
         if (!columns.Contains("CandyRequestedEffort")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyRequestedEffort TEXT NULL");
         if (!columns.Contains("CandyCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyCheckedAt TEXT NULL");
@@ -276,7 +288,7 @@ api.MapPost("/notifications/test", async (AppDb db, NotificationService sender, 
 api.MapGet("/sites", async (AppDb db) => await db.Sites.AsNoTracking().Select(s => new
 {
     s.Id, s.Name, s.BaseUrl, s.Enabled,
-    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.IsFavorite, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyLatencyMs, m.Candy2Status, m.Candy2Prompt, m.Candy2Response, m.Candy2Error, m.Candy2ReasoningTokens, m.Candy2LatencyMs, m.CandyCheckedAt, m.CandyRefreshStatus, m.CandyRequestedEffort }) })
+    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.IsFavorite, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyLatencyMs, m.Candy2Status, m.Candy2Prompt, m.Candy2Response, m.Candy2Error, m.Candy2ReasoningTokens, m.Candy2LatencyMs, m.Candy3Status, m.Candy3Prompt, m.Candy3Response, m.Candy3Error, m.Candy3ReasoningTokens, m.Candy3LatencyMs, m.CandyCheckedAt, m.CandyRefreshStatus, m.CandyRequestedEffort }) })
 }).ToListAsync());
 api.MapPost("/sites", async (SiteInput input, AppDb db) =>
 {

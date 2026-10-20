@@ -56,6 +56,7 @@ public class HlwyProgressTests
             Assert.Equal("Success", result.GetProperty("status").GetString());
             Assert.Equal("Running", result.GetProperty("candyStatus").GetString());
             Assert.Equal("Running", result.GetProperty("candy2Status").GetString());
+            Assert.Equal("Running", result.GetProperty("candy3Status").GetString());
             var report = result.GetProperty("attributionJson").GetString();
             Assert.Equal(40, JsonDocument.Parse(report!).RootElement.GetProperty("UsedOutputs").GetInt32());
             Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/detect", new { modelId = model })).StatusCode);
@@ -73,6 +74,7 @@ public class HlwyProgressTests
             Assert.Equal(report, final.GetProperty("attributionJson").GetString());
             Assert.Equal(cancel ? "Interrupted" : "Success", final.GetProperty("candyStatus").GetString());
             Assert.Equal(cancel ? "Interrupted" : "Success", final.GetProperty("candy2Status").GetString());
+            Assert.Equal(cancel ? "Interrupted" : "Success", final.GetProperty("candy3Status").GetString());
             Assert.Equal("Success", final.GetProperty("juiceStatus").GetString());
         }
         finally { handler.Release.TrySetResult(); }

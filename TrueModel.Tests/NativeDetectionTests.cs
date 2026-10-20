@@ -36,11 +36,14 @@ public class NativeDetectionTests
         var engine = new ModelTraceClient(new HttpClient(handler));
         var bank = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets/unified_bank.json"));
         var report = await engine.Test("https://example.test", "test-secret", "mock", bank, count, CancellationToken.None);
-        Assert.Equal(count + 2, handler.Requests.Count);
-        Assert.Equal(CandyProbe.Prompt, handler.Requests[^2].GetProperty("messages")[0].GetProperty("content").GetString());
-        var secondPrompt = handler.Requests[^1].GetProperty("messages")[0].GetProperty("content").GetString();
+        Assert.Equal(count + 3, handler.Requests.Count);
+        Assert.Equal(CandyProbe.Prompt, handler.Requests[^3].GetProperty("messages")[0].GetProperty("content").GetString());
+        var secondPrompt = handler.Requests[^2].GetProperty("messages")[0].GetProperty("content").GetString();
         Assert.NotEqual(CandyProbe.Prompt, secondPrompt);
         Assert.True(CandyTestPrompts.IsCandy(secondPrompt));
+        var thirdPrompt = handler.Requests[^1].GetProperty("messages")[0].GetProperty("content").GetString()!;
+        Assert.NotEqual(CandyProbe.EnglishPrompt, thirdPrompt);
+        Assert.Equal(CandyTestPrompts.WithoutWhitespace(CandyProbe.EnglishPrompt), CandyTestPrompts.WithoutWhitespace(thirdPrompt));
         Assert.Equal(count, report.GetProperty("result").GetProperty("used_outputs").GetInt32());
         Assert.Equal(count, report.GetProperty("responses").EnumerateArray().Select(r => r.GetProperty("ExpectedCount").GetInt32()).Distinct().Count());
         foreach (var body in handler.Requests)

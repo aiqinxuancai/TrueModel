@@ -133,8 +133,11 @@ public class DetectionQueueTests
         Assert.Equal(512, candyResult.CandyReasoningTokens);
         Assert.NotNull(candyResult.CandyLatencyMs);
         Assert.Equal("Success", candyResult.Candy2Status);
+        Assert.Equal("Success", candyResult.Candy3Status);
         Assert.Equal(512, candyResult.Candy2ReasoningTokens);
+        Assert.Equal(512, candyResult.Candy3ReasoningTokens);
         Assert.True(CandyTestPrompts.IsCandy(candyResult.Candy2Prompt));
+        Assert.True(CandyTestPrompts.IsCandy(candyResult.Candy3Prompt));
         (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, candyReasoningEffort = "low" })).EnsureSuccessStatusCode();
         var history = await client.GetFromJsonAsync<JsonElement>("/api/results");
         var historicalCandy = history.EnumerateArray().Single(r => r.GetProperty("modelId").GetInt32() == third);
@@ -142,7 +145,9 @@ public class DetectionQueueTests
         Assert.Equal(512, historicalCandy.GetProperty("candyReasoningTokens").GetInt64());
         Assert.Equal(candyResult.CandyLatencyMs, historicalCandy.GetProperty("candyLatencyMs").GetInt64());
         Assert.Equal(candyResult.Candy2Prompt, historicalCandy.GetProperty("candy2Prompt").GetString());
+        Assert.Equal(candyResult.Candy3Prompt, historicalCandy.GetProperty("candy3Prompt").GetString());
         Assert.Equal(512, historicalCandy.GetProperty("candy2ReasoningTokens").GetInt64());
+        Assert.Equal(512, historicalCandy.GetProperty("candy3ReasoningTokens").GetInt64());
         Assert.Equal(batch ? 2 : 1, (await Run(secondRun)).GetProperty("completed").GetInt32());
     }
 

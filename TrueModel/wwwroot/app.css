@@ -1463,7 +1463,8 @@ details pre {
 .probe-pending { color: var(--muted); }
 
 .candy-cell-content, .candy-summary { white-space: nowrap; }
-.candy-summary { display: inline-flex; gap: 8px; }
+.candy-summary { display: inline-grid; grid-template-columns: max-content max-content; column-gap: 8px; row-gap: 2px; }
+.candy-summary .candy-attempt-3 { grid-column: 1 / -1; }
 .candy-progress { color: var(--muted); font-size: 11px; }
 
 .model-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }

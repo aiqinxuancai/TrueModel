@@ -21,20 +21,20 @@ function probeLabel(status) {
     return {Success:'通过', Unavailable:'未通过', Failed:'错误', Running:'检测中', Interrupted:'已中断'}[status] || '—';
 }
 function candyAttempt(r, number) {
-    const prefix = number === 1 ? 'candy' : 'candy2';
+    const prefix = number === 1 ? 'candy' : `candy${number}`;
     return {status:r?.[prefix + 'Status'], prompt:r?.[prefix + 'Prompt'], response:r?.[prefix + 'Response'],
         error:r?.[prefix + 'Error'], tokens:r?.[prefix + 'ReasoningTokens'], latency:r?.[prefix + 'LatencyMs']};
 }
 function candyTooltip(r) {
-    return [1, 2].map(number => {
+    return [1, 2, 3].map(number => {
         const test = candyAttempt(r, number);
-        return `第 ${number} 测（${number === 1 ? '原题' : '关键词空白扰动'}）：${probeLabel(test.status)}\n用时：${test.latency == null ? '—' : (test.latency / 1000).toFixed(1) + 's'}\nReason Tok：${test.tokens ?? '—'}${test.tokens == null ? '（接口未返回或旧记录未保存）' : ''}\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${test.prompt || '尚未检测'}\n回复：${test.response ?? '—'}${test.error ? '\n错误：' + test.error : ''}`;
+        return `第 ${number} 测（${{1:'原题', 2:'关键词空白扰动', 3:'英文关键词空格扰动'}[number]}）：${probeLabel(test.status)}\n用时：${test.latency == null ? '—' : (test.latency / 1000).toFixed(1) + 's'}\nReason Tok：${test.tokens ?? '—'}${test.tokens == null ? '（接口未返回或旧记录未保存）' : ''}\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${test.prompt || '尚未检测'}\n回复：${test.response ?? '—'}${test.error ? '\n错误：' + test.error : ''}`;
     }).join('\n\n');
 }
 function candySummary(r) {
-    return `<span class="candy-summary">${[1, 2].map(number => {
+    return `<span class="candy-summary">${[1, 2, 3].map(number => {
         const test = candyAttempt(r, number);
-        return `<span class="probe-${esc(test.status || 'pending')}">${test.status ? probeLabel(test.status) : '未测'}${number}(${esc(test.tokens ?? '—')})</span>`;
+        return `<span class="probe-${esc(test.status || 'pending')} candy-attempt-${number}">${test.status ? probeLabel(test.status) : '未测'}${number}(${esc(test.tokens ?? '—')})</span>`;
     }).join(' ')}</span>`;
 }
 const refreshingCandy = new Set();

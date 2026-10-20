@@ -65,6 +65,7 @@ public class ModelManagementTests
             model.JuiceValue = 100; model.JuiceStatus = "Success"; model.JuiceCheckedAt = DateTime.UtcNow;
             model.CandyStatus = "Success"; model.CandyCheckedAt = DateTime.UtcNow; model.CandyReasoningTokens = 32;
             model.Candy2Status = "Success"; model.Candy2Prompt = "old prompt"; model.Candy2Response = "21"; model.Candy2ReasoningTokens = 64; model.Candy2LatencyMs = 100;
+            model.Candy3Status = "Success"; model.Candy3Prompt = "old prompt"; model.Candy3Response = "21"; model.Candy3ReasoningTokens = 64; model.Candy3LatencyMs = 100;
             db.Results.AddRange(new DetectionResult { ModelId = first, ModelName = "old-gpt", Status = "Success" },
                 new DetectionResult { ModelId = kept, ModelName = "kept", Status = "Success" });
             await db.SaveChangesAsync();
@@ -79,7 +80,7 @@ public class ModelManagementTests
         Assert.Equal("kept", models.Single(m => m.GetProperty("id").GetInt32() == kept).GetProperty("name").GetString());
         var favorite = models.Single(m => m.GetProperty("id").GetInt32() == first);
         Assert.True(favorite.GetProperty("isFavorite").GetBoolean());
-        foreach (var field in new[] { "juiceValue", "juiceStatus", "juiceCheckedAt", "candyStatus", "candyCheckedAt", "candyReasoningTokens", "candy2Status", "candy2Prompt", "candy2Response", "candy2ReasoningTokens", "candy2LatencyMs" })
+        foreach (var field in new[] { "juiceValue", "juiceStatus", "juiceCheckedAt", "candyStatus", "candyCheckedAt", "candyReasoningTokens", "candy2Status", "candy2Prompt", "candy2Response", "candy2ReasoningTokens", "candy2LatencyMs", "candy3Status", "candy3Prompt", "candy3Response", "candy3ReasoningTokens", "candy3LatencyMs" })
             Assert.Equal(JsonValueKind.Null, favorite.GetProperty(field).ValueKind);
         var history = await host.Client.GetFromJsonAsync<JsonElement>("/api/results");
         Assert.Contains(history.EnumerateArray(), r => r.GetProperty("modelName").GetString() == "old-gpt");

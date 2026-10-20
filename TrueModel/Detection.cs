@@ -178,22 +178,30 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             result.CandyReasoningTokens = candy.CandyReasoningTokens;
             result.CandyLatencyMs = candy.CandyLatencyMs;
             result.Candy2Status = candy.Candy2Status;
+            result.Candy3Status = candy.Candy3Status;
             result.Candy2Prompt = candy.Candy2Prompt;
+            result.Candy3Prompt = candy.Candy3Prompt;
             result.Candy2Response = candy.Candy2Response;
+            result.Candy3Response = candy.Candy3Response;
             result.Candy2Error = candy.Candy2Error;
+            result.Candy3Error = candy.Candy3Error;
             result.Candy2ReasoningTokens = candy.Candy2ReasoningTokens;
+            result.Candy3ReasoningTokens = candy.Candy3ReasoningTokens;
             result.Candy2LatencyMs = candy.Candy2LatencyMs;
+            result.Candy3LatencyMs = candy.Candy3LatencyMs;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             result.CandyStatus = "Interrupted";
             result.Candy2Status = "Interrupted";
+            result.Candy3Status = "Interrupted";
             if (result.JuiceStatus == "Running") result.JuiceStatus = "Interrupted";
         }
         catch (Exception)
         {
             result.CandyStatus = "Failed";
             result.Candy2Status = "Failed";
+            result.Candy3Status = "Failed";
             result.CandyError = "附加检测失败，HLWY 统计报告不受影响。";
             if (result.JuiceStatus == "Running") result.JuiceStatus = "Failed";
         }
@@ -211,11 +219,17 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 .SetProperty(r => r.CandyReasoningEffort, result.CandyReasoningEffort)
                 .SetProperty(r => r.CandyLatencyMs, result.CandyLatencyMs)
                 .SetProperty(r => r.Candy2Status, result.Candy2Status)
+                .SetProperty(r => r.Candy3Status, result.Candy3Status)
                 .SetProperty(r => r.Candy2Prompt, result.Candy2Prompt)
+                .SetProperty(r => r.Candy3Prompt, result.Candy3Prompt)
                 .SetProperty(r => r.Candy2Response, result.Candy2Response)
+                .SetProperty(r => r.Candy3Response, result.Candy3Response)
                 .SetProperty(r => r.Candy2Error, result.Candy2Error)
+                .SetProperty(r => r.Candy3Error, result.Candy3Error)
                 .SetProperty(r => r.Candy2ReasoningTokens, result.Candy2ReasoningTokens)
+                .SetProperty(r => r.Candy3ReasoningTokens, result.Candy3ReasoningTokens)
                 .SetProperty(r => r.Candy2LatencyMs, result.Candy2LatencyMs)
+                .SetProperty(r => r.Candy3LatencyMs, result.Candy3LatencyMs)
                 .SetProperty(r => r.CandyReasoningTokens, result.CandyReasoningTokens));
     }
 
@@ -244,11 +258,17 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 result.CandyReasoningTokens = probe.CandyReasoningTokens;
                 result.CandyLatencyMs = probe.CandyLatencyMs;
                 result.Candy2Status = probe.Candy2Status;
+                result.Candy3Status = probe.Candy3Status;
                 result.Candy2Prompt = probe.Candy2Prompt;
+                result.Candy3Prompt = probe.Candy3Prompt;
                 result.Candy2Response = probe.Candy2Response;
+                result.Candy3Response = probe.Candy3Response;
                 result.Candy2Error = probe.Candy2Error;
+                result.Candy3Error = probe.Candy3Error;
                 result.Candy2ReasoningTokens = probe.Candy2ReasoningTokens;
+                result.Candy3ReasoningTokens = probe.Candy3ReasoningTokens;
                 result.Candy2LatencyMs = probe.Candy2LatencyMs;
+                result.Candy3LatencyMs = probe.Candy3LatencyMs;
             }
             result.StatusCode = response.TryGetProperty("status_code", out var status) ? status.GetInt32() : 0;
             if (response.TryGetProperty("error", out var error))
@@ -262,6 +282,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 result.AttributionJson = report.GetRawText();
                 result.CandyStatus = "Running";
                 result.Candy2Status = "Running";
+                result.Candy3Status = "Running";
                 result.CandyReasoningEffort = settings.CandyReasoningEffort;
                 result.JuiceStatus = JuiceProbe.Supports(target.ModelName) ? "Running" : null;
                 result.Status = "Success";

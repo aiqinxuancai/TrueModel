@@ -34,7 +34,7 @@ public class DualCandyTests
     {
         var handler = new Handler(first, firstError, second, secondError);
         var result = await new ModelTraceClient(new HttpClient(handler)).ProbeCandy("https://example.test", "secret", "model", CancellationToken.None, "high");
-        Assert.Equal(2, handler.Prompts.Count);
+        Assert.Equal(3, handler.Prompts.Count);
         Assert.Equal(CandyProbe.Prompt, handler.Prompts[0]);
         Assert.NotEqual(handler.Prompts[0], handler.Prompts[1]);
         Assert.Equal(handler.Prompts[1], result.Candy2Prompt);

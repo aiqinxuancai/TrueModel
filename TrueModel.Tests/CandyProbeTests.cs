@@ -31,8 +31,10 @@ public class CandyProbeTests
         Assert.Equal(passes ? "Success" : "Unavailable", result.CandyStatus);
         Assert.Equal(answer, result.CandyResponse);
         Assert.Equal(result.CandyStatus, result.Candy2Status);
+        Assert.Equal(result.CandyStatus, result.Candy3Status);
         Assert.Equal(answer, result.Candy2Response);
-        Assert.Equal(2, handler.Calls);
+        Assert.Equal(answer, result.Candy3Response);
+        Assert.Equal(3, handler.Calls);
     }
 
     [Theory]
@@ -46,7 +48,9 @@ public class CandyProbeTests
         Assert.NotNull(result.CandyLatencyMs);
         Assert.True(result.CandyLatencyMs >= 20);
         Assert.NotNull(result.Candy2LatencyMs);
+        Assert.NotNull(result.Candy3LatencyMs);
         Assert.True(result.Candy2LatencyMs >= 20);
+        Assert.True(result.Candy3LatencyMs >= 20);
     }
 
     [Fact]
@@ -59,7 +63,9 @@ public class CandyProbeTests
         Assert.DoesNotContain("secret", result.CandyError!);
         Assert.Contains("HTTP 400", result.CandyError!);
         Assert.Equal("Failed", result.Candy2Status);
+        Assert.Equal("Failed", result.Candy3Status);
         Assert.DoesNotContain("secret", result.Candy2Error!);
+        Assert.DoesNotContain("secret", result.Candy3Error!);
     }
 
     [Fact]
@@ -84,7 +90,8 @@ public class CandyProbeTests
         Assert.Equal(effort, result.CandyReasoningEffort);
         Assert.Equal(tokens, result.CandyReasoningTokens);
         Assert.Equal(tokens, result.Candy2ReasoningTokens);
-        Assert.Equal(2, handler.Calls);
+        Assert.Equal(tokens, result.Candy3ReasoningTokens);
+        Assert.Equal(3, handler.Calls);
     }
 
     [Fact]
@@ -95,7 +102,7 @@ public class CandyProbeTests
         Assert.Equal("Failed", result.CandyStatus);
         Assert.Equal("high", result.CandyReasoningEffort);
         Assert.Null(result.CandyReasoningTokens);
-        Assert.Equal(2, handler.Calls);
+        Assert.Equal(3, handler.Calls);
     }
 
     [Theory]
@@ -134,6 +141,7 @@ public class CandyProbeTests
         Assert.Equal("Success", result.CandyStatus);
         Assert.Equal(expected, result.CandyReasoningTokens);
         Assert.Equal(expected, result.Candy2ReasoningTokens);
+        Assert.Equal(expected, result.Candy3ReasoningTokens);
     }
 
     private sealed class PayloadHandler(string json) : HttpMessageHandler

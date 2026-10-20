@@ -79,7 +79,8 @@ public static class ModelManagement
                 model.JuiceValue = null; model.JuiceStatus = null; model.JuicePrompt = null; model.JuiceCheckedAt = null;
                 model.CandyStatus = null; model.CandyPrompt = null; model.CandyResponse = null; model.CandyError = null;
                 model.CandyReasoningEffort = null; model.CandyReasoningTokens = null; model.CandyLatencyMs = null;
-                model.Candy2Status = null; model.Candy2Prompt = null; model.Candy2Response = null; model.Candy2Error = null; model.Candy2ReasoningTokens = null; model.Candy2LatencyMs = null; model.CandyCheckedAt = null;
+                model.Candy2Status = null; model.Candy2Prompt = null; model.Candy2Response = null; model.Candy2Error = null; model.Candy2ReasoningTokens = null; model.Candy2LatencyMs = null;
+                model.Candy3Status = null; model.Candy3Prompt = null; model.Candy3Response = null; model.Candy3Error = null; model.Candy3ReasoningTokens = null; model.Candy3LatencyMs = null; model.CandyCheckedAt = null;
                 model.CandyRefreshStatus = null; model.CandyRequestedEffort = null;
             }
             await db.SaveChangesAsync(token);

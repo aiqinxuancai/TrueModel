@@ -69,8 +69,9 @@ public class HlwyTests
         Assert.Equal(40, result.GetProperty("result").GetProperty("UsedOutputs").GetInt32());
         Assert.Equal(antiTarget, result.GetProperty("result").GetProperty("AntiTarget").GetBoolean());
         Assert.Equal("Success", result.GetProperty("candy").GetProperty("CandyStatus").GetString());
-        Assert.Equal(42, handler.Bodies.Count);
+        Assert.Equal(43, handler.Bodies.Count);
         Assert.Equal("Success", result.GetProperty("candy").GetProperty("Candy2Status").GetString());
+        Assert.Equal("Success", result.GetProperty("candy").GetProperty("Candy3Status").GetString());
         foreach (var request in handler.Bodies.Take(40))
         {
             Assert.Equal(1, request.GetProperty("temperature").GetDouble());
@@ -92,7 +93,7 @@ public class HlwyTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.TestHlwy("https://example.test", "secret", "mock", new AppSettings(), cancellation.Token));
-        Assert.Equal(7, handler.Bodies.Count);
+        Assert.Equal(8, handler.Bodies.Count);
     }
 
     [Fact]

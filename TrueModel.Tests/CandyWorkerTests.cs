@@ -72,12 +72,17 @@ public class CandyWorkerTests
             Assert.Equal("high", model.CandyReasoningEffort);
             Assert.Equal(512, model.CandyReasoningTokens);
             Assert.NotNull(model.CandyCheckedAt);
-            Assert.Equal(2, handler.Calls);
+            Assert.Equal(3, handler.Calls);
             Assert.Equal("Success", model.Candy2Status);
+            Assert.Equal("Success", model.Candy3Status);
             Assert.Equal(512, model.Candy2ReasoningTokens);
+            Assert.Equal(512, model.Candy3ReasoningTokens);
             Assert.NotNull(model.Candy2LatencyMs);
+            Assert.NotNull(model.Candy3LatencyMs);
             Assert.True(CandyTestPrompts.IsCandy(model.Candy2Prompt));
+            Assert.True(CandyTestPrompts.IsCandy(model.Candy3Prompt));
             Assert.NotEqual(CandyProbe.Prompt, model.Candy2Prompt);
+            Assert.NotEqual(CandyProbe.Prompt, model.Candy3Prompt);
         }
     }
 
