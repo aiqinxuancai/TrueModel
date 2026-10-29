@@ -8,7 +8,8 @@ async function refreshNotifications(){
   }
   $('notificationConfig').textContent=`Webhook：${settings.webhookConfigured?'已配置':'未配置'} · PushKey：${settings.pushKeyConfigured?'已配置':'未配置'}`;
   const deliveries=await api('/notifications/deliveries');
-  $('deliveryRows').innerHTML=deliveries.map(d=>`<div class="row"><span>${time(d.createdAt)} · ${esc(d.channel)} · ${d.runId?'批次 #'+d.runId:'测试通知'}</span><span>${badge(d.success?'Success':'Failed')} ${esc(d.message)}</span></div>`).join('')||'<p>暂无发送记录</p>';
+  $('deliveryRows').innerHTML=deliveries.map(d=>`<div class="row"><div class="row-main"><span class="row-icon"><i data-lucide="${d.channel==='Webhook'?'webhook':'send'}"></i></span><div><b>${esc(d.channel)}</b><small>${time(d.createdAt)} · ${d.runId?'批次 #'+d.runId:'测试通知'}</small></div></div><div class="delivery-status">${badge(d.success?'Success':'Failed')}<span class="muted">${esc(d.message)}</span></div></div>`).join('')||'<div class="empty"><i data-lucide="inbox"></i><strong>暂无发送记录</strong></div>';
+  window.lucide?.createIcons();
 }
 $('notificationForm').onsubmit=async e=>{
   e.preventDefault();const f=e.target.elements;

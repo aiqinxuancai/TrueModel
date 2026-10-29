@@ -15,17 +15,22 @@ $('updateDefaultBank').onclick = async event => {
 };
 const fingerprintDialog = document.createElement('dialog');
 fingerprintDialog.id = 'fingerprintDialog';
+fingerprintDialog.setAttribute('aria-labelledby', 'fingerprintTitle');
 fingerprintDialog.innerHTML = `<form id="fingerprintForm">
-    <h2>采集模型指纹</h2>
-    <p class="notice">请选择身份可信的模型作为参考。采集成功后保存为新库版本，同标识指纹在新版本中替换；保存后可设为当前库。新版本沿用基础库校准参数，概率仅供参考。</p>
-    <label>来源模型<select name="source" required></select></label>
-    <label>基础指纹库<select name="bank" required></select></label>
-    <label>指纹模型标识<input name="model" maxlength="200" required></label>
-    <label>显示名称<input name="displayName" maxlength="200" required></label>
-    <label>家族（如 gpt、claude）<input name="family" maxlength="100" value="custom" required></label>
-    <label>采集题数<select name="count"><option value="6">6</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
-    <p id="fingerprintStatus" role="status" aria-live="polite"></p>
-    <div class="actions"><button type="button" id="closeFingerprint">关闭</button><button type="submit" class="primary">采集并保存</button></div>
+    <div class="heading"><h2 id="fingerprintTitle">采集模型指纹</h2></div>
+    <div class="dialog-body">
+        <p class="notice">请选择身份可信的模型作为参考。采集成功后保存为新库版本，同标识指纹在新版本中替换；保存后可设为当前库。新版本沿用基础库校准参数，概率仅供参考。</p>
+        <label>来源模型<select name="source" required></select></label>
+        <div class="form-grid">
+            <label>基础指纹库<select name="bank" required></select></label>
+            <label>采集题数<select name="count"><option value="6">6</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+            <label>指纹模型标识<input name="model" maxlength="200" required></label>
+            <label>显示名称<input name="displayName" maxlength="200" required></label>
+        </div>
+        <label>家族（如 gpt、claude）<input name="family" maxlength="100" value="custom" required></label>
+        <p id="fingerprintStatus" class="status-line" role="status" aria-live="polite"></p>
+    </div>
+    <div class="dialog-footer"><button type="button" id="closeFingerprint">关闭</button><button type="submit" class="primary">采集并保存</button></div>
 </form>`;
 document.body.append(fingerprintDialog);
 let fingerprintBusy = false;

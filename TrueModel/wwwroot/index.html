@@ -3,233 +3,311 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
     <title>TrueModel · 模型检测</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <script>
+      // Apply the saved theme before first paint to avoid a light/dark flash.
+      (() => {
+        let theme = null;
+        try { theme = localStorage.getItem("truemodel-theme"); } catch {}
+        document.documentElement.dataset.theme = theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      })();
+    </script>
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
-    <nav id="sidebar" hidden>
+    <a class="skip-link" href="#application">跳转到主内容</a>
+    <button id="navBackdrop" aria-label="关闭导航" hidden></button>
+    <nav id="sidebar" aria-label="主导航" hidden>
       <div class="logo">
-        <div class="logo-title">TrueModel</div>
-        <div class="logo-subtitle">模型检测与归因</div>
+        <span class="logo-mark"><i data-lucide="scan-line"></i></span>
+        <div>
+          <div class="logo-title">TrueModel</div>
+          <div class="logo-subtitle">模型检测与归因</div>
+        </div>
       </div>
-      <button data-tab="overview" data-icon="📊" class="selected">总览</button
-      ><button data-tab="configuration" data-icon="🌐">站点配置</button
-      ><button data-tab="history" data-icon="📝">检测历史</button
-      ><button data-tab="banks" data-icon="🗂️">指纹库</button
-      ><button data-tab="settings" data-icon="⚙️">设置</button
-      ><button data-tab="notifications" data-icon="🔔">通知</button>
+      <div class="nav-section">工作台</div>
+      <button data-tab="overview" class="selected"><i data-lucide="layout-dashboard"></i>总览</button>
+      <button data-tab="history"><i data-lucide="history"></i>检测历史</button>
+      <div class="nav-section">配置</div>
+      <button data-tab="configuration"><i data-lucide="network"></i>站点配置</button>
+      <button data-tab="banks"><i data-lucide="fingerprint"></i>指纹库</button>
+      <button data-tab="settings"><i data-lucide="sliders-horizontal"></i>检测设置</button>
+      <button data-tab="notifications"><i data-lucide="bell"></i>通知</button>
+      <div class="sidebar-footer"><i data-lucide="shield-check"></i>管理员工作空间</div>
     </nav>
-    <div style="flex: 1; display: flex; flex-direction: column">
-      <header>
-        <strong>TrueModel</strong><span>模型检测与归因</span
-        ><button id="logout" hidden>退出登录</button>
-        <a class="github-link" href="https://github.com/aiqinxuancai/TrueModel" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开 TrueModel GitHub 仓库">GitHub ↗</a>
+    <div class="shell">
+      <header class="topbar">
+        <button id="menuToggle" class="icon-button ghost" aria-label="展开导航" title="展开导航" aria-controls="sidebar" aria-expanded="false" hidden><i data-lucide="menu"></i></button>
+        <div class="topbar-brand">
+          <span class="logo-mark sm"><i data-lucide="scan-line"></i></span><strong>TrueModel</strong><span>模型检测与归因</span>
+        </div>
+        <div id="pageTitle" class="topbar-title"></div>
+        <div class="topbar-actions">
+          <span id="syncStatus" class="sync-status" hidden>等待同步</span>
+          <button id="refreshButton" class="icon-button ghost" aria-label="刷新数据" title="刷新数据" hidden><i data-lucide="refresh-cw"></i></button>
+          <button id="themeToggle" class="icon-button ghost" type="button" aria-label="切换深色模式" title="切换深色模式"><i data-lucide="moon"></i></button>
+          <a class="github-link icon-button ghost" href="https://github.com/aiqinxuancai/TrueModel" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开 TrueModel GitHub 仓库" title="GitHub 仓库"><i data-lucide="github"></i></a>
+          <button id="logout" class="ghost" hidden><i data-lucide="log-out"></i><span>退出登录</span></button>
+        </div>
       </header>
       <main>
-        <section id="login">
-          <h1>管理员登录</h1>
-          <form id="loginForm">
-            <label
-              >用户名<input
-                name="username"
-                autocomplete="username"
-                value="admin"
-                required /></label
-            ><label
-              >密码<input
-                name="password"
-                type="password"
-                autocomplete="current-password"
-                required /></label
-            ><button>登录</button>
-          </form>
+        <section id="login" class="login">
+          <div class="login-card">
+            <div class="login-brand">
+              <span class="logo-mark lg"><i data-lucide="scan-line"></i></span>
+              <div><strong>TrueModel</strong><span>模型检测与归因</span></div>
+            </div>
+            <h1>管理员登录</h1>
+            <p class="login-hint">登录后管理站点、API Key 与检测任务</p>
+            <form id="loginForm">
+              <label>用户名<input name="username" autocomplete="username" value="admin" required /></label>
+              <label>密码<span class="password-field"><input name="password" type="password" autocomplete="current-password" required /><button id="togglePassword" type="button" class="icon-button ghost" aria-label="显示密码" title="显示密码"><i data-lucide="eye"></i></button></span></label>
+              <button class="primary block">登录</button>
+            </form>
+          </div>
         </section>
-        <div id="application" hidden>
+        <div id="application" tabindex="-1" hidden>
+          <!-- 总览 -->
           <section id="overview" class="view">
-            <div class="heading">
-              <h1>检测总览</h1>
-              <button data-detect="all">开始全量检测</button>
+            <div class="page-header">
+              <div>
+                <h1>检测总览</h1>
+                <p>查看各站点模型的检测状态、归因结果与附加探针</p>
+              </div>
+              <div class="actions">
+                <button data-detect="all" class="primary"><i data-lucide="play"></i>开始全量检测</button>
+              </div>
             </div>
-            <div id="stats"></div>
-            <div class="heading">
-              <h2>最近归因正确率 ≥80%<span id="accurateModelCount" class="count">0</span></h2>
+            <div id="stats" class="stats"></div>
+
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <h2><i data-lucide="badge-check"></i>最近归因正确率 ≥80%<span id="accurateModelCount" class="count">0</span></h2>
+                  <p class="card-hint">按最近 10 次检测中归因一致的占比筛选；不足 10 次按实际次数计算，失败或无归因结果计为不正确。</p>
+                </div>
+              </div>
+              <div class="table-wrap" tabindex="0" aria-label="最近归因正确率达标模型表">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>站点</th>
+                      <th>Key</th>
+                      <th>模型</th>
+                      <th>状态</th>
+                      <th>耗时</th>
+                      <th>归因模型</th>
+                      <th title="模型自报值，仅供参考"><span class="juice-cell">Juice <button data-refresh-group="accurate" data-probe="juice" class="icon-button juice-refresh" title="刷新最近归因正确率 ≥80% 分组 GPT 模型的 Juice" aria-label="刷新最近归因正确率 ≥80% 分组的 Juice"><i data-lucide="refresh-cw"></i></button></span></th>
+                      <th><span class="juice-cell">糖果 <button data-refresh-group="accurate" data-probe="candy" class="icon-button juice-refresh" title="刷新最近归因正确率 ≥80% 分组模型的糖果" aria-label="刷新最近归因正确率 ≥80% 分组的糖果"><i data-lucide="refresh-cw"></i></button></span></th>
+                      <th>最近检测</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="accurateModelRows"></tbody>
+                </table>
+              </div>
             </div>
-            <p class="muted">按最近 10 次检测中归因一致的占比筛选；不足 10 次按实际次数计算，失败或无归因结果计为不正确。</p>
-            <div class="table-wrap" aria-label="最近归因正确率达标模型表">
-              <table>
-                <thead>
-                  <tr>
-                    <th>站点</th>
-                    <th>Key</th>
-                    <th>模型</th>
-                    <th>状态</th>
-                    <th>耗时</th>
-                    <th>归因模型</th>
-                    <th title="模型自报值，仅供参考"><span class="juice-cell">Juice <button data-refresh-group="accurate" data-probe="juice" class="icon-button juice-refresh" title="刷新最近归因正确率 ≥80% 分组 GPT 模型的 Juice" aria-label="刷新最近归因正确率 ≥80% 分组的 Juice"><i data-lucide="refresh-cw"></i></button></span></th>
-                    <th><span class="juice-cell">糖果 <button data-refresh-group="accurate" data-probe="candy" class="icon-button juice-refresh" title="刷新最近归因正确率 ≥80% 分组模型的糖果" aria-label="刷新最近归因正确率 ≥80% 分组的 糖果"><i data-lucide="refresh-cw"></i></button></span></th>
-                    <th>最近检测</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody id="accurateModelRows"></tbody>
-              </table>
+
+            <div class="card">
+              <div class="card-header">
+                <h2><i data-lucide="star"></i>收藏模型<span id="favoriteModelCount" class="count">0</span></h2>
+              </div>
+              <div class="table-wrap" tabindex="0" aria-label="收藏模型状态表">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>站点</th>
+                      <th>Key</th>
+                      <th>模型</th>
+                      <th>状态</th>
+                      <th>耗时</th>
+                      <th>归因模型</th>
+                      <th title="模型自报值，仅供参考"><span class="juice-cell">Juice <button data-refresh-group="favorite" data-probe="juice" class="icon-button juice-refresh" title="刷新收藏分组 GPT 模型的 Juice" aria-label="刷新收藏分组的 Juice"><i data-lucide="refresh-cw"></i></button></span></th>
+                      <th><span class="juice-cell">糖果 <button data-refresh-group="favorite" data-probe="candy" class="icon-button juice-refresh" title="刷新收藏分组模型的糖果" aria-label="刷新收藏分组的糖果"><i data-lucide="refresh-cw"></i></button></span></th>
+                      <th>最近检测</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="favoriteModelRows"></tbody>
+                </table>
+              </div>
             </div>
-            <div class="heading">
-              <h2>收藏模型<span id="favoriteModelCount" class="count">0</span></h2>
+
+            <div class="card">
+              <div class="card-header">
+                <h2><i data-lucide="boxes"></i>模型状态<span id="modelCount" class="count">0</span></h2>
+                <div class="filters">
+                  <div class="search-field"><i data-lucide="search"></i><input id="search" type="search" placeholder="搜索站点、Key、模型" aria-label="搜索模型" /></div>
+                  <select id="statusFilter" aria-label="筛选模型状态">
+                    <option value="all">全部状态</option>
+                    <option value="Running">运行中</option>
+                    <option value="Queued">排队中</option>
+                    <option value="Success">成功</option>
+                    <option value="failure">异常</option>
+                    <option value="Pending">待检测</option>
+                  </select>
+                </div>
+              </div>
+              <div class="table-wrap" tabindex="0" aria-label="模型状态表">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>站点</th>
+                      <th>Key</th>
+                      <th>模型</th>
+                      <th>状态</th>
+                      <th>耗时</th>
+                      <th>归因模型</th>
+                      <th title="模型自报值，仅供参考"><span class="juice-cell">Juice <button id="refreshAllJuice" class="icon-button juice-refresh" title="刷新全部 GPT 模型的 Juice" aria-label="刷新全部 Juice"><i data-lucide="refresh-cw"></i></button></span></th>
+                      <th><span class="juice-cell">糖果 <button id="refreshAllCandy" class="icon-button juice-refresh" title="刷新全部模型的糖果" aria-label="刷新全部糖果"><i data-lucide="refresh-cw"></i></button></span></th>
+                      <th>最近检测</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="modelRows"></tbody>
+                </table>
+              </div>
             </div>
-            <div class="table-wrap" aria-label="收藏模型状态表">
-              <table>
-                <thead>
-                  <tr>
-                    <th>站点</th>
-                    <th>Key</th>
-                    <th>模型</th>
-                    <th>状态</th>
-                    <th>耗时</th>
-                    <th>归因模型</th>
-                    <th title="模型自报值，仅供参考"><span class="juice-cell">Juice <button data-refresh-group="favorite" data-probe="juice" class="icon-button juice-refresh" title="刷新收藏分组 GPT 模型的 Juice" aria-label="刷新收藏分组的 Juice"><i data-lucide="refresh-cw"></i></button></span></th>
-                    <th><span class="juice-cell">糖果 <button data-refresh-group="favorite" data-probe="candy" class="icon-button juice-refresh" title="刷新收藏分组模型的糖果" aria-label="刷新收藏分组的 糖果"><i data-lucide="refresh-cw"></i></button></span></th>
-                    <th>最近检测</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody id="favoriteModelRows"></tbody>
-              </table>
+
+            <div class="card">
+              <div class="card-header">
+                <h2><i data-lucide="activity"></i>任务</h2>
+              </div>
+              <div id="runRows"></div>
             </div>
-            <div class="heading">
-              <h2>模型状态</h2>
-              <input
-                id="search"
-                placeholder="搜索站点、Key、模型"
-                aria-label="搜索模型"
-              />
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>站点</th>
-                    <th>Key</th>
-                    <th>模型</th>
-                    <th>状态</th>
-                    <th>耗时</th>
-                    <th>归因模型</th>
-                    <th title="模型自报值，仅供参考"><span class="juice-cell">Juice <button id="refreshAllJuice" class="icon-button juice-refresh" title="刷新全部 GPT 模型的 Juice" aria-label="刷新全部 Juice"><i data-lucide="refresh-cw"></i></button></span></th>
-                    <th><span class="juice-cell">糖果 <button id="refreshAllCandy" class="icon-button juice-refresh" title="刷新全部模型的糖果" aria-label="刷新全部糖果"><i data-lucide="refresh-cw"></i></button></span></th>
-                    <th>最近检测</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody id="modelRows"></tbody>
-              </table>
-            </div>
-            <h2>任务</h2>
-            <div id="runRows"></div>
           </section>
+
+          <!-- 站点配置 -->
           <section id="configuration" class="view" hidden>
-            <div class="heading">
-              <h1>站点配置</h1>
+            <div class="page-header">
+              <div>
+                <h1>站点配置</h1>
+                <p>按 站点 → API Key → 模型 分层管理检测对象，Key 加密存储</p>
+              </div>
               <div class="actions">
                 <button id="manageModels" data-manage-models><i data-lucide="list-checks"></i>批量管理模型</button>
-                <button id="addSite">添加站点</button>
+                <button id="addSite" class="primary"><i data-lucide="plus"></i>添加站点</button>
               </div>
             </div>
             <div id="siteRows"></div>
           </section>
+
+          <!-- 检测历史 -->
           <section id="history" class="view" hidden>
-            <h1>检测历史</h1>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th>批次</th>
-                    <th>站点 / Key</th>
-                    <th>模型</th>
-                    <th>状态</th>
-                    <th>HTTP</th>
-                    <th>耗时</th>
-                    <th>失败原因</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody id="resultRows"></tbody>
-              </table>
+            <div class="page-header">
+              <div>
+                <h1>检测历史</h1>
+                <p>所有检测结果按时间倒序排列，可查看详情或重新检测</p>
+              </div>
+            </div>
+            <div class="card">
+              <div class="table-wrap" tabindex="0" aria-label="检测历史表">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>时间</th>
+                      <th>批次</th>
+                      <th>站点 / Key</th>
+                      <th>模型</th>
+                      <th>状态</th>
+                      <th>HTTP</th>
+                      <th>耗时</th>
+                      <th>失败原因</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="resultRows"></tbody>
+                </table>
+              </div>
             </div>
           </section>
+
+          <!-- 指纹库 -->
           <section id="banks" class="view" hidden>
-            <div class="heading">
-              <h1>指纹库</h1>
+            <div class="page-header">
+              <div>
+                <h1>指纹库</h1>
+                <p>管理 ModelTrace 指纹库与 HLWY 统计基准</p>
+              </div>
             </div>
-            <div class="heading">
-              <h2>ModelTrace 指纹库</h2>
-              <div class="actions"><button id="updateDefaultBank">从上游更新默认库</button><button id="createEmptyBank">新建空指纹库</button><button id="collectFingerprint">采集模型指纹</button><button id="importBank">导入指纹库</button></div>
+            <div class="card">
+              <div class="card-header">
+                <h2><i data-lucide="fingerprint"></i>ModelTrace 指纹库</h2>
+                <div class="actions">
+                  <button id="updateDefaultBank"><i data-lucide="cloud-download"></i>从上游更新默认库</button>
+                  <button id="createEmptyBank"><i data-lucide="file-plus"></i>新建空指纹库</button>
+                  <button id="collectFingerprint"><i data-lucide="sparkles"></i>采集模型指纹</button>
+                  <button id="importBank" class="primary"><i data-lucide="upload"></i>导入指纹库</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <p class="notice"><i data-lucide="info"></i><span>归因概率仅在当前候选库内比较，不代表模型身份已得到独立验证。</span></p>
+                <p id="bankUpdateStatus" class="status-line" role="status" aria-live="polite"></p>
+              </div>
+              <div id="bankRows" class="list"></div>
             </div>
-            <p class="notice">
-              归因概率仅在当前候选库内比较，不代表模型身份已得到独立验证。
-            </p>
-            <p id="bankUpdateStatus" role="status" aria-live="polite"></p>
-            <div id="bankRows"></div>
-            <div class="settings-divider"></div>
-            <div class="heading">
-              <h2>HLWY 基准</h2>
-              <button id="updateHlwyBaselines" type="button">从上游更新基准</button>
-            </div>
-            <p id="hlwyBaselineSummary" class="notice"></p>
-            <p id="hlwyUpdateStatus" role="status" aria-live="polite"></p>
-            <form id="hlwyBaselineForm">
+
+            <div class="card">
+              <div class="card-header">
+                <h2><i data-lucide="chart-column"></i>HLWY 基准</h2>
+                <button id="updateHlwyBaselines" type="button"><i data-lucide="cloud-download"></i>从上游更新基准</button>
+              </div>
+              <div class="card-body">
+                <p id="hlwyBaselineSummary" class="notice info"></p>
+                <p id="hlwyUpdateStatus" class="status-line" role="status" aria-live="polite"></p>
+                <form id="hlwyBaselineForm" class="stacked-form">
                   <div class="setting-group">
                     <label for="hlwy-import">
                       <span class="label-text">导入基准文件</span>
                       <span class="label-hint">可选，从检测详情导出的基准 JSON</span>
                     </label>
-                    <div class="file-input-wrapper">
+                    <div class="input-wrapper">
                       <input id="hlwy-import" name="hlwyImport" type="file" accept=".json,application/json" />
-                      <span class="file-input-hint">仅接受 JSON 格式；导入后优先使用自定义基准</span>
+                      <span class="input-hint">仅接受 JSON 格式；导入后优先使用自定义基准</span>
                     </div>
                   </div>
-
                   <div class="setting-group">
                     <label for="hlwy-baseline">
                       <span class="label-text">自定义基准（高级）</span>
                       <span class="label-hint">留空则自动使用上游默认基准，或粘贴来自可信来源的基准数据</span>
                     </label>
-                    <div class="textarea-wrapper">
-                      <textarea id="hlwy-baseline" name="hlwyBaselinesJson" rows="5" placeholder="支持上游导出的基准数组或单个基准对象，如：[{&quot;name&quot;: &quot;gpt-4&quot;, ...}]"></textarea>
-                      <span class="textarea-hint">默认从 <a href="https://github.com/hanlinwenyuan/hlwy-ai-checker/tree/main/baselines" target="_blank" rel="noopener noreferrer">hlwy-ai-checker</a> 自动同步，每 6 小时更新；离线使用缓存或内置基准。清空并保存可恢复默认；与 ModelTrace 指纹库独立</span>
+                    <div class="input-wrapper">
+                      <textarea id="hlwy-baseline" name="hlwyBaselinesJson" rows="6" placeholder="支持上游导出的基准数组或单个基准对象，如：[{&quot;name&quot;: &quot;gpt-4&quot;, ...}]"></textarea>
+                      <span class="input-hint">默认从 <a href="https://github.com/hanlinwenyuan/hlwy-ai-checker/tree/main/baselines" target="_blank" rel="noopener noreferrer">hlwy-ai-checker</a> 自动同步，每 6 小时更新；离线使用缓存或内置基准。清空并保存可恢复默认；与 ModelTrace 指纹库独立</span>
                     </div>
                   </div>
-              <div class="actions">
-                <button class="primary">保存基准</button>
-                <button id="resetHlwyBaselines" type="button">恢复默认基准</button>
+                  <div class="form-actions">
+                    <button id="resetHlwyBaselines" type="button"><i data-lucide="rotate-ccw"></i>恢复默认基准</button>
+                    <button class="primary"><i data-lucide="save"></i>保存基准</button>
+                  </div>
+                </form>
               </div>
-            </form>
+            </div>
           </section>
+
+          <!-- 检测设置 -->
           <section id="settings" class="view" hidden>
-            <div class="heading">
-              <h1>检测设置</h1>
+            <div class="page-header">
+              <div>
+                <h1>检测设置</h1>
+                <p>配置检测方式、定时任务、并发与附加探针参数</p>
+              </div>
             </div>
 
-            <div class="settings-tabs" role="tablist">
-              <button id="mtTab" class="settings-tab selected" role="tab" aria-selected="true" aria-controls="mtPanel">
-                <i data-lucide="target"></i>ModelTrace 方式
-              </button>
-              <button id="hlwyTab" class="settings-tab" role="tab" aria-selected="false" aria-controls="hlwyPanel">
-                <i data-lucide="bar-chart-3"></i>HLWY 方式
-              </button>
-              <button id="commonTab" class="settings-tab" role="tab" aria-selected="false" aria-controls="commonPanel">
-                <i data-lucide="sliders"></i>通用设置
-              </button>
+            <div class="settings-tabs" role="tablist" aria-label="设置分类">
+              <button id="mtTab" class="settings-tab selected" role="tab" aria-selected="true" aria-controls="mtPanel"><i data-lucide="target"></i>ModelTrace 方式</button>
+              <button id="hlwyTab" class="settings-tab" role="tab" aria-selected="false" aria-controls="hlwyPanel" tabindex="-1"><i data-lucide="chart-column"></i>HLWY 方式</button>
+              <button id="commonTab" class="settings-tab" role="tab" aria-selected="false" aria-controls="commonPanel" tabindex="-1"><i data-lucide="sliders"></i>通用设置</button>
             </div>
 
             <form id="settingsForm">
               <!-- ModelTrace 配置 -->
-              <div id="mtPanel" class="settings-panel" role="tabpanel" aria-labelledby="mtTab">
+              <div id="mtPanel" class="settings-panel card" role="tabpanel" aria-labelledby="mtTab">
                 <div class="settings-section">
                   <h2>ModelTrace 挑战指纹检测</h2>
                   <p class="section-hint">通过向模型发送一系列挑战题目，根据回复指纹进行模型身份归因</p>
-
                   <div class="setting-group">
                     <label for="mt-challenge">
                       <span class="label-text">挑战题目数</span>
@@ -244,11 +322,10 @@
               </div>
 
               <!-- HLWY 配置 -->
-              <div id="hlwyPanel" class="settings-panel" role="tabpanel" aria-labelledby="hlwyTab" hidden>
+              <div id="hlwyPanel" class="settings-panel card" role="tabpanel" aria-labelledby="hlwyTab" hidden>
                 <div class="settings-section">
                   <h2>HLWY 统计指纹检测</h2>
                   <p class="section-hint">通过采样模型随机数分布，进行统计意义上的身份识别</p>
-
                   <div class="setting-group">
                     <label for="hlwy-sample">
                       <span class="label-text">采样次数</span>
@@ -259,46 +336,48 @@
                       <span class="input-hint">样本数越多越精准，但耗时更长；默认 100 为平衡方案</span>
                     </div>
                   </div>
-
                   <div class="setting-group">
-                    <label for="hlwy-concurrency"><span class="label-text">单模型采样并发</span><span class="label-hint">范围 1–50，默认 5，与上游一键检测一致</span></label>
+                    <label for="hlwy-concurrency">
+                      <span class="label-text">单模型采样并发</span>
+                      <span class="label-hint">范围 1–50，默认 5，与上游一键检测一致</span>
+                    </label>
                     <div class="input-wrapper">
                       <input id="hlwy-concurrency" name="hlwyConcurrency" type="number" min="1" max="50" value="5" required />
                       <span class="input-hint">每个模型同时发出的采样请求数；遇到限流可调低。统计报告先显示，Juice 和糖果结果随后补充。</span>
                     </div>
                   </div>
-
-                  <div class="setting-group checkbox-group">
-                    <label>
-                      <input name="hlwyAntiTarget" type="checkbox" />
-                      <span class="label-text">启用反针对模式</span>
-                    </label>
-                    <p class="feature-hint">每次在提示词内部随机插入一个空格（不拆开数字）以规避某些针对性对策</p>
+                  <div class="setting-group">
+                    <span class="setting-label">
+                      <span class="label-text">反针对模式</span>
+                      <span class="label-hint">默认关闭</span>
+                    </span>
+                    <div class="input-wrapper">
+                      <label class="switch"><input name="hlwyAntiTarget" type="checkbox" role="switch" /><span class="switch-track" aria-hidden="true"></span><span>启用反针对模式</span></label>
+                      <span class="input-hint">每次在提示词内部随机插入一个空格（不拆开数字）以规避某些针对性对策</span>
+                    </div>
                   </div>
-
-                  <p class="section-hint">默认基准更新、导入和恢复默认请前往“指纹库 → HLWY 基准”。</p>
+                  <p class="notice info"><i data-lucide="info"></i><span>默认基准更新、导入和恢复默认请前往“指纹库 → HLWY 基准”。</span></p>
                 </div>
               </div>
 
               <!-- 通用设置 -->
-              <div id="commonPanel" class="settings-panel" role="tabpanel" aria-labelledby="commonTab" hidden>
+              <div id="commonPanel" class="settings-panel card" role="tabpanel" aria-labelledby="commonTab" hidden>
                 <div class="settings-section">
                   <h2>基础检测参数</h2>
                   <p class="section-hint">对所有检测方式生效的通用参数设置</p>
-
                   <div class="setting-group">
                     <label for="main-method">
                       <span class="label-text">主要检测方式</span>
+                      <span class="label-hint">手动与定时检测均使用</span>
                     </label>
                     <div class="input-wrapper">
                       <select id="main-method" name="detectionMethod">
                         <option value="modeltrace">ModelTrace · 挑战指纹归因</option>
                         <option value="hlwy">HLWY · 随机数统计指纹</option>
                       </select>
-                      <span class="input-hint">选择定时检测时使用的默认方式</span>
+                      <span class="input-hint">已排队任务保留提交时的方式与参数</span>
                     </div>
                   </div>
-
                   <div class="setting-group">
                     <label for="common-interval">
                       <span class="label-text">定时检测间隔</span>
@@ -309,11 +388,9 @@
                       <span class="input-hint">最小 1 分钟，最大 1 年</span>
                     </div>
                   </div>
-
-                  <div class="settings-divider"></div>
-
+                </div>
+                <div class="settings-section">
                   <h3>并发与超时</h3>
-
                   <div class="setting-group">
                     <label for="common-concurrency">
                       <span class="label-text">并发模型数</span>
@@ -324,22 +401,19 @@
                       <span class="input-hint">数值越大速度越快，但对系统负荷越大</span>
                     </div>
                   </div>
-
                   <div class="setting-group">
                     <label for="common-timeout">
                       <span class="label-text">单次请求超时</span>
-                      <span class="label-hint">固定值</span>
+                      <span class="label-hint">固定值（秒）</span>
                     </label>
                     <div class="input-wrapper">
                       <input id="common-timeout" name="timeoutSeconds" type="number" value="240" readonly />
                       <span class="input-hint">为保证稳定性，超时时间固定为 240 秒</span>
                     </div>
                   </div>
-
-                  <div class="settings-divider"></div>
-
+                </div>
+                <div class="settings-section">
                   <h3>高级选项</h3>
-
                   <div class="setting-group">
                     <label for="candy-effort">
                       <span class="label-text">糖果思考等级</span>
@@ -355,7 +429,7 @@
                         <option value="high">high · 高</option>
                         <option value="xhigh">xhigh · 更高</option>
                       </select>
-                      <span class="input-hint">显式等级需要模型接口支持；仅支持 Anthropic 协议的接口建议选择”接口默认”</span>
+                      <span class="input-hint">显式等级需要模型接口支持；仅支持 Anthropic 协议的接口建议选择“接口默认”</span>
                     </div>
                   </div>
                 </div>
@@ -363,183 +437,133 @@
             </form>
 
             <div class="settings-footer">
-              <button form="settingsForm" class="primary">💾 保存所有设置</button>
               <p id="nextRun" class="settings-status"></p>
+              <button form="settingsForm" class="primary"><i data-lucide="save"></i>保存所有设置</button>
             </div>
           </section>
+
+          <!-- 通知 -->
           <section id="notifications" class="view" hidden>
-            <h1>结果通知</h1>
-            <p>检测批次结束后发送摘要，包含模型状态、归因候选和耗时。</p>
+            <div class="page-header">
+              <div>
+                <h1>结果通知</h1>
+                <p>检测批次结束后发送摘要，包含模型状态、归因候选和耗时</p>
+              </div>
+            </div>
             <form id="notificationForm">
-              <label
-                ><input name="webhookEnabled" type="checkbox" />启用
-                Webhook</label
-              >
-              <label
-                >Webhook URL<input
-                  name="webhookUrl"
-                  type="password"
-                  autocomplete="new-password"
-                  placeholder="留空保留已保存地址"
-              /></label>
-              <label
-                ><input name="clearWebhook" type="checkbox" />清除已保存 Webhook
-                地址</label
-              >
-              <label
-                ><input name="pushDeerEnabled" type="checkbox" />启用
-                PushDeer</label
-              >
-              <label
-                >PushDeer 推送接口<input
-                  name="pushDeerEndpoint"
-                  type="url"
-                  value="https://api2.pushdeer.com/message/push"
-                  required
-              /></label>
-              <label
-                >PushKey<input
-                  name="pushKey"
-                  type="password"
-                  autocomplete="new-password"
-                  placeholder="留空保留已保存密钥"
-              /></label>
-              <label
-                ><input name="clearPushKey" type="checkbox" />清除已保存
-                PushKey</label
-              >
-              <label
-                ><input
-                  name="onlyFailures"
-                  type="checkbox"
-                />仅失败或取消时通知</label
-              >
-              <button>保存通知设置</button
-              ><button id="testNotification" type="button">发送测试通知</button>
+              <div class="notify-grid">
+                <div class="card">
+                  <div class="card-header">
+                    <h2><i data-lucide="webhook"></i>Webhook</h2>
+                    <label class="switch"><input name="webhookEnabled" type="checkbox" role="switch" aria-label="启用 Webhook" /><span class="switch-track" aria-hidden="true"></span><span>启用</span></label>
+                  </div>
+                  <div class="card-body">
+                    <label>Webhook URL<input name="webhookUrl" type="password" autocomplete="new-password" placeholder="留空保留已保存地址" /></label>
+                    <label class="check"><input name="clearWebhook" type="checkbox" />清除已保存 Webhook 地址</label>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-header">
+                    <h2><i data-lucide="send"></i>PushDeer</h2>
+                    <label class="switch"><input name="pushDeerEnabled" type="checkbox" role="switch" aria-label="启用 PushDeer" /><span class="switch-track" aria-hidden="true"></span><span>启用</span></label>
+                  </div>
+                  <div class="card-body">
+                    <label>推送接口<input name="pushDeerEndpoint" type="url" value="https://api2.pushdeer.com/message/push" required /></label>
+                    <label>PushKey<input name="pushKey" type="password" autocomplete="new-password" placeholder="留空保留已保存密钥" /></label>
+                    <label class="check"><input name="clearPushKey" type="checkbox" />清除已保存 PushKey</label>
+                  </div>
+                </div>
+              </div>
+              <div class="card notify-footer">
+                <label class="switch"><input name="onlyFailures" type="checkbox" role="switch" /><span class="switch-track" aria-hidden="true"></span><span>仅失败或取消时通知</span></label>
+                <p id="notificationConfig" class="settings-status"></p>
+                <div class="actions">
+                  <button id="testNotification" type="button"><i data-lucide="send"></i>发送测试通知</button>
+                  <button class="primary"><i data-lucide="save"></i>保存通知设置</button>
+                </div>
+              </div>
             </form>
-            <p id="notificationConfig"></p>
-            <h2>最近发送记录</h2>
-            <div id="deliveryRows"></div>
+            <div class="card">
+              <div class="card-header">
+                <h2><i data-lucide="inbox"></i>最近发送记录</h2>
+              </div>
+              <div id="deliveryRows" class="list"></div>
+            </div>
           </section>
         </div>
         <p id="message" role="status"></p>
       </main>
+      <footer class="workspace-footer"><span>TrueModel</span><span>模型检测与归因</span></footer>
     </div>
-    <dialog id="editor">
-      <form id="editorForm">
+
+    <dialog id="editor" aria-labelledby="editorTitle">
+      <form id="editorForm" autocomplete="off">
         <div class="heading">
           <h2 id="editorTitle"></h2>
-          <button type="button" id="closeEditor" aria-label="关闭">×</button>
+          <button type="button" id="closeEditor" class="icon-button ghost" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button>
         </div>
         <div id="editorFields"></div>
-        <button>保存</button>
+        <div class="dialog-footer">
+          <button type="button" data-close-dialog>取消</button>
+          <button class="primary">保存</button>
+        </div>
       </form>
     </dialog>
-    <dialog id="detail">
+    <dialog id="detail" aria-label="检测详情">
       <div class="heading">
-        <h2>检测详情</h2>
-        <button id="closeDetail" aria-label="关闭">×</button>
+        <h2 id="detailTitle">检测详情</h2>
+        <button id="closeDetail" class="icon-button ghost" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button>
       </div>
       <div id="detailBody"></div>
     </dialog>
     <dialog id="modelPicker" aria-labelledby="modelPickerTitle">
       <div class="heading">
-        <h2 id="modelPickerTitle">添加模型</h2>
-        <button
-          id="closeModelPicker"
-          class="icon-button"
-          title="关闭"
-          aria-label="关闭"
-        >
-          <i data-lucide="x"></i>
-        </button>
+        <div>
+          <h2 id="modelPickerTitle">添加模型</h2>
+          <p id="modelPickerContext" class="muted"></p>
+        </div>
+        <button id="closeModelPicker" class="icon-button ghost" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button>
       </div>
       <div class="picker-body">
-        <p id="modelPickerContext" class="muted"></p>
-        <div class="picker-modes" role="tablist" aria-label="添加方式">
-          <button
-            id="discoverMode"
-            role="tab"
-            aria-selected="true"
-            aria-controls="discoveredPanel"
-          >
-            从站点获取</button
-          ><button
-            id="manualMode"
-            role="tab"
-            aria-selected="false"
-            aria-controls="manualPanel"
-            tabindex="-1"
-          >
-            手动输入
-          </button>
+        <div class="picker-modes segmented" role="tablist" aria-label="添加方式">
+          <button id="discoverMode" role="tab" aria-selected="true" aria-controls="discoveredPanel"><i data-lucide="cloud-download"></i>从站点获取</button>
+          <button id="manualMode" role="tab" aria-selected="false" aria-controls="manualPanel" tabindex="-1"><i data-lucide="pencil-line"></i>手动输入</button>
         </div>
-        <div
-          id="discoveredPanel"
-          role="tabpanel"
-          aria-labelledby="discoverMode"
-        >
+        <div id="discoveredPanel" role="tabpanel" aria-labelledby="discoverMode">
           <div class="picker-search">
-            <input
-              id="modelPickerSearch"
-              type="search"
-              placeholder="搜索模型 ID"
-              aria-label="搜索可用模型"
-            /><button
-              id="reloadModels"
-              class="icon-button"
-              aria-label="重新获取模型"
-              title="重新获取模型"
-            >
-              <i data-lucide="refresh-cw"></i>
-            </button>
+            <div class="search-field"><i data-lucide="search"></i><input id="modelPickerSearch" type="search" placeholder="搜索模型 ID" aria-label="搜索可用模型" /></div>
+            <button id="reloadModels" class="icon-button" aria-label="重新获取模型" title="重新获取模型"><i data-lucide="refresh-cw"></i></button>
           </div>
           <div class="picker-selection">
-            <label
-              ><input
-                id="selectVisibleModels"
-                type="checkbox"
-              />全选当前结果</label
-            ><span id="availableModelCount" class="muted"></span>
+            <label class="check"><input id="selectVisibleModels" type="checkbox" />全选当前结果</label>
+            <span id="availableModelCount" class="muted"></span>
           </div>
-          <div id="availableModels" aria-busy="false"></div>
+          <div id="availableModels" class="option-list" aria-busy="false"></div>
         </div>
-        <div
-          id="manualPanel"
-          role="tabpanel"
-          aria-labelledby="manualMode"
-          hidden
-        >
+        <div id="manualPanel" role="tabpanel" aria-labelledby="manualMode" hidden>
           <form id="manualModelForm">
-            <label
-              >模型 ID<input
-                id="manualModelName"
-                name="name"
-                autocomplete="off"
-                required /></label
-            ><button class="primary">添加模型</button>
+            <label>模型 ID<input id="manualModelName" name="name" autocomplete="off" required /></label>
+            <button class="primary">添加模型</button>
           </form>
         </div>
-        <p id="modelPickerMessage" role="status" aria-live="polite"></p>
+        <p id="modelPickerMessage" class="inline-error" role="status" aria-live="polite"></p>
       </div>
       <div id="modelPickerFooter" class="picker-footer">
-        <span id="selectedModelCount">已选 0 个</span
-        ><button id="addSelectedModels" class="primary" disabled>
-          添加所选模型
-        </button>
+        <span id="selectedModelCount">已选 0 个</span>
+        <button id="addSelectedModels" class="primary" disabled><i data-lucide="plus"></i>添加所选模型</button>
       </div>
     </dialog>
     <dialog id="batchModelEditor" aria-labelledby="batchModelTitle">
       <div class="heading">
         <h2 id="batchModelTitle">批量管理模型 ID</h2>
-        <button id="closeBatchModelEditor" class="icon-button" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button>
+        <button id="closeBatchModelEditor" class="icon-button ghost" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button>
       </div>
       <div class="picker-body">
         <div class="batch-model-filters">
           <label>站点<select id="batchModelSite"></select></label>
           <label>Key<select id="batchModelKey"></select></label>
         </div>
-        <input id="batchModelSearch" type="search" placeholder="搜索模型 ID" aria-label="搜索批量管理的模型" />
+        <div class="search-field"><i data-lucide="search"></i><input id="batchModelSearch" type="search" placeholder="搜索模型 ID" aria-label="搜索批量管理的模型" /></div>
         <div class="batch-model-replacement">
           <label>匹配方式<select id="batchModelMatch"><option value="partial">替换部分文本</option><option value="whole">精确匹配模型 ID</option></select></label>
           <label>查找内容<input id="batchModelFind" autocomplete="off" placeholder="如：旧前缀或模型 ID" /></label>
@@ -547,11 +571,11 @@
         </div>
         <p class="muted batch-model-hint">区分大小写；部分文本模式会替换所有匹配处。仅处理勾选项，每次最多 500 个；下方预览替换结果。</p>
         <div class="picker-selection">
-          <label><input id="selectBatchModels" type="checkbox" />全选当前结果</label>
+          <label class="check"><input id="selectBatchModels" type="checkbox" />全选当前结果</label>
           <span id="batchModelVisibleCount" class="muted"></span>
         </div>
-        <div id="batchModelOptions"></div>
-        <p id="batchModelMessage" role="status" aria-live="polite"></p>
+        <div id="batchModelOptions" class="option-list"></div>
+        <p id="batchModelMessage" class="inline-error" role="status" aria-live="polite"></p>
       </div>
       <div class="picker-footer">
         <span id="batchModelSelectedCount">已选 0 个</span>

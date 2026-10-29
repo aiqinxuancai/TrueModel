@@ -311,6 +311,14 @@ api.MapPost("/keys/{id:int}/models", async (int id, ModelInput input, AppDb db) 
     if (await db.Models.AnyAsync(m => m.SiteKeyId == id && m.Name == input.Name.Trim())) return Results.Conflict();
     var model = new MonitoredModel { SiteKeyId = id, Name = input.Name.Trim() }; db.Models.Add(model); await db.SaveChangesAsync(); return Results.Ok(new { model.Id });
 });
+api.MapPut("/keys/{id:int}", async (int id, KeyRenameInput input, AppDb db, CancellationToken token) =>
+{
+    var name = input.Name?.Trim();
+    if (string.IsNullOrEmpty(name)) return Results.BadRequest(new { error = "Key 名称不能为空" });
+    if (name.Length > 200) return Results.BadRequest(new { error = "Key 名称不能超过 200 个字符" });
+    var updated = await db.Keys.Where(k => k.Id == id).ExecuteUpdateAsync(s => s.SetProperty(k => k.Name, name), token);
+    return updated == 0 ? Results.NotFound(new { error = "Key 不存在" }) : Results.NoContent();
+});
 api.MapDelete("/keys/{id:int}", async (int id, AppDb db, DetectionControl control) => { await control.Delete(db, keyId: id); return Results.NoContent(); });
 api.MapPost("/keys/{id:int}/discover-models", async (int id, AppDb db, IDataProtectionProvider protection, ModelDiscovery discovery, HttpContext context, CancellationToken token) =>
 {
@@ -631,6 +639,7 @@ record ManualFingerprintInput(string Model, string DisplayName, string Family, i
 record LoginRequest(string Username, string Password);
 record SiteInput(string Name, string BaseUrl, bool Enabled = true);
 record KeyInput(string Name, string Value);
+record KeyRenameInput(string? Name);
 record ModelInput(string Name);
 record ModelBatchInput(string[]? Names);
 public partial class Program { }

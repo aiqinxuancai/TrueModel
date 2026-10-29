@@ -1,111 +1,44 @@
 "use strict";
 const icons = () => window.lucide?.createIcons();
 const icon = (name) => `<i data-lucide="${name}"></i>`;
-const navIcons = {
-  overview: "layout-dashboard",
-  configuration: "network",
-  history: "history",
-  banks: "fingerprint",
-  settings: "sliders-horizontal",
-  notifications: "bell",
+const pageTitles = {
+  overview: "工作台 / 总览",
+  history: "工作台 / 检测历史",
+  configuration: "配置 / 站点配置",
+  banks: "配置 / 指纹库",
+  settings: "配置 / 检测设置",
+  notifications: "配置 / 通知",
 };
-document.querySelectorAll("[data-tab]").forEach((button) => {
-  button.removeAttribute("data-icon");
-  button.insertAdjacentHTML("afterbegin", icon(navIcons[button.dataset.tab]));
-});
-$("sidebar").setAttribute("aria-label", "主导航");
-$("sidebar").insertAdjacentHTML(
-  "beforeend",
-  `<div class="sidebar-footer">${icon("shield-check")}管理员工作空间</div>`,
-);
-document.body.insertAdjacentHTML(
-  "afterbegin",
-  '<a class="skip-link" href="#application">跳转到主内容</a><button id="navBackdrop" aria-label="关闭导航" hidden></button>',
-);
-$("application").tabIndex = -1;
-document
-  .querySelector("header")
-  .insertAdjacentHTML(
-    "afterbegin",
-    `<button id="menuToggle" class="icon-button" aria-label="展开导航" title="展开导航" aria-controls="sidebar" aria-expanded="false" hidden>${icon("menu")}</button>`,
-  );
-$("logout").insertAdjacentHTML(
-  "beforebegin",
-  `<span id="syncStatus" hidden>等待同步</span><button id="refreshButton" class="icon-button" aria-label="刷新数据" title="刷新数据" hidden>${icon("refresh-cw")}</button>`,
-);
-document
-  .querySelector("main")
-  .insertAdjacentHTML(
-    "afterend",
-    '<footer class="workspace-footer"><span>TrueModel</span><span>模型检测与归因</span></footer>',
-  );
-$("login").insertAdjacentHTML(
-  "afterbegin",
-  `<div class="login-brand">${icon("scan-line")}TrueModel</div>`,
-);
+
+// Theme: the inline head script applies the saved value before first paint.
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const dark = theme === "dark";
+  const label = dark ? "切换浅色模式" : "切换深色模式";
+  $("themeToggle").setAttribute("aria-label", label);
+  $("themeToggle").title = label;
+  $("themeToggle").innerHTML = icon(dark ? "sun" : "moon");
+  icons();
+}
+$("themeToggle").onclick = () => {
+  const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  try { localStorage.setItem("truemodel-theme", theme); } catch {}
+  applyTheme(theme);
+};
+applyTheme(document.documentElement.dataset.theme || "light");
+
 const password = $("loginForm").elements.password;
-const passwordWrap = document.createElement("span");
-passwordWrap.className = "password-field";
-password.before(passwordWrap);
-passwordWrap.append(password);
-passwordWrap.insertAdjacentHTML(
-  "beforeend",
-  `<button id="togglePassword" type="button" class="icon-button" aria-label="显示密码" title="显示密码">${icon("eye")}</button>`,
-);
 $("togglePassword").onclick = () => {
   const visible = password.type === "password";
   password.type = visible ? "text" : "password";
-  $("togglePassword").setAttribute(
-    "aria-label",
-    visible ? "隐藏密码" : "显示密码",
-  );
-  $("togglePassword").title = visible ? "隐藏密码" : "显示密码";
+  const label = visible ? "隐藏密码" : "显示密码";
+  $("togglePassword").setAttribute("aria-label", label);
+  $("togglePassword").title = label;
   $("togglePassword").innerHTML = icon(visible ? "eye-off" : "eye");
   icons();
 };
-const filters = document.createElement("div");
-filters.className = "filters";
-$("search").before(filters);
-const searchWrap = document.createElement("div");
-searchWrap.className = "search-field";
-searchWrap.innerHTML = icon("search");
-filters.append(searchWrap);
-searchWrap.append($("search"));
-filters.insertAdjacentHTML(
-  "beforeend",
-  '<select id="statusFilter" aria-label="筛选模型状态"><option value="all">全部状态</option><option value="Running">运行中</option><option value="Queued">排队中</option><option value="Success">成功</option><option value="failure">异常</option><option value="Pending">待检测</option></select>',
-);
-$("search")
-  .closest(".heading")
-  .querySelector("h2")
-  .insertAdjacentHTML(
-    "beforeend",
-    '<span id="modelCount" class="count">0</span>',
-  );
 $("statusFilter").onchange = () => render();
-for (const [selector, name] of [
-  ['[data-detect="all"]', "play"],
-  ["#addSite", "plus"],
-  ["#importBank", "upload"],
-  ["#testNotification", "send"],
-]) {
-  const b = document.querySelector(selector);
-  b.insertAdjacentHTML("afterbegin", icon(name));
-  if (selector !== "#testNotification") b.classList.add("primary");
-}
-for (const id of ["closeEditor", "closeDetail"]) {
-  $(id).innerHTML = icon("x");
-  $(id).title = "关闭";
-}
-$("editor").setAttribute("aria-labelledby", "editorTitle");
-$("detail").setAttribute("aria-label", "检测详情");
-document.querySelectorAll(".table-wrap").forEach((el) => {
-  el.tabIndex = 0;
-  el.setAttribute(
-    "aria-label",
-    el.getAttribute("aria-label") || (el.closest("section").id === "overview" ? "模型状态表" : "检测历史表"),
-  );
-});
+
 function closeNav() {
   $("sidebar").classList.remove("mobile-open");
   $("navBackdrop").hidden = true;
@@ -141,6 +74,7 @@ function navigate(tab) {
     if (b === button) b.setAttribute("aria-current", "page");
     else b.removeAttribute("aria-current");
   });
+  $("pageTitle").textContent = pageTitles[tab] || "";
   closeNav();
 }
 document.querySelectorAll("[data-tab]").forEach((button) =>
@@ -157,10 +91,13 @@ document.addEventListener("click", (e) => {
     $("statusFilter").value = "all";
     render();
   }
+  const close = e.target.closest("[data-close-dialog]");
+  if (close) close.closest("dialog")?.close();
 });
 $("refreshButton").onclick = async () => {
   const b = $("refreshButton");
   b.disabled = true;
+  b.setAttribute("aria-busy", "true");
   try {
     await refresh();
     if (!$("notifications").hidden) await refreshNotifications();
@@ -169,17 +106,19 @@ $("refreshButton").onclick = async () => {
     message(e.message);
   } finally {
     b.disabled = false;
+    b.removeAttribute("aria-busy");
   }
 };
+
 const knownKeys = new Set();
 let expandedKeys = new Set();
 
 function configuredModelCard(model) {
   return `<div class="configured-model">
-    <span>${icon("box")}<code>${esc(model.name)}</code></span>
+    <span class="configured-model-name">${icon("box")}<code title="${esc(model.name)}">${esc(model.name)}</code></span>
     <div class="actions">
-      <button data-detect-model="${model.id}" class="icon-button" aria-label="检测模型 ${esc(model.name)}" title="检测模型">${icon("play")}</button>
-      <button data-delete="models/${model.id}" class="icon-button" aria-label="删除模型 ${esc(model.name)}" title="删除模型">${icon("trash-2")}</button>
+      <button data-detect-model="${model.id}" class="icon-button ghost sm" aria-label="检测模型 ${esc(model.name)}" title="检测模型">${icon("play")}</button>
+      <button data-delete="models/${model.id}" class="icon-button ghost sm" aria-label="删除模型 ${esc(model.name)}" title="删除模型">${icon("trash-2")}</button>
     </div>
   </div>`;
 }
@@ -188,7 +127,14 @@ function configuredKeyGroup(key) {
   const open = expandedKeys.has(String(key.id)) || !knownKeys.has(key.id);
   return `<details class="key-group" data-key-id="${key.id}" ${open ? "open" : ""}>
     <summary>
-      <span class="key-name"><span class="config-level key-level">${icon("key-round")}Key</span><b>${esc(key.name)}</b><code>${esc(key.mask)}</code><span class="key-count">${key.models.length} 个模型</span></span>
+      <span class="key-chevron" aria-hidden="true">${icon("chevron-right")}</span>
+      <span class="key-name">
+        <span class="key-icon" aria-hidden="true">${icon("key-round")}</span>
+        <b>${esc(key.name)}</b>
+        <button class="icon-button ghost xs" data-rename-key="${key.id}" aria-label="重命名 Key ${esc(key.name)}" title="重命名 Key">${icon("pencil")}</button>
+        <code>${esc(key.mask)}</code>
+        <span class="pill">${key.models.length} 个模型</span>
+      </span>
       <span class="actions key-actions">
         <button data-model="${key.id}">${icon("plus")}添加模型</button>
         <button data-manage-models data-manage-key="${key.id}" ${key.models.length ? "" : "disabled"}>${icon("list-checks")}批量管理</button>
@@ -202,11 +148,14 @@ function configuredKeyGroup(key) {
 
 function configuredSiteCard(site) {
   const modelCount = site.keys.reduce((count, key) => count + key.models.length, 0);
-  return `<section class="site-group" aria-labelledby="site-title-${site.id}">
+  return `<section class="site-group card" aria-labelledby="site-title-${site.id}">
     <div class="site-heading">
       <div class="site-identity">
-        <span class="site-icon">${icon("network")}</span>
-        <div class="site-info"><div class="site-title"><span class="config-level site-level">站点</span><h2 id="site-title-${site.id}">${esc(site.name)}</h2><span class="site-count">${site.keys.length} 个 Key · ${modelCount} 个模型</span></div><small>${esc(site.baseUrl)}</small></div>
+        <span class="site-icon" aria-hidden="true">${icon("globe")}</span>
+        <div class="site-info">
+          <div class="site-title"><h2 id="site-title-${site.id}">${esc(site.name)}</h2><span class="pill">${site.keys.length} 个 Key · ${modelCount} 个模型</span></div>
+          <small>${esc(site.baseUrl)}</small>
+        </div>
       </div>
       <div class="actions">
         <button data-key="${site.id}">${icon("plus")}添加 Key</button>
@@ -229,6 +178,23 @@ document.addEventListener(
   },
   true,
 );
+document.addEventListener("click", (e) => {
+  const button = e.target.closest("button[data-rename-key]");
+  if (!button) return;
+  // The button sits inside <summary>; keep the Key group from toggling.
+  e.preventDefault();
+  const id = Number(button.dataset.renameKey);
+  const key = sites.flatMap((s) => s.keys).find((k) => k.id === id);
+  if (!key) return;
+  edit("重命名 Key", [["name", "Key 名称", "text", key.name]], async (v) => {
+    await api(`/keys/${id}`, "PUT", { name: v.name });
+    return "Key 名称已更新";
+  });
+  const input = $("editorForm").elements.name;
+  input.maxLength = 200;
+  input.select();
+});
+
 const baseRender = render;
 render = function () {
   const expandedReasons = new Set(
@@ -240,15 +206,6 @@ render = function () {
   document.querySelectorAll("[data-reason-id]").forEach((el) => {
     el.open = expandedReasons.has(el.dataset.reasonId);
   });
-  const statIcons = ["network", "key-round", "box", "circle-check", "triangle-alert"];
-  document
-    .querySelectorAll(".stat")
-    .forEach((el, i) =>
-      el.insertAdjacentHTML(
-        "beforeend",
-        `<div class="stat-icon">${icon(statIcons[i])}</div>`,
-      ),
-    );
   const filter = $("statusFilter").value;
   let count = 0;
   document.querySelectorAll("#modelRows tr").forEach((row) => {
@@ -271,14 +228,14 @@ render = function () {
       `<tr><td colspan="10" class="empty">${icon(hasModels ? "search-x" : "box")}<strong>${hasModels ? "没有匹配的模型" : "暂无模型"}</strong><button ${hasModels ? "data-clear-filter" : 'data-go="configuration"'}>${hasModels ? "清除筛选" : "配置站点"}</button></td></tr>`;
   }
   $("siteRows").innerHTML = sites.map(configuredSiteCard).join("") ||
-    `<div class="empty">${icon("network")}<strong>暂无站点</strong><button data-create-site>添加站点</button></div>`;
+    `<div class="card empty">${icon("network")}<strong>暂无站点</strong><span>添加站点后即可配置 API Key 与模型</span><button data-create-site class="primary">${icon("plus")}添加站点</button></div>`;
   sites.forEach((s) => s.keys.forEach((k) => knownKeys.add(k.id)));
   document
     .querySelector("[data-create-site]")
     ?.addEventListener("click", () => $("addSite").click());
   if (!runs.length)
     $("runRows").innerHTML =
-      `<div class="empty">${icon("activity")}暂无检测任务</div>`;
+      `<div class="empty">${icon("activity")}<strong>暂无检测任务</strong></div>`;
   document.querySelector('[data-detect="all"]').disabled = !sites.some((s) =>
     s.keys.some((k) => k.models.length),
   );
@@ -310,11 +267,10 @@ edit = function (title, fields, action) {
   baseEdit(
     title,
     fields.map((field) =>
-      field[0] === "value" ? [field[0], field[1], "text"] : field,
+      field[0] === "value" ? [field[0], field[1], "text", field[3]] : field,
     ),
     action,
   );
-  $("editorForm").autocomplete = "off";
   const apiKey = $("editorForm").elements.value;
   if (apiKey) {
     apiKey.autocomplete = "off";
@@ -339,7 +295,9 @@ message = function (text) {
     inlineMessage = document.createElement("p");
     inlineMessage.className = "dialog-message";
     inlineMessage.setAttribute("role", "status");
-    dialog.querySelector(".heading").after(inlineMessage);
+    const heading = dialog.querySelector(".heading");
+    if (heading) heading.after(inlineMessage);
+    else dialog.prepend(inlineMessage);
   }
   if (inlineMessage) inlineMessage.textContent = text;
   messageTimer = setTimeout(() => {

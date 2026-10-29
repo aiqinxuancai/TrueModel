@@ -220,6 +220,25 @@ public class ModelManagementTests
         Assert.Equal("finished", history[0].GetProperty("modelName").GetString());
     }
 
+    [Fact]
+    public async Task RenameKeyTrimsNameRejectsInvalidInputAndKeepsSecret()
+    {
+        await using var host = new TestHost();
+        await host.RefreshToken();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client.PutAsJsonAsync("/api/keys/1", new { name = "x" })).StatusCode);
+        await host.Login();
+        var key = await host.CreateKey();
+        string secret = "";
+        await host.WithDb(async db => secret = (await db.Keys.SingleAsync()).ProtectedValue);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/keys/{key}", new { name = "  主力 Key  " })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync($"/api/keys/{key}", new { name = "   " })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync($"/api/keys/{key}", new { name = new string('k', 201) })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await host.Client.PutAsJsonAsync("/api/keys/99999", new { name = "missing" })).StatusCode);
+        var sites = await host.Client.GetFromJsonAsync<JsonElement>("/api/sites");
+        Assert.Equal("主力 Key", sites[0].GetProperty("keys")[0].GetProperty("name").GetString());
+        await host.WithDb(async db => Assert.Equal(secret, (await db.Keys.SingleAsync()).ProtectedValue));
+    }
+
     private sealed class TestHost : IAsyncDisposable
     {
         public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), "truemodel-management-" + Guid.NewGuid());
