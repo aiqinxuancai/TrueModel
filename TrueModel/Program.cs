@@ -19,7 +19,8 @@ if (args.Contains("--probe-stdin"))
     var engine = new ModelTraceClient(new HttpClient { Timeout = Timeout.InfiniteTimeSpan });
     var bank = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Assets", "unified_bank.json"));
     var result = await engine.Test(request.GetProperty("base_url").GetString()!, request.GetProperty("api_key").GetString()!, request.GetProperty("model").GetString()!, bank, request.TryGetProperty("challenge_count", out var count) ? count.GetInt32() : 3, CancellationToken.None,
-        request.TryGetProperty("candy_reasoning_effort", out var effort) ? effort.GetString() ?? "default" : "default");
+        request.TryGetProperty("candy_reasoning_effort", out var effort) ? effort.GetString() ?? "default" : "default",
+        request.TryGetProperty("juice_reasoning_effort", out var juiceEffort) ? juiceEffort.GetString() ?? "default" : "default");
     Console.WriteLine(result.GetRawText());
     return;
 }
@@ -97,7 +98,7 @@ using (var scope = app.Services.CreateScope())
         using (var reader = await command.ExecuteReaderAsync())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
         var additions = table == "Settings"
-            ? new Dictionary<string, string> { ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''" }
+            ? new Dictionary<string, string> { ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''", ["JuiceReasoningEffort"] = "TEXT NOT NULL DEFAULT 'default'" }
             : new Dictionary<string, string> { ["DetectionSettingsJson"] = "TEXT NULL" };
         foreach (var column in additions)
             if (!columns.Contains(column.Key))
@@ -362,7 +363,8 @@ api.MapPost("/models/{id:int}/juice", async (int id, string? methodId, AppDb db,
     string key;
     try { key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue); }
     catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
-    var result = await client.ProbeJuice(target.BaseUrl, key, target.Model.Name, token, methodId);
+    var effort = await db.Settings.Select(s => s.JuiceReasoningEffort).SingleAsync(token);
+    var result = await client.ProbeJuice(target.BaseUrl, key, target.Model.Name, token, methodId, effort);
     var value = result.GetValueOrDefault("juice_value") as int?;
     var status = result.GetValueOrDefault("juice_status") as string;
     var prompt = result.GetValueOrDefault("juice_prompt") as string;
@@ -607,6 +609,7 @@ api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
     if (input is null) return Results.BadRequest();
     if (input.IntervalMinutes < 0 || input.IntervalMinutes > 525600 || input.MaxConcurrency is < 1 or > 16 || input.TimeoutSeconds is < 5 or > 600 || input.ChallengeCount is < 3 or > 6) return Results.BadRequest();
     if (!CandyProbe.ValidReasoningEffort(input.CandyReasoningEffort)) return Results.BadRequest(new { error = "不支持的糖果思考等级" });
+    if (!CandyProbe.ValidReasoningEffort(input.JuiceReasoningEffort)) return Results.BadRequest(new { error = "不支持的 Juice 思考等级" });
     var settings = await db.Settings.SingleAsync();
     if (input.DetectionMethod is not ("modeltrace" or "hlwy") || input.HlwySampleCount is < 40 or > 1000 || input.HlwyConcurrency is < 1 or > 50 || input.HlwyBaselinesJson is null)
         return Results.BadRequest(new { error = "检测方式无效，或 HLWY 采样次数不在 40–1000、采样并发不在 1–50 之间。" });
@@ -620,6 +623,7 @@ api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
     if (payload.EnumerateObject().Any(p => p.Name.Equals("hlwyBaselinesJson", StringComparison.OrdinalIgnoreCase)))
         settings.HlwyBaselinesJson = input.HlwyBaselinesJson;
     settings.CandyReasoningEffort = input.CandyReasoningEffort;
+    settings.JuiceReasoningEffort = input.JuiceReasoningEffort;
     settings.IntervalMinutes = input.IntervalMinutes; settings.MaxConcurrency = input.MaxConcurrency; settings.TimeoutSeconds = 240; settings.ChallengeCount = input.ChallengeCount;
     settings.NextRunAt = input.IntervalMinutes > 0 ? DateTime.UtcNow.AddMinutes(input.IntervalMinutes) : null;
     await db.SaveChangesAsync(); return Results.NoContent();

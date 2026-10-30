@@ -55,7 +55,7 @@ public sealed partial class ModelTraceClient
         catch (InvalidOperationException e) { envelope["error"] = e.Message; }
         if (includeSupplemental)
         {
-            foreach (var entry in await ProbeJuice(url, key, model, token)) envelope[entry.Key] = entry.Value;
+            foreach (var entry in await ProbeJuice(url, key, model, token, reasoningEffort: settings.JuiceReasoningEffort)) envelope[entry.Key] = entry.Value;
             envelope["candy"] = await ProbeCandy(url, key, model, token, settings.CandyReasoningEffort);
         }
         var json = JsonSerializer.Serialize(envelope);

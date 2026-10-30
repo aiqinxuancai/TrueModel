@@ -217,6 +217,17 @@ public class JuiceTests
         Assert.Equal(JuiceProbe.Methods.Single(m => m.Id == "chinese-only").Prompt, result["juice_prompt"]);
     }
 
+    [Fact]
+    public async Task JuiceUsesConfiguredReasoningEffortIndependentlyOfCandy()
+    {
+        var handler = new ProbeHandler(3, "64", false, false) { ExpectedCandyEffort = "xhigh", ExpectedJuiceEffort = "low" };
+        var engine = new ModelTraceClient(new HttpClient(handler));
+        var bank = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets/unified_bank.json"));
+        var report = await engine.Test("https://example.test", "secret", "gpt-5", bank, 3, CancellationToken.None, "xhigh", "low");
+        Assert.Equal(64, report.GetProperty("juice_value").GetInt32());
+        await Assert.ThrowsAsync<ArgumentException>(() => engine.ProbeJuice("https://example.test", "secret", "gpt-5", CancellationToken.None, reasoningEffort: "invalid"));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -298,6 +309,7 @@ public class JuiceTests
         public bool StructuredRefusal { get; init; }
         public string? ExpectedFirst { get; init; }
         public string ExpectedCandyEffort { get; set; } = "default";
+        public string ExpectedJuiceEffort { get; set; } = "default";
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             Calls++;
@@ -309,7 +321,8 @@ public class JuiceTests
                 else Assert.Equal(ExpectedCandyEffort, body.GetProperty("reasoning_effort").GetString());
                 return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "最少取出 21 个糖果。" }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = 1234 } } }) };
             }
-            Assert.False(body.TryGetProperty("reasoning_effort", out _));
+            if (!JuiceProbe.Methods.Any(m => m.Prompt == prompt) || ExpectedJuiceEffort == "default") Assert.False(body.TryGetProperty("reasoning_effort", out _));
+            else Assert.Equal(ExpectedJuiceEffort, body.GetProperty("reasoning_effort").GetString());
             if (Calls > count)
             {
                 Assert.Equal(ExpectedFirst is null ? JuiceProbe.Methods[Calls - count - 1].Prompt : JuiceProbe.Methods.Single(m => m.Id == ExpectedFirst).Prompt, prompt);

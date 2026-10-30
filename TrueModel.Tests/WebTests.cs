@@ -61,6 +61,13 @@ public class WebTests
         }
         foreach (var effort in new string?[] { "invalid", "", null })
             Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, candyReasoningEffort = effort })).StatusCode);
+        foreach (var effort in new[] { "default", "none", "low", "xhigh" })
+        {
+            Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, juiceReasoningEffort = effort })).StatusCode);
+            Assert.Equal(effort, (await client.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("juiceReasoningEffort").GetString());
+        }
+        foreach (var effort in new string?[] { "invalid", "", null })
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/settings", new { challengeCount = 3, intervalMinutes = 0, maxConcurrency = 2, timeoutSeconds = 240, juiceReasoningEffort = effort })).StatusCode);
         foreach (var antiTarget in new[] { true, false })
         {
             Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings", new { detectionMethod = "hlwy", hlwySampleCount = 40, hlwyAntiTarget = antiTarget })).StatusCode);

@@ -432,6 +432,24 @@
                       <span class="input-hint">显式等级需要模型接口支持；仅支持 Anthropic 协议的接口建议选择“接口默认”</span>
                     </div>
                   </div>
+                  <div class="setting-group">
+                    <label for="juice-effort">
+                      <span class="label-text">Juice 思考等级</span>
+                      <span class="label-hint">仅影响 Juice 检测请求的推理深度</span>
+                    </label>
+                    <div class="input-wrapper">
+                      <select id="juice-effort" name="juiceReasoningEffort">
+                        <option value="default">接口默认</option>
+                        <option value="none">none · 不思考</option>
+                        <option value="minimal">minimal · 最低</option>
+                        <option value="low">low · 低</option>
+                        <option value="medium">medium · 中</option>
+                        <option value="high">high · 高</option>
+                        <option value="xhigh">xhigh · 更高</option>
+                      </select>
+                      <span class="input-hint">Juice 值可能随思考等级变化；显式等级需要模型接口支持，不支持时 Juice 显示失败</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </form>

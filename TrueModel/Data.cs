@@ -104,6 +104,7 @@ public sealed class AppSettings
     public int TimeoutSeconds { get; set; } = 240;
     public int ChallengeCount { get; set; } = 3;
     public string CandyReasoningEffort { get; set; } = "default";
+    public string JuiceReasoningEffort { get; set; } = "default";
     public DateTime? NextRunAt { get; set; }
 }
 public sealed class Administrator

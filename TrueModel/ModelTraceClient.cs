@@ -133,8 +133,9 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         catch (JsonException) { }
         return text[..Math.Min(500, text.Length)];
     }
-    public async Task<Dictionary<string, object?>> ProbeJuice(string baseUrl, string key, string model, CancellationToken token, string? methodId = null)
+    public async Task<Dictionary<string, object?>> ProbeJuice(string baseUrl, string key, string model, CancellationToken token, string? methodId = null, string reasoningEffort = "default")
     {
+        if (!CandyProbe.ValidReasoningEffort(reasoningEffort)) throw new ArgumentException("不支持的 Juice 思考等级", nameof(reasoningEffort));
         var envelope = new Dictionary<string, object?>();
         if (JuiceProbe.Supports(model))
         {
@@ -149,7 +150,8 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 envelope["juice_prompt"] = method.Prompt;
                 try
                 {
-                    var text = await Request(baseUrl, key, model, method.Prompt, false, token, null, maxAttempts: 1, juice: true);
+                    var text = await Request(baseUrl, key, model, method.Prompt, false, token, null, maxAttempts: 1, juice: true,
+                        reasoningEffort: reasoningEffort == "default" ? null : reasoningEffort);
                     var value = JuiceProbe.Parse(text);
                     if (juiceHistory is not null) await juiceHistory.Record(endpoint, model, method.Id, value.HasValue, token);
                     envelope["juice_value"] = value;
@@ -205,7 +207,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 string.IsNullOrEmpty(key) ? e.Message : e.Message.Replace(key, "[REDACTED]", StringComparison.Ordinal), reasoningEffort, reasoningTokens, watch.ElapsedMilliseconds);
         }
     }
-    public async Task<JsonElement> Test(string baseUrl, string key, string model, string bank, int challengeCount, CancellationToken token, string candyReasoningEffort = "default")
+    public async Task<JsonElement> Test(string baseUrl, string key, string model, string bank, int challengeCount, CancellationToken token, string candyReasoningEffort = "default", string juiceReasoningEffort = "default")
     {
         var watch = Stopwatch.StartNew();
         var responses = new List<object>();
@@ -224,7 +226,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             responses.Add(new { challenge.Id, challenge.Prompt, Text = text, challenge.ExpectedCount, DurationMs = before.ElapsedMilliseconds, Error = error });
         }
         var envelope = new Dictionary<string, object?> { ["responses"] = responses, ["duration_ms"] = watch.ElapsedMilliseconds, ["status_code"] = statusCode };
-        foreach (var entry in await ProbeJuice(baseUrl, key, model, token)) envelope[entry.Key] = entry.Value;
+        foreach (var entry in await ProbeJuice(baseUrl, key, model, token, reasoningEffort: juiceReasoningEffort)) envelope[entry.Key] = entry.Value;
         envelope["candy"] = await ProbeCandy(baseUrl, key, model, token, candyReasoningEffort);
         envelope["duration_ms"] = watch.ElapsedMilliseconds;
         try
