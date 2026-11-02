@@ -240,6 +240,34 @@ $('loginForm').onsubmit=async e=>{e.preventDefault();try{const credentials=Objec
 $('logout').onclick=async()=>{await api('/logout','POST',{});await session();};
 async function refresh(){[sites,results,runs,banks,recentModelResults]=await Promise.all(['/sites','/results','/runs','/banks','/results?perModel=true'].map(p=>api(p)));render();await refreshHlwyBaselines();const settings=await api('/settings');juiceEffort=settings.juiceReasoningEffort;if(!document.querySelector('#settingsForm:focus-within'))for(const name of ['attributionLanguage','candyLanguage','candy2Language','candy3Language','challengeCount','intervalMinutes','maxConcurrency','timeoutSeconds','candyReasoningEffort','juiceReasoningEffort','detectionMethod','hlwySampleCount','hlwyConcurrency','hlwyAntiTarget']){const field=$('settingsForm').elements[name];if(field.type==='checkbox')field.checked=settings[name];else field.value=name==='timeoutSeconds'?240:settings[name];}updateDetectionSettings();$('nextRun').textContent=`${settings.detectionMethod==='hlwy'?`HLWY · ${settings.hlwySampleCount} 次采样 · ${settings.hlwyConcurrency} 路并发 · 反针对${settings.hlwyAntiTarget?'开启':'关闭'}`:`ModelTrace · ${settings.challengeCount} 个挑战`} · 下次定时检测：${time(settings.nextRunAt)}`;}
 const updatingFavorites = new Set();
+let modelTimeSort = null;
+function sortModelRows(models) {
+    if (!modelTimeSort) return models;
+    const timestamps = new Map(models.map(({m}) => [m.id, Date.parse(recentResultsForModel(m.id)[0]?.startedAt)]));
+    return [...models].sort((a, b) => {
+        const first = timestamps.get(a.m.id), second = timestamps.get(b.m.id);
+        // Keep undetected models last in either direction, and preserve ties.
+        if (!Number.isFinite(first)) return Number.isFinite(second) ? 1 : 0;
+        if (!Number.isFinite(second)) return -1;
+        return modelTimeSort === 'ascending' ? first - second : second - first;
+    });
+}
+function updateModelSortHeaders() {
+    $('modelRecentHeader').setAttribute('aria-sort', modelTimeSort || 'none');
+    $('modelSiteHeader').setAttribute('aria-sort', modelTimeSort ? 'none' : 'other');
+    $('sortModelRecent').textContent = `最近检测 ${modelTimeSort === 'ascending' ? '↑' : modelTimeSort === 'descending' ? '↓' : '↕'}`;
+    $('sortModelRecent').title = modelTimeSort === 'descending' ? '点击按检测时间从旧到新排序' : '点击按检测时间从新到旧排序';
+}
+$('sortModelRecent').onclick = () => {
+    modelTimeSort = modelTimeSort === 'descending' ? 'ascending' : 'descending';
+    updateModelSortHeaders();
+    render();
+};
+$('sortModelSite').onclick = () => {
+    modelTimeSort = null;
+    updateModelSortHeaders();
+    render();
+};
 function favoriteButton(m) {
     const label = m.isFavorite ? '取消收藏' : '收藏';
     return `<button class="icon-button favorite-button ${m.isFavorite ? 'is-favorite' : ''}" data-favorite="${m.id}" aria-pressed="${Boolean(m.isFavorite)}" aria-label="${label}模型 ${esc(m.name)}" title="${label}" ${updatingFavorites.has(m.id) ? 'disabled' : ''}><i data-lucide="star" aria-hidden="true"></i></button>`;
@@ -265,7 +293,7 @@ document.addEventListener('click', async event => {
 const modelRow = ({s,k,m,r})=>{const winner=attributionWinner(r);return `<tr><td>${esc(s.name)}</td><td>${esc(k.name)}</td><td>${esc(m.name)}</td><td>${badge(modelStatus(m.id,r))}</td><td>${r?(r.latencyMs/1000).toFixed(1)+'s':'—'}</td><td>${attributionLabel(winner,m.name)}</td><td>${juiceCell(m,r)}</td><td>${candyCell(m,r)}</td><td class="recent-model-cell">${recentModelHistory(m.id)}</td><td><div class="model-actions"><button data-detect-model="${m.id}">检测</button>${r?`<button data-detail="${r.id}">详情</button>`:''}${favoriteButton(m)}</div></td></tr>`;};
 function render(){const models=sites.flatMap(s=>s.keys.flatMap(k=>k.models.map(m=>({s,k,m,r:recentModelResults.find(r=>r.modelId===m.id&&r.modelName===m.name)||results.find(r=>r.modelId===m.id&&r.modelName===m.name)}))));const latest=models.filter(x=>x.r);$('stats').innerHTML=[['站点',sites.length,'globe','blue'],['Key',sites.reduce((n,s)=>n+s.keys.length,0),'key-round','violet'],['模型',models.length,'box','teal'],['最近成功',latest.filter(x=>x.r.status==='Success').length,'circle-check','green'],['最近失败',latest.filter(x=>['Failed','Timeout'].includes(x.r.status)).length,'triangle-alert','red']].map(([k,v,ic,tone])=>`<div class="stat tone-${tone}"><div class="stat-icon"><i data-lucide="${ic}"></i></div><div><span>${k}</span><strong>${v}</strong></div></div>`).join('');
 const query=$('search').value.toLowerCase();
-$('modelRows').innerHTML=models.filter(x=>[x.s.name,x.k.name,x.m.name].join(' ').toLowerCase().includes(query)).map(modelRow).join('')||'<tr><td colspan="10" class="empty">暂无模型</td></tr>';
+$('modelRows').innerHTML=sortModelRows(models.filter(x=>[x.s.name,x.k.name,x.m.name].join(' ').toLowerCase().includes(query))).map(modelRow).join('')||'<tr><td colspan="10" class="empty">暂无模型</td></tr>';
 const accurateModels=models.filter(x=>recentAttributionAccuracy(x.m.id)>=0.8);
 $('accurateModelCount').textContent=accurateModels.length;
 $('accurateModelRows').innerHTML=accurateModels.map(modelRow).join('')||'<tr><td colspan="10" class="empty">暂无最近归因正确率 ≥80% 的模型</td></tr>';

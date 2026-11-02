@@ -152,6 +152,8 @@ button.primary {
 button.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); color: #fff; }
 button.danger { background: var(--danger-soft); border-color: var(--danger-border); color: var(--danger); }
 button.danger:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+button.table-sort { background: transparent; border: 0; box-shadow: none; padding: 0; min-height: 0; color: inherit; font: inherit; }
+button.table-sort:hover { background: transparent; color: var(--primary); }
 button.ghost, .icon-button.ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--muted); }
 button.ghost:hover, .icon-button.ghost:hover { background: var(--surface-3); color: var(--text); }
 button.block { width: 100%; }
