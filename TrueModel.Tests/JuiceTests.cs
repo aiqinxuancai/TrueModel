@@ -27,10 +27,14 @@ public class JuiceTests
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN JuiceValue");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN JuiceStatus");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN JuicePrompt");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN JuiceResponse");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Results DROP COLUMN JuiceError");
             await legacy.Database.ExecuteSqlRawAsync("DROP TABLE JuiceMethodStatistics");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceValue");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceStatus");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuicePrompt");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceResponse");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceError");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN JuiceCheckedAt");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyStatus");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyPrompt");
@@ -96,6 +100,8 @@ public class JuiceTests
         Assert.Null(old.JuiceValue);
         Assert.Null(old.JuiceStatus);
         Assert.Null(old.JuicePrompt);
+        Assert.Null(old.JuiceResponse);
+        Assert.Null(old.JuiceError);
         Assert.Null(old.CandyStatus);
         Assert.Null(old.Candy2Status);
         Assert.Null(old.Candy3Status);
@@ -183,6 +189,21 @@ public class JuiceTests
         Assert.Equal(1234, saved.CandyReasoningTokens);
         Assert.NotNull(saved.CandyCheckedAt);
         Assert.Null((await db.Results.SingleAsync()).CandyStatus);
+        standalone.ForceError = true;
+        var failed = await http.PostAsJsonAsync($"/api/models/{model.Id}/juice?methodId=direct-only", new { });
+        failed.EnsureSuccessStatusCode();
+        var failure = await failed.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Failed", failure.GetProperty("juiceStatus").GetString());
+        Assert.Contains("HTTP 503", failure.GetProperty("juiceError").GetString());
+        db.ChangeTracker.Clear();
+        Assert.Contains("HTTP 503", (await db.Models.FindAsync(model.Id))!.JuiceError);
+        var failedSites = await http.GetFromJsonAsync<JsonElement>("/api/sites");
+        Assert.Contains("HTTP 503", failedSites[0].GetProperty("keys")[0].GetProperty("models")[0].GetProperty("juiceError").GetString());
+        standalone.ForceError = false;
+        (await http.PostAsJsonAsync($"/api/models/{model.Id}/juice?methodId=direct-only", new { })).EnsureSuccessStatusCode();
+        db.ChangeTracker.Clear();
+        Assert.Null((await db.Models.FindAsync(model.Id))!.JuiceError);
+        Assert.Equal("96", (await db.Models.FindAsync(model.Id))!.JuiceResponse);
         var sites = await http.GetFromJsonAsync<JsonElement>("/api/sites");
         var publicModel = sites[0].GetProperty("keys")[0].GetProperty("models")[0];
         Assert.Equal("Success", publicModel.GetProperty("candyStatus").GetString());
@@ -242,6 +263,8 @@ public class JuiceTests
         Assert.Equal(64, report.GetProperty("juice_value").GetInt32());
         Assert.Equal("direct", report.GetProperty("juice_method").GetString());
         Assert.Equal(JuiceProbe.Prompt, report.GetProperty("juice_prompt").GetString());
+        Assert.Equal(JsonValueKind.Null, report.GetProperty("juice_error").ValueKind);
+        Assert.Equal("64", report.GetProperty("juice_response").GetString());
     }
 
     [Fact]
@@ -307,6 +330,7 @@ public class JuiceTests
     {
         public int Calls { get; private set; }
         public bool RefuseFirst { get; init; }
+        public bool ForceError { get; set; }
         public bool StructuredRefusal { get; init; }
         public string? ExpectedFirst { get; init; }
         public string ExpectedCandyEffort { get; set; } = "default";
@@ -329,7 +353,7 @@ public class JuiceTests
                 Assert.Equal(ExpectedFirst is null ? JuiceProbe.Methods[Calls - count - 1].Prompt : JuiceProbe.Methods.Single(m => m.Id == ExpectedFirst).Prompt, prompt);
                 if (RefuseFirst && Calls == count + 1)
                     return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = StructuredRefusal ? null : "I cannot provide that.", refusal = StructuredRefusal ? "I cannot provide that." : null }, finish_reason = "stop" } } }) };
-                if (failure) return new(HttpStatusCode.ServiceUnavailable) { Content = JsonContent.Create(new { error = "Unavailable" }) };
+                if (failure || ForceError) return new(HttpStatusCode.ServiceUnavailable) { Content = JsonContent.Create(new { error = "Unavailable" }) };
             }
             else Assert.DoesNotContain(JuiceProbe.Methods, m => m.Prompt == prompt);
             var text = Calls > count ? answer : invalidChallenges ? "invalid" : string.Join(',', Enumerable.Range(1, 310));

@@ -169,6 +169,8 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             result.JuiceValue = juice.TryGetValue("juice_value", out var value) ? value as int? : null;
             result.JuiceStatus = juice.TryGetValue("juice_status", out var status) ? status as string : null;
             result.JuicePrompt = juice.TryGetValue("juice_prompt", out var prompt) ? prompt as string : null;
+            result.JuiceResponse = juice.GetValueOrDefault("juice_response") as string;
+            result.JuiceError = juice.GetValueOrDefault("juice_error") as string;
             var candy = await client.ProbeCandy(target.BaseUrl, key, target.ModelName, token, settings.CandyReasoningEffort, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language);
             result.CandyStatus = candy.CandyStatus;
             result.CandyPrompt = candy.CandyPrompt;
@@ -203,7 +205,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             result.Candy2Status = "Failed";
             result.Candy3Status = "Failed";
             result.CandyError = "附加检测失败，HLWY 统计报告不受影响。";
-            if (result.JuiceStatus == "Running") result.JuiceStatus = "Failed";
+            if (result.JuiceStatus == "Running") { result.JuiceStatus = "Failed"; result.JuiceError = "附加检测失败，未完成 Juice 获取；请检查模型配置后重试。"; }
         }
         // Update only supplemental fields: cancellation/deletion must never replace or resurrect a report.
         using var scope = scopes.CreateScope();
@@ -212,6 +214,8 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 .SetProperty(r => r.JuiceValue, result.JuiceValue)
                 .SetProperty(r => r.JuiceStatus, result.JuiceStatus)
                 .SetProperty(r => r.JuicePrompt, result.JuicePrompt)
+                .SetProperty(r => r.JuiceResponse, result.JuiceResponse)
+                .SetProperty(r => r.JuiceError, result.JuiceError)
                 .SetProperty(r => r.CandyStatus, result.CandyStatus)
                 .SetProperty(r => r.CandyPrompt, result.CandyPrompt)
                 .SetProperty(r => r.CandyResponse, result.CandyResponse)
@@ -247,6 +251,8 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             result.JuiceValue = response.TryGetProperty("juice_value", out var juice) && juice.ValueKind == JsonValueKind.Number ? juice.GetInt32() : null;
             result.JuiceStatus = response.TryGetProperty("juice_status", out var juiceStatus) ? juiceStatus.GetString() : null;
             result.JuicePrompt = response.TryGetProperty("juice_prompt", out var juicePrompt) ? juicePrompt.GetString() : null;
+            result.JuiceResponse = response.TryGetProperty("juice_response", out var juiceResponse) ? juiceResponse.GetString() : null;
+            result.JuiceError = response.TryGetProperty("juice_error", out var juiceError) ? juiceError.GetString() : null;
             if (response.TryGetProperty("candy", out var candy))
             {
                 var probe = candy.Deserialize<CandyProbeResult>()!;

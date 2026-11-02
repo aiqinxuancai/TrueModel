@@ -76,6 +76,8 @@ public class HlwyProgressTests
             Assert.Equal(cancel ? "Interrupted" : "Success", final.GetProperty("candy2Status").GetString());
             Assert.Equal(cancel ? "Interrupted" : "Success", final.GetProperty("candy3Status").GetString());
             Assert.Equal("Success", final.GetProperty("juiceStatus").GetString());
+            Assert.Equal("42", final.GetProperty("juiceResponse").GetString());
+            Assert.Equal(JsonValueKind.Null, final.GetProperty("juiceError").ValueKind);
         }
         finally { handler.Release.TrySetResult(); }
     }

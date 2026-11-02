@@ -76,7 +76,7 @@ public static class ModelManagement
                 var model = change.Model;
                 model.Name = change.Name;
                 // Results still describe the old ID in history, never the newly configured ID.
-                model.JuiceValue = null; model.JuiceStatus = null; model.JuicePrompt = null; model.JuiceCheckedAt = null;
+                model.JuiceValue = null; model.JuiceStatus = null; model.JuicePrompt = null; model.JuiceResponse = null; model.JuiceError = null; model.JuiceCheckedAt = null;
                 model.CandyStatus = null; model.CandyPrompt = null; model.CandyResponse = null; model.CandyError = null;
                 model.CandyReasoningEffort = null; model.CandyReasoningTokens = null; model.CandyLatencyMs = null;
                 model.Candy2Status = null; model.Candy2Prompt = null; model.Candy2Response = null; model.Candy2Error = null; model.Candy2ReasoningTokens = null; model.Candy2LatencyMs = null;

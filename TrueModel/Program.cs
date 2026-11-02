@@ -117,6 +117,8 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("JuiceValue")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceValue INTEGER NULL");
         if (!columns.Contains("JuiceStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceStatus TEXT NULL");
         if (!columns.Contains("JuicePrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuicePrompt TEXT NULL");
+        if (!columns.Contains("JuiceResponse")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceResponse TEXT NULL");
+        if (!columns.Contains("JuiceError")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN JuiceError TEXT NULL");
         if (!columns.Contains("CandyStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyStatus TEXT NULL");
         if (!columns.Contains("CandyPrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyPrompt TEXT NULL");
         if (!columns.Contains("CandyResponse")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Results ADD COLUMN CandyResponse TEXT NULL");
@@ -149,6 +151,8 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("JuiceValue")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceValue INTEGER NULL");
         if (!columns.Contains("JuiceStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceStatus TEXT NULL");
         if (!columns.Contains("JuicePrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuicePrompt TEXT NULL");
+        if (!columns.Contains("JuiceResponse")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceResponse TEXT NULL");
+        if (!columns.Contains("JuiceError")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceError TEXT NULL");
         if (!columns.Contains("CandyStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyStatus TEXT NULL");
         if (!columns.Contains("CandyPrompt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyPrompt TEXT NULL");
         if (!columns.Contains("CandyResponse")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyResponse TEXT NULL");
@@ -292,7 +296,7 @@ api.MapPost("/notifications/test", async (AppDb db, NotificationService sender, 
 api.MapGet("/sites", async (AppDb db) => await db.Sites.AsNoTracking().Select(s => new
 {
     s.Id, s.Name, s.BaseUrl, s.Enabled,
-    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.IsFavorite, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyLatencyMs, m.Candy2Status, m.Candy2Prompt, m.Candy2Response, m.Candy2Error, m.Candy2ReasoningTokens, m.Candy2LatencyMs, m.Candy3Status, m.Candy3Prompt, m.Candy3Response, m.Candy3Error, m.Candy3ReasoningTokens, m.Candy3LatencyMs, m.CandyCheckedAt, m.CandyRefreshStatus, m.CandyRequestedEffort }) })
+    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.IsFavorite, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceResponse, m.JuiceError, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyLatencyMs, m.Candy2Status, m.Candy2Prompt, m.Candy2Response, m.Candy2Error, m.Candy2ReasoningTokens, m.Candy2LatencyMs, m.Candy3Status, m.Candy3Prompt, m.Candy3Response, m.Candy3Error, m.Candy3ReasoningTokens, m.Candy3LatencyMs, m.CandyCheckedAt, m.CandyRefreshStatus, m.CandyRequestedEffort }) })
 }).ToListAsync());
 api.MapPost("/sites", async (SiteInput input, AppDb db) =>
 {
@@ -383,10 +387,12 @@ api.MapPost("/models/{id:int}/juice", async (int id, string? methodId, AppDb db,
     var value = result.GetValueOrDefault("juice_value") as int?;
     var status = result.GetValueOrDefault("juice_status") as string;
     var prompt = result.GetValueOrDefault("juice_prompt") as string;
+    var reply = result.GetValueOrDefault("juice_response") as string;
+    var error = result.GetValueOrDefault("juice_error") as string;
     var checkedAt = DateTime.UtcNow;
     var updated = await db.Models.Where(m => m.Id == id && m.Name == target.Model.Name).ExecuteUpdateAsync(s => s
-        .SetProperty(m => m.JuiceValue, value).SetProperty(m => m.JuicePrompt, prompt).SetProperty(m => m.JuiceStatus, status).SetProperty(m => m.JuiceCheckedAt, checkedAt), token);
-    return updated == 0 ? Results.NotFound() : Results.Ok(new { juiceValue = value, juiceStatus = status, juicePrompt = prompt, juiceCheckedAt = checkedAt });
+        .SetProperty(m => m.JuiceValue, value).SetProperty(m => m.JuicePrompt, prompt).SetProperty(m => m.JuiceResponse, reply).SetProperty(m => m.JuiceError, error).SetProperty(m => m.JuiceStatus, status).SetProperty(m => m.JuiceCheckedAt, checkedAt), token);
+    return updated == 0 ? Results.NotFound() : Results.Ok(new { juiceValue = value, juiceStatus = status, juicePrompt = prompt, juiceResponse = reply, juiceError = error, juiceCheckedAt = checkedAt });
 });
 api.MapPost("/models/{id:int}/candy", async (int id, AppDb db, CancellationToken token) =>
 {

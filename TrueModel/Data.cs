@@ -61,6 +61,8 @@ public sealed class DetectionResult
     public int? JuiceValue { get; set; }
     public string? JuiceStatus { get; set; }
     public string? JuicePrompt { get; set; }
+    public string? JuiceResponse { get; set; }
+    public string? JuiceError { get; set; }
     public string? CandyStatus { get; set; }
     public string? CandyPrompt { get; set; }
     public string? CandyResponse { get; set; }
@@ -144,6 +146,8 @@ public sealed class MonitoredModel
     public int? JuiceValue { get; set; }
     public string? JuiceStatus { get; set; }
     public string? JuicePrompt { get; set; }
+    public string? JuiceResponse { get; set; }
+    public string? JuiceError { get; set; }
     public string? CandyStatus { get; set; }
     public string? CandyPrompt { get; set; }
     public string? CandyResponse { get; set; }

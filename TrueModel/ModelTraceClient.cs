@@ -31,7 +31,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         throw new UpstreamException("接口格式自动探测失败；" + string.Join('；', errors));
     }
     private async Task<string> Request(string url, string key, string model, ConversationMessage[] messages, bool anthropic, CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false,
-        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false)
+        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false, Action<string, string>? observeJuiceFailure = null)
     {
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -62,8 +62,12 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 {
                     var choice = payload.RootElement.GetProperty("choices")[0];
                     var message = choice.GetProperty("message");
-                    if ((message.TryGetProperty("refusal", out var refusal) && refusal.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(refusal.GetString())) ||
-                        (choice.TryGetProperty("finish_reason", out var finish) && finish.GetString() is "length" or "content_filter")) return "";
+                    var reply = message.TryGetProperty("content", out var raw) && raw.ValueKind != JsonValueKind.Null ? raw.ToString() : "";
+                    if (message.TryGetProperty("refusal", out var refusal) && refusal.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(refusal.GetString()))
+                    { observeJuiceFailure?.Invoke("模型拒绝提供 Juice 数值", refusal.GetString()!); return ""; }
+                    if (choice.TryGetProperty("finish_reason", out var finish) && finish.GetString() is "length" or "content_filter")
+                    { observeJuiceFailure?.Invoke(finish.GetString() == "length" ? "回复因输出长度限制被截断（length）" : "回复被内容过滤拦截（content_filter）", reply); return ""; }
+                    if (raw.ValueKind == JsonValueKind.Null) return "";
                 }
                 var content = ExtractContent(payload.RootElement, anthropic);
                 observeReasoningTokens?.Invoke(ExtractReasoningTokens(payload.RootElement));
@@ -149,20 +153,33 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             {
                 token.ThrowIfCancellationRequested();
                 envelope["juice_prompt"] = method.Prompt;
+                envelope["juice_response"] = null;
+                envelope["juice_error"] = null;
+                string Redact(string text) => string.IsNullOrEmpty(key) ? text : text.Replace(key, "[REDACTED]", StringComparison.Ordinal);
+                string? responseError = null, failedReply = null;
                 try
                 {
                     var text = await Request(baseUrl, key, model, ConversationEnvelope.Create(method.Prompt), false, token, null, maxAttempts: 1, juice: true,
-                        reasoningEffort: reasoningEffort == "default" ? null : reasoningEffort);
+                        reasoningEffort: reasoningEffort == "default" ? null : reasoningEffort,
+                        observeJuiceFailure: (error, reply) => { responseError = error; failedReply = reply; });
                     var value = JuiceProbe.Parse(text);
                     if (juiceHistory is not null) await juiceHistory.Record(endpoint, model, method.Id, value.HasValue, token);
                     envelope["juice_value"] = value;
                     envelope["juice_status"] = value.HasValue ? "Success" : "Unavailable";
+                    envelope["juice_response"] = Redact(failedReply ?? text);
+                    envelope["juice_error"] = value.HasValue ? null : responseError ?? (string.IsNullOrWhiteSpace(text)
+                        ? "模型返回空回复，未获取到 Juice 数值" : "回复不是有效的非负整数，无法解析 Juice 数值（可能为拒答或包含额外文字）");
                     envelope["juice_method"] = method.Id;
                     if (value.HasValue) break;
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
                 catch (Exception e) when (e is UpstreamException or HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException or FormatException or IndexOutOfRangeException)
-                { envelope["juice_status"] = "Failed"; break; }
+                {
+                    envelope["juice_status"] = "Failed";
+                    envelope["juice_value"] = null;
+                    envelope["juice_error"] = Redact(e is UpstreamException or HttpRequestException ? e.Message : "接口响应格式异常：" + e.Message);
+                    break;
+                }
             }
         }
         return envelope;
