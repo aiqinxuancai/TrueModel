@@ -111,8 +111,7 @@ public class CandyWorkerTests
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
             var prompt = TestConversation.Prompt(body);
             Assert.True(CandyTestPrompts.IsCandy(prompt));
-            if (Calls == 1) Assert.Equal(CandyProbe.Prompt, prompt);
-            else Assert.NotEqual(CandyProbe.Prompt, prompt);
+            Assert.NotEqual(CandyProbe.Prompt, prompt);
             Assert.Equal("high", body.GetProperty("reasoning_effort").GetString());
             Started.TrySetResult();
             try { await Release.Task.WaitAsync(token); }

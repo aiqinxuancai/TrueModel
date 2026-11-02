@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace TrueModel;
@@ -7,30 +9,36 @@ public static class CandyProbe
     public static bool ValidReasoningEffort(string? value) => value is "default" or "none" or "minimal" or "low" or "medium" or "high" or "xhigh";
     // Reference: haowang02/codex-candy-eval, codex_candy_eval.py @ 29127fa5a12f.
     public const string Prompt = """
-        不使用任何外部工具回答以下问题：
+        外部ツールを一切使わずに、次の問題に答えてください。
 
-        在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）
+        黒い袋の中に、3種類の味のキャンディーが入っています。それぞれの味には丸形と五芒星形の2種類の形があり、形は手触りで区別できます。味と形ごとの個数は下の表のとおりです。参加者は、キャンディーを取り出す個数を事前に決める必要があります。形の異なるリンゴ味とモモ味のキャンディーを同時に手元に持っていることを確実にするには、最少で何個取り出せばよいでしょうか？（丸形のリンゴ味と五芒星形のモモ味の組み合わせ、または丸形のモモ味と五芒星形のリンゴ味の組み合わせの、どちらでも条件を満たします。）
 
-                苹果味  桃子味  西瓜味
-        圆形       7      9      8
-        五角星形   7      6      4
+                 リンゴ味  モモ味  スイカ味
+        丸形         7       9       8
+        五芒星形     7       6       4
         """;
-    public const string EnglishPrompt = """
-        Answer the following question without using any external tools:
+    public static string CreateSpaceObfuscatedPrompt() => Keywords.Replace(Prompt,
+        match => match.Value.Insert(Random.Shared.Next(1, match.Value.Length), " "));
 
-        A black bag contains candies in three flavors, with each flavor available in two shapes: round and five-pointed star. The shapes can be distinguished by touch. The counts for each flavor and shape are shown in the table below. A contestant must decide in advance how many candies to draw. What is the minimum number of candies that must be drawn to guarantee having both an apple-flavored candy and a peach-flavored candy with different shapes? Either a round apple-flavored candy paired with a five-pointed star peach-flavored candy, or a round peach-flavored candy paired with a five-pointed star apple-flavored candy, satisfies the requirement.
-
-        Shape                Apple  Peach  Watermelon
-        Round                  7      9       8
-        Five-pointed star      7      6       4
-        """;
-    private static readonly Regex EnglishKeywords = new(@"\b(candies|candy|apple|peach|watermelon|round|star|minimum|shapes?)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
-    // Split near the start so a plural ending cannot leave the whole keyword intact.
-    public static string CreateEnglishObfuscatedPrompt() => EnglishKeywords.Replace(EnglishPrompt,
-        match => match.Value.Insert(Random.Shared.Next(1, Math.Min(4, match.Value.Length)), " "));
+    // Vary every new candy question, including the first attempt. Keep numbers,
+    // existing whitespace, and surrogate pairs intact; retries reuse the result.
+    public static string RandomizeSpacing(string prompt)
+    {
+        var positions = Enumerable.Range(1, Math.Max(0, prompt.Length - 1))
+            .Where(i => char.IsLetter(prompt[i - 1]) && char.IsLetter(prompt[i])).ToArray();
+        RandomNumberGenerator.Shuffle(positions.AsSpan());
+        var selected = positions.Take(12).ToHashSet();
+        var result = new StringBuilder(prompt.Length + 36);
+        for (var i = 0; i < prompt.Length; i++)
+        {
+            if (selected.Contains(i)) result.Append(' ', RandomNumberGenerator.GetInt32(1, 4));
+            result.Append(prompt[i]);
+        }
+        return result.ToString();
+    }
 
     // Split only words, preserving every non-whitespace character and all counts.
-    private static readonly Regex Keywords = new("糖果|苹果味|桃子味|西瓜味|五角星形|五角星|圆形|最少取出", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+    private static readonly Regex Keywords = new("キャンディー|リンゴ味|モモ味|スイカ味|五芒星形|丸形|最少", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
     public static string CreateObfuscatedPrompt() => Keywords.Replace(Prompt, match =>
     {
         var separators = new[] { " ", "\t", "\n" };

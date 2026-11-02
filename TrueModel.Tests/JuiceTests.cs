@@ -177,7 +177,8 @@ public class JuiceTests
         var saved = (await db.Models.FindAsync(model.Id))!;
         Assert.Equal("Success", saved.CandyStatus);
         Assert.Equal("最少取出 21 个糖果。", saved.CandyResponse);
-        Assert.Equal(CandyProbe.Prompt, saved.CandyPrompt);
+        Assert.True(CandyTestPrompts.IsCandy(saved.CandyPrompt));
+        Assert.NotEqual(CandyProbe.Prompt, saved.CandyPrompt);
         Assert.Equal("high", saved.CandyReasoningEffort);
         Assert.Equal(1234, saved.CandyReasoningTokens);
         Assert.NotNull(saved.CandyCheckedAt);

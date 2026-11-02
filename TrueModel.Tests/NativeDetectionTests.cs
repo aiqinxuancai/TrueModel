@@ -37,13 +37,14 @@ public class NativeDetectionTests
         var bank = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets/unified_bank.json"));
         var report = await engine.Test("https://example.test", "test-secret", "mock", bank, count, CancellationToken.None);
         Assert.Equal(count + 3, handler.Requests.Count);
-        Assert.Equal(CandyProbe.Prompt, TestConversation.Prompt(handler.Requests[^3]));
+        Assert.True(CandyTestPrompts.IsCandy(TestConversation.Prompt(handler.Requests[^3])));
+        Assert.NotEqual(CandyProbe.Prompt, TestConversation.Prompt(handler.Requests[^3]));
         var secondPrompt = TestConversation.Prompt(handler.Requests[^2]);
         Assert.NotEqual(CandyProbe.Prompt, secondPrompt);
         Assert.True(CandyTestPrompts.IsCandy(secondPrompt));
         var thirdPrompt = TestConversation.Prompt(handler.Requests[^1])!;
-        Assert.NotEqual(CandyProbe.EnglishPrompt, thirdPrompt);
-        Assert.Equal(CandyTestPrompts.WithoutWhitespace(CandyProbe.EnglishPrompt), CandyTestPrompts.WithoutWhitespace(thirdPrompt));
+        Assert.NotEqual(CandyProbe.Prompt, thirdPrompt);
+        Assert.Equal(CandyTestPrompts.WithoutWhitespace(CandyProbe.Prompt), CandyTestPrompts.WithoutWhitespace(thirdPrompt));
         Assert.Equal(count, report.GetProperty("result").GetProperty("used_outputs").GetInt32());
         Assert.Equal(count, report.GetProperty("responses").EnumerateArray().Select(r => r.GetProperty("ExpectedCount").GetInt32()).Distinct().Count());
         foreach (var body in handler.Requests)

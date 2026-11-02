@@ -19,7 +19,7 @@ public class DualCandyTests
             Assert.Equal(CandyTestPrompts.WithoutWhitespace(CandyProbe.Prompt), CandyTestPrompts.WithoutWhitespace(prompt));
             Assert.Contains('\t', prompt);
             Assert.Contains('\n', prompt);
-            foreach (var keyword in new[] { "糖果", "苹果味", "桃子味", "西瓜味", "圆形", "五角星", "最少取出" })
+            foreach (var keyword in new[] { "キャンディー", "リンゴ味", "モモ味", "スイカ味", "丸形", "五芒星形", "最少" })
                 Assert.DoesNotContain(keyword, prompt);
         }
         Assert.True(variants.Count > 1);
@@ -35,7 +35,9 @@ public class DualCandyTests
         var handler = new Handler(first, firstError, second, secondError);
         var result = await new ModelTraceClient(new HttpClient(handler)).ProbeCandy("https://example.test", "secret", "model", CancellationToken.None, "high");
         Assert.Equal(3, handler.Prompts.Count);
-        Assert.Equal(CandyProbe.Prompt, handler.Prompts[0]);
+        Assert.NotEqual(CandyProbe.Prompt, handler.Prompts[0]);
+        Assert.True(CandyTestPrompts.IsCandy(handler.Prompts[0]));
+        Assert.Equal(handler.Prompts[0], result.CandyPrompt);
         Assert.NotEqual(handler.Prompts[0], handler.Prompts[1]);
         Assert.Equal(handler.Prompts[1], result.Candy2Prompt);
         Assert.Equal(firstStatus, result.CandyStatus);

@@ -25,10 +25,16 @@ function candyAttempt(r, number) {
     return {status:r?.[prefix + 'Status'], prompt:r?.[prefix + 'Prompt'], response:r?.[prefix + 'Response'],
         error:r?.[prefix + 'Error'], tokens:r?.[prefix + 'ReasoningTokens'], latency:r?.[prefix + 'LatencyMs']};
 }
+function candyTestLabel(test, number) {
+    const japanese = (test.prompt || '').replace(/\s/g, '').includes('外部ツールを一切使わず');
+    return japanese
+        ? {1:'日语随机空格', 2:'日语关键词空白及随机空格扰动', 3:'日语关键词及随机空格扰动'}[number]
+        : {1:'原题', 2:'关键词空白扰动', 3:'英文关键词空格扰动'}[number];
+}
 function candyTooltip(r) {
     return [1, 2, 3].map(number => {
         const test = candyAttempt(r, number);
-        return `第 ${number} 测（${{1:'原题', 2:'关键词空白扰动', 3:'英文关键词空格扰动'}[number]}）：${probeLabel(test.status)}\n用时：${test.latency == null ? '—' : (test.latency / 1000).toFixed(1) + 's'}\nReason Tok：${test.tokens ?? '—'}${test.tokens == null ? '（接口未返回或旧记录未保存）' : ''}\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${test.prompt || '尚未检测'}\n回复：${test.response ?? '—'}${test.error ? '\n错误：' + test.error : ''}`;
+        return `第 ${number} 测（${candyTestLabel(test, number)}）：${probeLabel(test.status)}\n用时：${test.latency == null ? '—' : (test.latency / 1000).toFixed(1) + 's'}\nReason Tok：${test.tokens ?? '—'}${test.tokens == null ? '（接口未返回或旧记录未保存）' : ''}\n判定：回复中出现独立的 21 即通过（前后不能是数字）\n题目：${test.prompt || '尚未检测'}\n回复：${test.response ?? '—'}${test.error ? '\n错误：' + test.error : ''}`;
     }).join('\n\n');
 }
 function candySummary(r) {

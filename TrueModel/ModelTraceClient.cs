@@ -172,7 +172,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         if (!CandyProbe.ValidReasoningEffort(reasoningEffort)) throw new ArgumentException("不支持的糖果思考等级", nameof(reasoningEffort));
         var first = await ProbeCandyAttempt(baseUrl, key, model, CandyProbe.Prompt, token, reasoningEffort);
         var second = await ProbeCandyAttempt(baseUrl, key, model, CandyProbe.CreateObfuscatedPrompt(), token, reasoningEffort);
-        var third = await ProbeCandyAttempt(baseUrl, key, model, CandyProbe.CreateEnglishObfuscatedPrompt(), token, reasoningEffort);
+        var third = await ProbeCandyAttempt(baseUrl, key, model, CandyProbe.CreateSpaceObfuscatedPrompt(), token, reasoningEffort);
         return first with
         {
             Candy2Status = second.CandyStatus,
@@ -192,6 +192,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
     private async Task<CandyProbeResult> ProbeCandyAttempt(string baseUrl, string key, string model, string prompt, CancellationToken token, string reasoningEffort)
     {
         token.ThrowIfCancellationRequested();
+        prompt = CandyProbe.RandomizeSpacing(prompt);
         var watch = Stopwatch.StartNew();
         long? reasoningTokens = null;
         try

@@ -10,6 +10,7 @@ public class CandyProbeTests
     [Theory]
     [InlineData("21", true)]
     [InlineData("最少取出21个糖果。", true)]
+    [InlineData("最少で21個です。", true)]
     [InlineData("**21**", true)]
     [InlineData(" \n21\r\n", true)]
     [InlineData("先考虑 21，再得出 29。", true)]
@@ -161,8 +162,7 @@ public class CandyProbeTests
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
             var prompt = TestConversation.Prompt(body);
             Assert.True(CandyTestPrompts.IsCandy(prompt));
-            if (Calls <= (error && effort == "default" ? 2 : 1)) Assert.Equal(CandyProbe.Prompt, prompt);
-            else Assert.NotEqual(CandyProbe.Prompt, prompt);
+            Assert.NotEqual(CandyProbe.Prompt, prompt);
             Assert.False(body.TryGetProperty("tools", out _));
             if (effort == "default") Assert.False(body.TryGetProperty("reasoning_effort", out _));
             else Assert.Equal(effort, body.GetProperty("reasoning_effort").GetString());
