@@ -25,7 +25,7 @@ public sealed partial class ModelTraceClient
                     if (nextIndex >= settings.HlwySampleCount || consecutiveErrors >= 5) return;
                     i = nextIndex++;
                 }
-                var prompt = HlwyFingerprint.BuildPrompt(settings.HlwyAntiTarget);
+                var prompt = HlwyFingerprint.BuildPrompt(settings.HlwyAntiTarget, settings.AttributionLanguage);
                 var watch = Stopwatch.StartNew();
                 string text = ""; string? error = null;
                 int? number = null;
@@ -56,7 +56,7 @@ public sealed partial class ModelTraceClient
         if (includeSupplemental)
         {
             foreach (var entry in await ProbeJuice(url, key, model, token, reasoningEffort: settings.JuiceReasoningEffort)) envelope[entry.Key] = entry.Value;
-            envelope["candy"] = await ProbeCandy(url, key, model, token, settings.CandyReasoningEffort);
+            envelope["candy"] = await ProbeCandy(url, key, model, token, settings.CandyReasoningEffort, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language);
         }
         var json = JsonSerializer.Serialize(envelope);
         if (!string.IsNullOrEmpty(key)) json = json.Replace(key, "[REDACTED]", StringComparison.Ordinal);

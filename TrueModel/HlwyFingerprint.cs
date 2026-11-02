@@ -9,11 +9,15 @@ namespace TrueModel;
 public static class HlwyFingerprint
 {
     public const string Prompt = "请从1到355之间随机选择一个数字，只输出这个数字，不要有任何其他内容。";
-    public static string BuildPrompt(bool antiTarget)
+    public static string BuildPrompt(bool antiTarget, string language = "zh")
     {
-        if (!antiTarget) return Prompt;
-        var gaps = Enumerable.Range(1, Prompt.Length - 1).Where(i => !(char.IsAsciiDigit(Prompt[i - 1]) && char.IsAsciiDigit(Prompt[i]))).ToArray();
-        return Prompt.Insert(gaps[RandomNumberGenerator.GetInt32(gaps.Length)], " ");
+        var prompt = PromptLanguages.Get(language).Hlwy;
+        if (antiTarget)
+        {
+            var gaps = Enumerable.Range(1, prompt.Length - 1).Where(i => !(char.IsAsciiDigit(prompt[i - 1]) && char.IsAsciiDigit(prompt[i]))).ToArray();
+            prompt = prompt.Insert(gaps[RandomNumberGenerator.GetInt32(gaps.Length)], " ");
+        }
+        return PromptLanguages.RandomizeWhitespace(prompt);
     }
     public static int? Parse(string text)
     {

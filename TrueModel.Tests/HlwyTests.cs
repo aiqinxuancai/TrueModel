@@ -10,14 +10,15 @@ namespace TrueModel.Tests;
 public class HlwyTests
 {
     [Fact]
-    public void AntiTargetInsertsExactlyOneInternalSpaceWithoutSplittingNumbers()
+    public void AllPromptsIncludeWhitespaceAndAntiTargetPreservesNumbers()
     {
-        Assert.Equal(HlwyFingerprint.Prompt, HlwyFingerprint.BuildPrompt(false));
+        Assert.Equal(HlwyFingerprint.Prompt, CandyTestPrompts.WithoutWhitespace(HlwyFingerprint.BuildPrompt(false)));
         for (var i = 0; i < 500; i++)
         {
             var prompt = HlwyFingerprint.BuildPrompt(true);
-            Assert.Equal(HlwyFingerprint.Prompt, prompt.Replace(" ", ""));
-            Assert.Equal(HlwyFingerprint.Prompt.Length + 1, prompt.Length);
+            Assert.Equal(HlwyFingerprint.Prompt, CandyTestPrompts.WithoutWhitespace(prompt));
+            Assert.Contains("\n\n", prompt);
+            Assert.Contains("355", prompt);
             var pos = prompt.IndexOf(' ');
             Assert.InRange(pos, 1, prompt.Length - 2);
             Assert.False(char.IsAsciiDigit(prompt[pos - 1]) && char.IsAsciiDigit(prompt[pos + 1]));
@@ -77,7 +78,8 @@ public class HlwyTests
             Assert.Equal(1, request.GetProperty("temperature").GetDouble());
             Assert.Equal(256, request.GetProperty("max_tokens").GetInt32());
             var prompt = TestConversation.Prompt(request)!;
-            Assert.Equal(HlwyFingerprint.Prompt.Length + (antiTarget ? 1 : 0), prompt.Length);
+            Assert.Equal(HlwyFingerprint.Prompt, CandyTestPrompts.WithoutWhitespace(prompt));
+            Assert.Contains("\n\n", prompt);
         }
         Assert.False(handler.Bodies[^1].TryGetProperty("temperature", out _));
     }

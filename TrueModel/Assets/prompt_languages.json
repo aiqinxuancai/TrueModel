@@ -1,0 +1,131 @@
+{
+  "zh": {
+    "attribution": "请完成一次独立的数值选择任务，凭第一反应逐项选择 {count} 个 1 到 355（含端点）的整数。每个位置都要单独选择；不要从 1 开始计数，不要连续递增或递减，也不要采用等差、循环、重复区块或其他规则化模式。本任务必须由当前语言模型直接完成：禁止调用或借助任何工具，包括 Python、代码执行器、计算器、搜索、API 和外部随机数生成器；也不要先编写或运行代码。允许重复；每项写出后不要排序、去重、替换或改写。用逗号、空格或换行分隔整数。直接从第一个取值开始输出，不要在序列前重复数量、范围或任务说明。",
+    "hlwy": "请从1到355之间随机选择一个数字，只输出这个数字，不要有任何其他内容。",
+    "candy": "不使用任何外部工具回答以下问题：\n\n一个黑色袋子里有三种口味的糖果，每种口味有圆形和五角星形两种形状，形状可以通过手感区分。各口味和形状的数量如下表。参赛者需要事先决定取出的糖果数量。最少取出多少个糖果，才能保证手中同时拥有形状不同的苹果味和桃子味糖果？圆形苹果味配五角星形桃子味，或者圆形桃子味配五角星形苹果味，都满足要求。\n\n形状       苹果味  桃子味  西瓜味\n圆形         7       9       8\n五角星形     7       6       4",
+    "keywords": [
+      "糖果",
+      "苹果味",
+      "桃子味",
+      "西瓜味",
+      "五角星形",
+      "圆形",
+      "最少"
+    ]
+  },
+  "en": {
+    "attribution": "Perform an independent numerical selection task. Choose {count} integers from 1 to 355 inclusive, one at a time based on your first impression. Choose each position independently; do not count from 1, increase or decrease consecutively, or use arithmetic sequences, cycles, repeated blocks, or other regular patterns. The current language model must perform this task directly. Do not use any tools, including Python, code execution, calculators, search, APIs, or external random number generators; do not write or run code first. Repeated values are allowed. Do not sort, deduplicate, replace, or revise values already written. Separate integers with commas, spaces, or newlines. Start directly with the first value; do not prefix the sequence with the count, range, or task description.",
+    "hlwy": "Randomly choose one number from 1 to 355 inclusive. Output only that number and nothing else.",
+    "candy": "Answer without using any external tools:\n\nA black bag contains candies in three flavors. Each flavor comes in two shapes: round and five-pointed star, distinguishable by touch. The counts are shown below. A contestant must decide in advance how many candies to draw. What is the minimum number to draw to guarantee simultaneously having an apple-flavored candy and a peach-flavored candy of different shapes? Either a round apple candy paired with a five-pointed star peach candy, or a round peach candy paired with a five-pointed star apple candy, satisfies the requirement.\n\nShape              Apple  Peach  Watermelon\nRound                7      9       8\nFive-pointed star    7      6       4",
+    "keywords": [
+      "candies",
+      "candy",
+      "Apple",
+      "apple",
+      "Peach",
+      "peach",
+      "Watermelon",
+      "round",
+      "Round",
+      "star",
+      "minimum"
+    ]
+  },
+  "ja": {
+    "attribution": "独立した数値選択の課題です。第一印象で、1から355まで（両端を含む）の整数を {count} 個、順に選んでください。各位置は個別に選び、1から数え上げたり、連続して増減させたり、等差数列、循環、反復ブロックなどの規則的なパターンを使ったりしないでください。現在の言語モデル自身が直接行ってください。Python、コード実行、計算機、検索、API、外部乱数生成器を含む、あらゆるツールの使用は禁止です。先にコードを書いたり実行したりしないでください。同じ値の再出現は許されます。書いた値を並べ替え、重複削除、置換、修正しないでください。整数はコンマ、空白、改行で区切ってください。最初の値から直接出力し、個数、範囲、課題の説明を先頭に繰り返さないでください。",
+    "hlwy": "1から355まで（両端を含む）の数字をランダムに一つ選び、その数字だけを出力してください。他の内容は出力しないでください。",
+    "candy": "外部ツールを一切使わずに、次の問題に答えてください。\n\n黒い袋の中に、3種類の味のキャンディーが入っています。それぞれの味には丸形と五芒星形の2種類の形があり、形は手触りで区別できます。味と形ごとの個数は下の表のとおりです。参加者は、キャンディーを取り出す個数を事前に決める必要があります。形の異なるリンゴ味とモモ味のキャンディーを同時に手元に持っていることを確実にするには、最少で何個取り出せばよいでしょうか？（丸形のリンゴ味と五芒星形のモモ味の組み合わせ、または丸形のモモ味と五芒星形のリンゴ味の組み合わせの、どちらでも条件を満たします。）\n\n         リンゴ味  モモ味  スイカ味\n丸形         7       9       8\n五芒星形     7       6       4",
+    "keywords": [
+      "キャンディー",
+      "リンゴ味",
+      "モモ味",
+      "スイカ味",
+      "五芒星形",
+      "丸形",
+      "最少"
+    ]
+  },
+  "ko": {
+    "attribution": "독립적인 수치 선택 과제입니다. 첫 느낌에 따라 1부터 355까지(양 끝 포함)의 정수 {count} 개를 하나씩 선택하세요. 각 위치는 개별적으로 선택하고, 1부터 세거나 연속으로 증가 또는 감소시키거나 등차수열, 순환, 반복 블록 등 규칙적인 패턴을 사용하지 마세요. 현재 언어 모델이 직접 수행해야 합니다. Python, 코드 실행기, 계산기, 검색, API, 외부 난수 생성기를 포함한 모든 도구 사용을 금지합니다. 먼저 코드를 작성하거나 실행하지 마세요. 값의 중복은 허용됩니다. 이미 쓴 값을 정렬하거나 중복 제거, 대체, 수정하지 마세요. 쉼표, 공백 또는 줄바꿈으로 정수를 구분하세요. 첫 값부터 바로 출력하고 앞에 개수, 범위, 과제 설명을 반복하지 마세요.",
+    "hlwy": "1부터 355까지(양 끝 포함) 숫자 하나를 무작위로 선택하세요. 그 숫자만 출력하고 다른 내용은 출력하지 마세요.",
+    "candy": "외부 도구를 전혀 사용하지 않고 다음 문제에 답하세요.\n\n검은 주머니에 세 가지 맛의 사탕이 있습니다. 각 맛에는 원형과 오각별 모양이 있으며, 모양은 촉감으로 구별할 수 있습니다. 맛과 모양별 개수는 아래 표와 같습니다. 참가자는 꺼낼 사탕의 개수를 미리 정해야 합니다. 모양이 서로 다른 사과맛 사탕과 복숭아맛 사탕을 동시에 갖는 것을 보장하려면 최소 몇 개를 꺼내야 합니까? 원형 사과맛과 오각별 복숭아맛의 조합 또는 원형 복숭아맛과 오각별 사과맛의 조합이면 조건을 충족합니다.\n\n모양     사과맛  복숭아맛  수박맛\n원형       7       9       8\n오각별     7       6       4",
+    "keywords": [
+      "사탕",
+      "사과맛",
+      "복숭아맛",
+      "수박맛",
+      "원형",
+      "오각별",
+      "최소"
+    ]
+  },
+  "fr": {
+    "attribution": "Effectuez une sélection numérique indépendante. Choisissez {count} entiers de 1 à 355 inclus, un par un selon votre première impression. Choisissez chaque position séparément : ne comptez pas à partir de 1, ne progressez pas de façon consécutive et n’utilisez ni suite arithmétique, ni cycle, ni blocs répétés, ni autre motif régulier. Le modèle de langage actuel doit effectuer cette tâche directement, sans aucun outil, notamment Python, exécution de code, calculatrice, recherche, API ou générateur aléatoire externe. N’écrivez et n’exécutez pas de code au préalable. Les répétitions sont autorisées. Ne triez, dédupliquez, remplacez ou corrigez pas les valeurs déjà écrites. Séparez les entiers par des virgules, espaces ou sauts de ligne. Commencez directement par la première valeur, sans rappeler le nombre, l’intervalle ou les consignes.",
+    "hlwy": "Choisissez au hasard un nombre de 1 à 355 inclus. Affichez uniquement ce nombre, sans aucun autre contenu.",
+    "candy": "Répondez sans utiliser d’outil externe.\n\nUn sac noir contient des bonbons de trois saveurs. Chaque saveur existe en deux formes : ronde et étoile à cinq branches, reconnaissables au toucher. Les quantités figurent dans le tableau. Le participant doit décider à l’avance combien de bonbons retirer. Quel est le nombre minimum à retirer pour garantir avoir simultanément un bonbon à la pomme et un à la pêche de formes différentes ? Un bonbon rond à la pomme avec une étoile à la pêche, ou un bonbon rond à la pêche avec une étoile à la pomme, convient.\n\nForme                 Pomme  Pêche  Pastèque\nRonde                   7     9       8\nÉtoile à cinq branches  7     6       4",
+    "keywords": [
+      "bonbons",
+      "bonbon",
+      "pomme",
+      "pêche",
+      "ronde",
+      "rond",
+      "étoile",
+      "minimum",
+      "Pomme",
+      "Pêche",
+      "Pastèque"
+    ]
+  },
+  "es": {
+    "attribution": "Realiza una selección numérica independiente. Elige {count} enteros entre 1 y 355, ambos incluidos, uno por uno según tu primera impresión. Decide cada posición por separado; no cuentes desde 1 ni aumentes o disminuyas consecutivamente, ni uses progresiones aritméticas, ciclos, bloques repetidos u otros patrones regulares. El modelo de lenguaje actual debe hacerlo directamente, sin herramientas, incluidos Python, ejecución de código, calculadoras, búsquedas, API o generadores aleatorios externos. No escribas ni ejecutes código previamente. Se permiten valores repetidos. No ordenes, elimines duplicados, sustituyas ni corrijas valores ya escritos. Separa los enteros con comas, espacios o saltos de línea. Comienza directamente con el primer valor, sin anteponer la cantidad, el intervalo ni las instrucciones.",
+    "hlwy": "Elige al azar un número entre 1 y 355, ambos incluidos. Escribe únicamente ese número, sin ningún otro contenido.",
+    "candy": "Responde sin utilizar herramientas externas.\n\nUna bolsa negra contiene caramelos de tres sabores. Cada sabor tiene dos formas: redonda y estrella de cinco puntas, distinguibles al tacto. Las cantidades se muestran en la tabla. El participante debe decidir de antemano cuántos caramelos sacar. ¿Cuál es el mínimo para garantizar tener simultáneamente un caramelo de manzana y uno de melocotón con formas diferentes? Sirve tanto uno redondo de manzana con una estrella de melocotón como uno redondo de melocotón con una estrella de manzana.\n\nForma                    Manzana  Melocotón  Sandía\nRedonda                     7         9        8\nEstrella de cinco puntas    7         6        4",
+    "keywords": [
+      "caramelos",
+      "caramelo",
+      "manzana",
+      "melocotón",
+      "redonda",
+      "redondo",
+      "estrella",
+      "mínimo",
+      "Manzana",
+      "Melocotón",
+      "Sandía"
+    ]
+  },
+  "de": {
+    "attribution": "Führe eine unabhängige Zahlenauswahl durch. Wähle {count} ganze Zahlen von 1 bis einschließlich 355 einzeln nach deinem ersten Eindruck. Entscheide für jede Position unabhängig. Zähle nicht ab 1, erhöhe oder verringere nicht fortlaufend und verwende keine arithmetischen Folgen, Zyklen, wiederholten Blöcke oder anderen regelmäßigen Muster. Das aktuelle Sprachmodell muss die Aufgabe direkt erledigen. Verwende keine Werkzeuge, einschließlich Python, Codeausführung, Taschenrechner, Suche, APIs oder externe Zufallszahlengeneratoren; schreibe oder führe vorher keinen Code aus. Wiederholte Werte sind erlaubt. Sortiere, dedupliziere, ersetze oder korrigiere bereits ausgegebene Werte nicht. Trenne die Zahlen durch Kommas, Leerzeichen oder Zeilenumbrüche. Beginne direkt mit dem ersten Wert, ohne Anzahl, Bereich oder Aufgabenbeschreibung voranzustellen.",
+    "hlwy": "Wähle zufällig eine Zahl von 1 bis einschließlich 355. Gib nur diese Zahl und keinen weiteren Inhalt aus.",
+    "candy": "Beantworte die Frage ohne externe Werkzeuge.\n\nEin schwarzer Beutel enthält Bonbons in drei Geschmacksrichtungen. Jede gibt es in zwei Formen: rund und als fünfzackiger Stern. Die Formen lassen sich ertasten. Die Mengen stehen in der Tabelle. Der Teilnehmer muss im Voraus entscheiden, wie viele Bonbons er herausnimmt. Wie viele sind mindestens nötig, um gleichzeitig ein Apfelbonbon und ein Pfirsichbonbon unterschiedlicher Form sicher zu besitzen? Ein rundes Apfelbonbon zusammen mit einem Pfirsichstern oder ein rundes Pfirsichbonbon zusammen mit einem Apfelstern erfüllt die Bedingung.\n\nForm                Apfel  Pfirsich  Wassermelone\nRund                  7       9          8\nFünfzackiger Stern    7       6          4",
+    "keywords": [
+      "Bonbons",
+      "Bonbon",
+      "Apfel",
+      "Pfirsich",
+      "Wassermelone",
+      "rund",
+      "Rund",
+      "Stern",
+      "mindestens"
+    ]
+  },
+  "pt": {
+    "attribution": "Faça uma seleção numérica independente. Escolha {count} inteiros de 1 a 355, inclusive, um por vez de acordo com sua primeira impressão. Escolha cada posição separadamente; não conte a partir de 1, não aumente ou diminua consecutivamente e não use progressões aritméticas, ciclos, blocos repetidos ou outros padrões regulares. O modelo de linguagem atual deve executar diretamente a tarefa. Não use ferramentas, incluindo Python, execução de código, calculadoras, pesquisa, APIs ou geradores aleatórios externos; não escreva nem execute código antes. Valores repetidos são permitidos. Não ordene, remova duplicatas, substitua ou corrija valores já escritos. Separe os inteiros por vírgulas, espaços ou quebras de linha. Comece diretamente pelo primeiro valor, sem apresentar a quantidade, o intervalo ou as instruções.",
+    "hlwy": "Escolha aleatoriamente um número de 1 a 355, inclusive. Responda somente com esse número, sem qualquer outro conteúdo.",
+    "candy": "Responda sem usar ferramentas externas.\n\nUm saco preto contém balas de três sabores. Cada sabor tem duas formas: redonda e estrela de cinco pontas, distinguíveis pelo tato. As quantidades estão na tabela. O participante deve decidir antecipadamente quantas balas retirar. Qual é a quantidade mínima para garantir ter simultaneamente uma bala de maçã e uma de pêssego com formas diferentes? Uma bala redonda de maçã com uma estrela de pêssego, ou uma bala redonda de pêssego com uma estrela de maçã, satisfaz a condição.\n\nForma                   Maçã  Pêssego  Melancia\nRedonda                   7      9        8\nEstrela de cinco pontas   7      6        4",
+    "keywords": [
+      "balas",
+      "bala",
+      "maçã",
+      "pêssego",
+      "redonda",
+      "estrela",
+      "mínima",
+      "Maçã",
+      "Pêssego",
+      "Melancia"
+    ]
+  }
+}

@@ -98,7 +98,7 @@ using (var scope = app.Services.CreateScope())
         using (var reader = await command.ExecuteReaderAsync())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
         var additions = table == "Settings"
-            ? new Dictionary<string, string> { ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''", ["JuiceReasoningEffort"] = "TEXT NOT NULL DEFAULT 'default'" }
+            ? new Dictionary<string, string> { ["AttributionLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CandyLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy2Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy3Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''", ["JuiceReasoningEffort"] = "TEXT NOT NULL DEFAULT 'default'" }
             : new Dictionary<string, string> { ["DetectionSettingsJson"] = "TEXT NULL" };
         foreach (var column in additions)
             if (!columns.Contains(column.Key))
@@ -170,6 +170,9 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("Candy3LatencyMs")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy3LatencyMs INTEGER NULL");
         if (!columns.Contains("CandyRefreshStatus")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyRefreshStatus TEXT NULL");
         if (!columns.Contains("CandyRequestedEffort")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyRequestedEffort TEXT NULL");
+        if (!columns.Contains("CandyRequestedLanguage")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyRequestedLanguage TEXT NULL");
+        if (!columns.Contains("Candy2RequestedLanguage")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy2RequestedLanguage TEXT NULL");
+        if (!columns.Contains("Candy3RequestedLanguage")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy3RequestedLanguage TEXT NULL");
         if (!columns.Contains("CandyCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyCheckedAt TEXT NULL");
         if (!columns.Contains("JuiceCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceCheckedAt TEXT NULL");
     }
@@ -388,17 +391,19 @@ api.MapPost("/models/{id:int}/juice", async (int id, string? methodId, AppDb db,
 api.MapPost("/models/{id:int}/candy", async (int id, AppDb db, CancellationToken token) =>
 {
     if (!await db.Models.AnyAsync(m => m.Id == id, token)) return Results.NotFound();
-    var effort = (await db.Settings.AsNoTracking().SingleAsync(token)).CandyReasoningEffort;
+    var settings = await db.Settings.AsNoTracking().SingleAsync(token);
+    var effort = settings.CandyReasoningEffort;
     var updated = await db.Models.Where(m => m.Id == id && m.CandyRefreshStatus != "Queued" && m.CandyRefreshStatus != "Running")
-        .ExecuteUpdateAsync(s => s.SetProperty(m => m.CandyRefreshStatus, "Queued").SetProperty(m => m.CandyRequestedEffort, effort), token);
+        .ExecuteUpdateAsync(s => s.SetProperty(m => m.CandyRefreshStatus, "Queued").SetProperty(m => m.CandyRequestedEffort, effort).SetProperty(m => m.CandyRequestedLanguage, settings.CandyLanguage).SetProperty(m => m.Candy2RequestedLanguage, settings.Candy2Language).SetProperty(m => m.Candy3RequestedLanguage, settings.Candy3Language), token);
     if (updated == 0) return Results.Conflict(new { error = "糖果检测已在队列中或运行中，请勿重复提交" });
     return Results.Accepted("/api/sites", new { candyRefreshStatus = "Queued", candyRequestedEffort = effort });
 });
 api.MapPost("/candy/refresh-all", async (AppDb db, CancellationToken token) =>
 {
-    var effort = (await db.Settings.AsNoTracking().SingleAsync(token)).CandyReasoningEffort;
+    var settings = await db.Settings.AsNoTracking().SingleAsync(token);
+    var effort = settings.CandyReasoningEffort;
     var queued = await db.Models.Where(m => m.CandyRefreshStatus != "Queued" && m.CandyRefreshStatus != "Running")
-        .ExecuteUpdateAsync(s => s.SetProperty(m => m.CandyRefreshStatus, "Queued").SetProperty(m => m.CandyRequestedEffort, effort), token);
+        .ExecuteUpdateAsync(s => s.SetProperty(m => m.CandyRefreshStatus, "Queued").SetProperty(m => m.CandyRequestedEffort, effort).SetProperty(m => m.CandyRequestedLanguage, settings.CandyLanguage).SetProperty(m => m.Candy2RequestedLanguage, settings.Candy2Language).SetProperty(m => m.Candy3RequestedLanguage, settings.Candy3Language), token);
     return Results.Accepted("/api/sites", new { queued });
 });
 api.MapPost("/detect", async (DetectionScope input, AppDb db, DetectionControl control, HlwyBaselineUpdater baselines) =>
@@ -564,7 +569,8 @@ api.MapPost("/models/{id:int}/fingerprint", async (int id, EnrollmentInput input
     catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
     try
     {
-        var outputs = await FingerprintEnrollment.Collect(client, target.BaseUrl, key, target.Name, input.ChallengeCount, token);
+        var language = await db.Settings.Select(s => s.AttributionLanguage).SingleAsync(token);
+        var outputs = await FingerprintEnrollment.Collect(client, target.BaseUrl, key, target.Name, input.ChallengeCount, token, language);
         var json = Attribution.Enroll(source.Json, input.Model.Trim(), input.DisplayName.Trim(), input.Family.Trim(), outputs);
         var bank = new FingerprintBank { Name = $"{input.DisplayName.Trim()} · 采集 {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} · 基于 #{source.Id}",
             Json = json, Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))) };
@@ -622,6 +628,8 @@ api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
     if (input.IntervalMinutes < 0 || input.IntervalMinutes > 525600 || input.MaxConcurrency is < 1 or > 16 || input.TimeoutSeconds is < 5 or > 600 || input.ChallengeCount is < 3 or > 6) return Results.BadRequest();
     if (!CandyProbe.ValidReasoningEffort(input.CandyReasoningEffort)) return Results.BadRequest(new { error = "不支持的糖果思考等级" });
     if (!CandyProbe.ValidReasoningEffort(input.JuiceReasoningEffort)) return Results.BadRequest(new { error = "不支持的 Juice 思考等级" });
+    if (new[] { input.AttributionLanguage, input.CandyLanguage, input.Candy2Language, input.Candy3Language }.Any(l => !PromptLanguages.IsValid(l)))
+        return Results.BadRequest(new { error = "不支持的题目语言" });
     var settings = await db.Settings.SingleAsync();
     if (input.DetectionMethod is not ("modeltrace" or "hlwy") || input.HlwySampleCount is < 40 or > 1000 || input.HlwyConcurrency is < 1 or > 50 || input.HlwyBaselinesJson is null)
         return Results.BadRequest(new { error = "检测方式无效，或 HLWY 采样次数不在 40–1000、采样并发不在 1–50 之间。" });
@@ -636,6 +644,10 @@ api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
         settings.HlwyBaselinesJson = input.HlwyBaselinesJson;
     settings.CandyReasoningEffort = input.CandyReasoningEffort;
     settings.JuiceReasoningEffort = input.JuiceReasoningEffort;
+    if (payload.EnumerateObject().Any(p => p.Name.Equals("attributionLanguage", StringComparison.OrdinalIgnoreCase))) settings.AttributionLanguage = input.AttributionLanguage;
+    if (payload.EnumerateObject().Any(p => p.Name.Equals("candyLanguage", StringComparison.OrdinalIgnoreCase))) settings.CandyLanguage = input.CandyLanguage;
+    if (payload.EnumerateObject().Any(p => p.Name.Equals("candy2Language", StringComparison.OrdinalIgnoreCase))) settings.Candy2Language = input.Candy2Language;
+    if (payload.EnumerateObject().Any(p => p.Name.Equals("candy3Language", StringComparison.OrdinalIgnoreCase))) settings.Candy3Language = input.Candy3Language;
     settings.IntervalMinutes = input.IntervalMinutes; settings.MaxConcurrency = input.MaxConcurrency; settings.TimeoutSeconds = 240; settings.ChallengeCount = input.ChallengeCount;
     settings.NextRunAt = input.IntervalMinutes > 0 ? DateTime.UtcNow.AddMinutes(input.IntervalMinutes) : null;
     await db.SaveChangesAsync(); return Results.NoContent();

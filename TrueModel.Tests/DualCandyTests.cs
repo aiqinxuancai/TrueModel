@@ -19,7 +19,7 @@ public class DualCandyTests
             Assert.Equal(CandyTestPrompts.WithoutWhitespace(CandyProbe.Prompt), CandyTestPrompts.WithoutWhitespace(prompt));
             Assert.Contains('\t', prompt);
             Assert.Contains('\n', prompt);
-            foreach (var keyword in new[] { "キャンディー", "リンゴ味", "モモ味", "スイカ味", "丸形", "五芒星形", "最少" })
+            foreach (var keyword in new[] { "糖果", "苹果味", "桃子味", "西瓜味", "圆形", "五角星形", "最少" })
                 Assert.DoesNotContain(keyword, prompt);
         }
         Assert.True(variants.Count > 1);

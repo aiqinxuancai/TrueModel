@@ -40,6 +40,9 @@ public class CandyWorkerTests
             var site = new Site { BaseUrl = "https://fixture.test", Keys = [new SiteKey { ProtectedValue = protector.Protect("secret"), Models = [new MonitoredModel { Name = "model" }] }] };
             db.Sites.Add(site);
             (await db.Settings.SingleAsync()).CandyReasoningEffort = "high";
+            (await db.Settings.SingleAsync()).CandyLanguage = "en";
+            (await db.Settings.SingleAsync()).Candy2Language = "ja";
+            (await db.Settings.SingleAsync()).Candy3Language = "fr";
             await db.SaveChangesAsync();
             id = site.Keys[0].Models[0].Id;
         }
@@ -59,6 +62,13 @@ public class CandyWorkerTests
         Assert.Equal(0, (await repeatedBulk.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("queued").GetInt32());
         Assert.False(handler.Cancelled);
         Assert.Equal(1, handler.Calls);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDb>();
+            var settings = await db.Settings.SingleAsync();
+            settings.CandyLanguage = settings.Candy2Language = settings.Candy3Language = "zh";
+            await db.SaveChangesAsync();
+        }
         handler.Release.TrySetResult();
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using (var scope = factory.Services.CreateScope())
@@ -73,6 +83,9 @@ public class CandyWorkerTests
             Assert.Equal(512, model.CandyReasoningTokens);
             Assert.NotNull(model.CandyCheckedAt);
             Assert.Equal(3, handler.Calls);
+            Assert.Equal(CandyTestPrompts.WithoutWhitespace(PromptLanguages.Get("en").Candy), CandyTestPrompts.WithoutWhitespace(model.CandyPrompt!));
+            Assert.Equal(CandyTestPrompts.WithoutWhitespace(PromptLanguages.Get("ja").Candy), CandyTestPrompts.WithoutWhitespace(model.Candy2Prompt!));
+            Assert.Equal(CandyTestPrompts.WithoutWhitespace(PromptLanguages.Get("fr").Candy), CandyTestPrompts.WithoutWhitespace(model.Candy3Prompt!));
             Assert.Equal("Success", model.Candy2Status);
             Assert.Equal("Success", model.Candy3Status);
             Assert.Equal(512, model.Candy2ReasoningTokens);

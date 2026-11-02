@@ -93,6 +93,10 @@ public sealed class FingerprintBank
 }
 public sealed class AppSettings
 {
+    public string AttributionLanguage { get; set; } = "zh";
+    public string CandyLanguage { get; set; } = "zh";
+    public string Candy2Language { get; set; } = "zh";
+    public string Candy3Language { get; set; } = "zh";
     public string DetectionMethod { get; set; } = "modeltrace";
     public int HlwyConcurrency { get; set; } = 5;
     public int HlwySampleCount { get; set; } = 100;
@@ -134,6 +138,9 @@ public sealed class MonitoredModel
 {
     public string? CandyRefreshStatus { get; set; }
     public string? CandyRequestedEffort { get; set; }
+    public string? CandyRequestedLanguage { get; set; }
+    public string? Candy2RequestedLanguage { get; set; }
+    public string? Candy3RequestedLanguage { get; set; }
     public int? JuiceValue { get; set; }
     public string? JuiceStatus { get; set; }
     public string? JuicePrompt { get; set; }

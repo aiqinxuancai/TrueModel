@@ -81,10 +81,10 @@ public sealed record EnrollmentInput(int BankId, string Model, string DisplayNam
 
 public static class FingerprintEnrollment
 {
-    public static async Task<ProbeOutput[]> Collect(ModelTraceClient client, string url, string key, string model, int count, CancellationToken token)
+    public static async Task<ProbeOutput[]> Collect(ModelTraceClient client, string url, string key, string model, int count, CancellationToken token, string language = "zh")
     {
         var outputs = new List<ProbeOutput>();
-        foreach (var challenge in Challenges.Generate(count))
+        foreach (var challenge in Challenges.Generate(count, language))
         {
             token.ThrowIfCancellationRequested();
             var text = await client.Completion(url, key, model, challenge.Prompt, token);

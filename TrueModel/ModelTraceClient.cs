@@ -167,12 +167,16 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         }
         return envelope;
     }
-    public async Task<CandyProbeResult> ProbeCandy(string baseUrl, string key, string model, CancellationToken token, string reasoningEffort = "default")
+    public async Task<CandyProbeResult> ProbeCandy(string baseUrl, string key, string model, CancellationToken token, string reasoningEffort = "default",
+        string language = "zh", string language2 = "zh", string language3 = "zh")
     {
         if (!CandyProbe.ValidReasoningEffort(reasoningEffort)) throw new ArgumentException("不支持的糖果思考等级", nameof(reasoningEffort));
-        var first = await ProbeCandyAttempt(baseUrl, key, model, CandyProbe.Prompt, token, reasoningEffort);
-        var second = await ProbeCandyAttempt(baseUrl, key, model, CandyProbe.CreateObfuscatedPrompt(), token, reasoningEffort);
-        var third = await ProbeCandyAttempt(baseUrl, key, model, CandyProbe.CreateSpaceObfuscatedPrompt(), token, reasoningEffort);
+        var firstPrompt = PromptLanguages.Get(language).Candy;
+        var secondPrompt = CandyProbe.CreateObfuscatedPrompt(language2);
+        var thirdPrompt = CandyProbe.CreateSpaceObfuscatedPrompt(language3);
+        var first = await ProbeCandyAttempt(baseUrl, key, model, firstPrompt, token, reasoningEffort);
+        var second = await ProbeCandyAttempt(baseUrl, key, model, secondPrompt, token, reasoningEffort);
+        var third = await ProbeCandyAttempt(baseUrl, key, model, thirdPrompt, token, reasoningEffort);
         return first with
         {
             Candy2Status = second.CandyStatus,
@@ -209,14 +213,15 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 string.IsNullOrEmpty(key) ? e.Message : e.Message.Replace(key, "[REDACTED]", StringComparison.Ordinal), reasoningEffort, reasoningTokens, watch.ElapsedMilliseconds);
         }
     }
-    public async Task<JsonElement> Test(string baseUrl, string key, string model, string bank, int challengeCount, CancellationToken token, string candyReasoningEffort = "default", string juiceReasoningEffort = "default")
+    public async Task<JsonElement> Test(string baseUrl, string key, string model, string bank, int challengeCount, CancellationToken token, string candyReasoningEffort = "default", string juiceReasoningEffort = "default",
+        string attributionLanguage = "zh", string candyLanguage = "zh", string candy2Language = "zh", string candy3Language = "zh")
     {
         var watch = Stopwatch.StartNew();
         var responses = new List<object>();
         var outputs = new List<ProbeOutput>();
         var errors = new List<string>();
         var statusCode = 0;
-        foreach (var challenge in Challenges.Generate(challengeCount))
+        foreach (var challenge in Challenges.Generate(challengeCount, attributionLanguage))
         {
             var before = Stopwatch.StartNew();
             string text = ""; string? error = null;
@@ -229,7 +234,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         }
         var envelope = new Dictionary<string, object?> { ["responses"] = responses, ["duration_ms"] = watch.ElapsedMilliseconds, ["status_code"] = statusCode };
         foreach (var entry in await ProbeJuice(baseUrl, key, model, token, reasoningEffort: juiceReasoningEffort)) envelope[entry.Key] = entry.Value;
-        envelope["candy"] = await ProbeCandy(baseUrl, key, model, token, candyReasoningEffort);
+        envelope["candy"] = await ProbeCandy(baseUrl, key, model, token, candyReasoningEffort, candyLanguage, candy2Language, candy3Language);
         envelope["duration_ms"] = watch.ElapsedMilliseconds;
         try
         {

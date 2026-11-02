@@ -309,6 +309,53 @@ public class ModelManagementTests
         await host.WithDb(async db => Assert.Equal("http://localhost:8080/v1", (await db.Sites.SingleAsync()).BaseUrl));
     }
 
+    [Fact]
+    public async Task LanguageSettingsUpgradePersistValidateAndSnapshotEachCandyQueueLanguage()
+    {
+        await using var host = new TestHost();
+        await using (var legacy = new AppDb(new DbContextOptionsBuilder<AppDb>().UseSqlite(host.ConnectionString).Options))
+        {
+            await legacy.Database.EnsureCreatedAsync();
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN AttributionLanguage");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CandyLanguage");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN Candy2Language");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN Candy3Language");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN CandyRequestedLanguage");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN Candy2RequestedLanguage");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Models DROP COLUMN Candy3RequestedLanguage");
+        }
+        await host.Login();
+        string[] fields = ["attributionLanguage", "candyLanguage", "candy2Language", "candy3Language"];
+        var defaults = await host.Client.GetFromJsonAsync<JsonElement>("/api/settings");
+        Assert.All(fields, field => Assert.Equal("zh", defaults.GetProperty(field).GetString()));
+        foreach (var language in new[] { "zh", "en", "ja", "ko", "fr", "es", "de", "pt" })
+            Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync("/api/settings", fields.ToDictionary(field => field, _ => language))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync("/api/settings", new { attributionLanguage = "de", candyLanguage = "en", candy2Language = "ja", candy3Language = "fr" })).StatusCode);
+        foreach (var field in fields)
+            foreach (var invalid in new string?[] { null, "", "xx" })
+                Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync("/api/settings", new Dictionary<string, string?> { [field] = invalid })).StatusCode);
+        var key = await host.CreateKey();
+        var first = await host.Create($"/api/keys/{key}/models", new { name = "one" });
+        var second = await host.Create($"/api/keys/{key}/models", new { name = "two" });
+        Assert.Equal(HttpStatusCode.Accepted, (await host.Client.PostAsJsonAsync($"/api/models/{first}/candy", new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, (await host.Client.PostAsJsonAsync("/api/candy/refresh-all", new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, (await host.Client.PostAsJsonAsync("/api/detect", new { })).StatusCode);
+        await host.Restart();
+        await host.Login();
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync("/api/settings", new { challengeCount = 4 })).StatusCode);
+        var persisted = await host.Client.GetFromJsonAsync<JsonElement>("/api/settings");
+        Assert.Equal(new[] { "de", "en", "ja", "fr" }, fields.Select(f => persisted.GetProperty(f).GetString()));
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync("/api/settings", new { attributionLanguage = "zh", candyLanguage = "zh", candy2Language = "zh", candy3Language = "zh" })).StatusCode);
+        await host.WithDb(async db =>
+        {
+            var models = await db.Models.ToArrayAsync();
+            Assert.Equal(2, models.Length);
+            Assert.All(models, m => Assert.Equal(new[] { "en", "ja", "fr" }, new[] { m.CandyRequestedLanguage, m.Candy2RequestedLanguage, m.Candy3RequestedLanguage }));
+            var snapshot = JsonSerializer.Deserialize<AppSettings>((await db.Runs.SingleAsync()).DetectionSettingsJson!)!;
+            Assert.Equal(new[] { "de", "en", "ja", "fr" }, new[] { snapshot.AttributionLanguage, snapshot.CandyLanguage, snapshot.Candy2Language, snapshot.Candy3Language });
+        });
+    }
+
     private sealed class TestHost : IAsyncDisposable
     {
         public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), "truemodel-management-" + Guid.NewGuid());

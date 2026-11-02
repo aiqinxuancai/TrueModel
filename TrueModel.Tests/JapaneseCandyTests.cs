@@ -8,19 +8,20 @@ namespace TrueModel.Tests;
 
 public class JapaneseCandyTests
 {
+    private static string JapanesePrompt => PromptLanguages.Get("ja").Candy;
     [Fact]
     public void RandomSpacingChangesAllThreeVariantsWithoutChangingNumbersOrExistingWhitespace()
     {
-        foreach (var source in new[] { CandyProbe.Prompt, CandyProbe.CreateObfuscatedPrompt(), CandyProbe.CreateSpaceObfuscatedPrompt() })
+        foreach (var source in new[] { JapanesePrompt, CandyProbe.CreateObfuscatedPrompt("ja"), CandyProbe.CreateSpaceObfuscatedPrompt("ja") })
         {
             var variants = new HashSet<string>();
             for (var i = 0; i < 100; i++)
             {
                 var prompt = CandyProbe.RandomizeSpacing(source);
                 Assert.NotEqual(source, prompt);
-                Assert.Equal(source.Replace(" ", ""), prompt.Replace(" ", ""));
+                Assert.Equal(CandyTestPrompts.WithoutWhitespace(source), CandyTestPrompts.WithoutWhitespace(prompt));
                 Assert.Equal(Regex.Matches(source, @"\d+").Select(m => m.Value), Regex.Matches(prompt, @"\d+").Select(m => m.Value));
-                Assert.InRange(prompt.Length - source.Length, 12, 36);
+                Assert.InRange(prompt.Length - source.Length, 16, 42);
                 Assert.True(variants.Add(prompt));
             }
         }
@@ -30,24 +31,24 @@ public class JapaneseCandyTests
     [Fact]
     public void JapanesePromptPreservesConditionsAndOnlyAddsSpacesInsideKeywords()
     {
-        Assert.Equal(new[] { "3", "2", "7", "9", "8", "7", "6", "4" }, Regex.Matches(CandyProbe.Prompt, @"\d+").Select(m => m.Value));
-        Assert.Contains("外部ツールを一切使わず", CandyProbe.Prompt);
-        Assert.Contains("形は手触りで区別できます", CandyProbe.Prompt);
-        Assert.Contains("個数を事前に決める", CandyProbe.Prompt);
-        Assert.Contains("形の異なる", CandyProbe.Prompt);
-        Assert.Contains("同時に手元に持っていることを確実にする", CandyProbe.Prompt);
-        Assert.Contains("丸形のリンゴ味と五芒星形のモモ味", CandyProbe.Prompt);
-        Assert.Contains("丸形のモモ味と五芒星形のリンゴ味", CandyProbe.Prompt);
-        Assert.Contains("リンゴ味  モモ味  スイカ味", CandyProbe.Prompt);
-        Assert.Contains("丸形         7       9       8", CandyProbe.Prompt);
-        Assert.Contains("五芒星形     7       6       4", CandyProbe.Prompt);
+        Assert.Equal(new[] { "3", "2", "7", "9", "8", "7", "6", "4" }, Regex.Matches(JapanesePrompt, @"\d+").Select(m => m.Value));
+        Assert.Contains("外部ツールを一切使わず", JapanesePrompt);
+        Assert.Contains("形は手触りで区別できます", JapanesePrompt);
+        Assert.Contains("個数を事前に決める", JapanesePrompt);
+        Assert.Contains("形の異なる", JapanesePrompt);
+        Assert.Contains("同時に手元に持っていることを確実にする", JapanesePrompt);
+        Assert.Contains("丸形のリンゴ味と五芒星形のモモ味", JapanesePrompt);
+        Assert.Contains("丸形のモモ味と五芒星形のリンゴ味", JapanesePrompt);
+        Assert.Contains("リンゴ味  モモ味  スイカ味", JapanesePrompt);
+        Assert.Contains("丸形         7       9       8", JapanesePrompt);
+        Assert.Contains("五芒星形     7       6       4", JapanesePrompt);
         var variants = new HashSet<string>();
         for (var i = 0; i < 20; i++)
         {
-            var prompt = CandyProbe.CreateSpaceObfuscatedPrompt();
+            var prompt = CandyProbe.CreateSpaceObfuscatedPrompt("ja");
             variants.Add(prompt);
-            Assert.NotEqual(CandyProbe.Prompt, prompt);
-            Assert.Equal(CandyProbe.Prompt.Replace(" ", ""), prompt.Replace(" ", ""));
+            Assert.NotEqual(JapanesePrompt, prompt);
+            Assert.Equal(JapanesePrompt.Replace(" ", ""), prompt.Replace(" ", ""));
             Assert.DoesNotMatch("キャンディー|リンゴ味|モモ味|スイカ味|丸形|五芒星形|最少", prompt);
         }
         Assert.True(variants.Count > 1);
@@ -60,18 +61,18 @@ public class JapaneseCandyTests
     public async Task AllAttemptsUseJapaneseAndThirdPersistsActualPrompt(string answer, bool error, string expected)
     {
         var handler = new Handler(answer, error);
-        var result = await new ModelTraceClient(new HttpClient(handler)).ProbeCandy("https://example.test", "secret", "model", CancellationToken.None, "high");
+        var result = await new ModelTraceClient(new HttpClient(handler)).ProbeCandy("https://example.test", "secret", "model", CancellationToken.None, "high", "ja", "ja", "ja");
         Assert.Equal(3, handler.Prompts.Count);
         Assert.Equal("Failed", result.CandyStatus);
         Assert.Equal("Success", result.Candy2Status);
         Assert.Equal(expected, result.Candy3Status);
         Assert.Equal(handler.Prompts[2], result.Candy3Prompt);
-        Assert.All(handler.Prompts, prompt => Assert.Equal(CandyTestPrompts.WithoutWhitespace(CandyProbe.Prompt), CandyTestPrompts.WithoutWhitespace(prompt)));
-        Assert.All(handler.Prompts, prompt => Assert.NotEqual(CandyProbe.Prompt, prompt));
+        Assert.All(handler.Prompts, prompt => Assert.Equal(CandyTestPrompts.WithoutWhitespace(JapanesePrompt), CandyTestPrompts.WithoutWhitespace(prompt)));
+        Assert.All(handler.Prompts, prompt => Assert.NotEqual(JapanesePrompt, prompt));
         Assert.Equal(3, handler.Prompts.Distinct().Count());
         Assert.Equal(handler.Prompts[0], result.CandyPrompt);
         Assert.Equal(handler.Prompts[1], result.Candy2Prompt);
-        Assert.Equal(CandyTestPrompts.WithoutWhitespace(CandyProbe.Prompt), CandyTestPrompts.WithoutWhitespace(result.Candy3Prompt!));
+        Assert.Equal(CandyTestPrompts.WithoutWhitespace(JapanesePrompt), CandyTestPrompts.WithoutWhitespace(result.Candy3Prompt!));
         Assert.Equal(error ? null : answer, result.Candy3Response);
         Assert.Equal(123L, result.Candy2ReasoningTokens);
         Assert.Equal(error ? (long?)null : 789L, result.Candy3ReasoningTokens);

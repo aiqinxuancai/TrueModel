@@ -81,7 +81,7 @@ public static class ModelManagement
                 model.CandyReasoningEffort = null; model.CandyReasoningTokens = null; model.CandyLatencyMs = null;
                 model.Candy2Status = null; model.Candy2Prompt = null; model.Candy2Response = null; model.Candy2Error = null; model.Candy2ReasoningTokens = null; model.Candy2LatencyMs = null;
                 model.Candy3Status = null; model.Candy3Prompt = null; model.Candy3Response = null; model.Candy3Error = null; model.Candy3ReasoningTokens = null; model.Candy3LatencyMs = null; model.CandyCheckedAt = null;
-                model.CandyRefreshStatus = null; model.CandyRequestedEffort = null;
+                model.CandyRefreshStatus = null; model.CandyRequestedEffort = null; model.CandyRequestedLanguage = null; model.Candy2RequestedLanguage = null; model.Candy3RequestedLanguage = null;
             }
             await db.SaveChangesAsync(token);
             await transaction.CommitAsync(token);

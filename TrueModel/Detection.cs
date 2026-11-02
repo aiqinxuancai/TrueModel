@@ -84,7 +84,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                             if (run.CancelRequested || control.Active.Count >= settings.MaxConcurrency) continue;
                             var completed = (await db.Results.Where(r => r.RunId == run.Id).Select(r => r.ModelId).ToArrayAsync(stoppingToken)).ToHashSet();
                             var targets = JsonSerializer.Deserialize<Target[]>(run.TargetsJson) ?? [];
-                            var runSettings = run.DetectionSettingsJson is null ? new AppSettings { ChallengeCount = settings.ChallengeCount, CandyReasoningEffort = settings.CandyReasoningEffort, JuiceReasoningEffort = settings.JuiceReasoningEffort } : JsonSerializer.Deserialize<AppSettings>(run.DetectionSettingsJson)!;
+                            var runSettings = run.DetectionSettingsJson is null ? new AppSettings { ChallengeCount = settings.ChallengeCount, CandyReasoningEffort = settings.CandyReasoningEffort, JuiceReasoningEffort = settings.JuiceReasoningEffort, AttributionLanguage = settings.AttributionLanguage, CandyLanguage = settings.CandyLanguage, Candy2Language = settings.Candy2Language, Candy3Language = settings.Candy3Language } : JsonSerializer.Deserialize<AppSettings>(run.DetectionSettingsJson)!;
                             var bank = runSettings.DetectionMethod == "hlwy" ? "" : (await db.Banks.SingleAsync(b => b.Id == run.BankId, stoppingToken)).Json;
                             foreach (var target in targets)
                             {
@@ -169,7 +169,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             result.JuiceValue = juice.TryGetValue("juice_value", out var value) ? value as int? : null;
             result.JuiceStatus = juice.TryGetValue("juice_status", out var status) ? status as string : null;
             result.JuicePrompt = juice.TryGetValue("juice_prompt", out var prompt) ? prompt as string : null;
-            var candy = await client.ProbeCandy(target.BaseUrl, key, target.ModelName, token, settings.CandyReasoningEffort);
+            var candy = await client.ProbeCandy(target.BaseUrl, key, target.ModelName, token, settings.CandyReasoningEffort, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language);
             result.CandyStatus = candy.CandyStatus;
             result.CandyPrompt = candy.CandyPrompt;
             result.CandyResponse = candy.CandyResponse;
@@ -242,7 +242,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedKey);
             var response = settings.DetectionMethod == "hlwy"
                 ? await client.TestHlwy(target.BaseUrl, key, target.ModelName, settings, token, includeSupplemental: false)
-                : await client.Test(target.BaseUrl, key, target.ModelName, bank, settings.ChallengeCount, token, settings.CandyReasoningEffort, settings.JuiceReasoningEffort);
+                : await client.Test(target.BaseUrl, key, target.ModelName, bank, settings.ChallengeCount, token, settings.CandyReasoningEffort, settings.JuiceReasoningEffort, settings.AttributionLanguage, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language);
             result.ResponsesJson = response.GetProperty("responses").GetRawText();
             result.JuiceValue = response.TryGetProperty("juice_value", out var juice) && juice.ValueKind == JsonValueKind.Number ? juice.GetInt32() : null;
             result.JuiceStatus = response.TryGetProperty("juice_status", out var juiceStatus) ? juiceStatus.GetString() : null;
