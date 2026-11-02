@@ -158,6 +158,7 @@ function configuredSiteCard(site) {
         </div>
       </div>
       <div class="actions">
+        <button data-edit-site="${site.id}">${icon("pencil")}编辑站点</button>
         <button data-key="${site.id}">${icon("plus")}添加 Key</button>
         <button data-manage-models data-manage-site="${site.id}" ${modelCount ? "" : "disabled"}>${icon("list-checks")}批量管理</button>
         <button data-detect-site="${site.id}" ${modelCount ? "" : "disabled"}>${icon("play")}检测站点</button>
@@ -167,6 +168,22 @@ function configuredSiteCard(site) {
     <div class="site-keys">${site.keys.map(configuredKeyGroup).join("") || `<div class="inline-empty">暂无 API Key<button data-key="${site.id}">${icon("plus")}添加 Key</button></div>`}</div>
   </section>`;
 }
+document.addEventListener("click", (e) => {
+  const button = e.target.closest("button[data-edit-site]");
+  if (!button) return;
+  const id = Number(button.dataset.editSite);
+  const site = sites.find((s) => s.id === id);
+  if (!site) return;
+  edit("编辑站点", [
+    ["name", "名称", "text", site.name],
+    ["baseUrl", "Base URL", "url", site.baseUrl],
+  ], async (v) => {
+    await api(`/sites/${id}`, "PUT", v);
+    return "站点信息已更新";
+  });
+  $("editorForm").elements.name.select();
+});
+
 document.addEventListener(
   "toggle",
   (e) => {

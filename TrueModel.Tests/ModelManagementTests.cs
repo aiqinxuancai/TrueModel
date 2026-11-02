@@ -239,6 +239,76 @@ public class ModelManagementTests
         await host.WithDb(async db => Assert.Equal(secret, (await db.Keys.SingleAsync()).ProtectedValue));
     }
 
+    [Fact]
+    public async Task EditSitePersistsAndPreservesKeysModelsHistoryAndQueuedTargets()
+    {
+        await using var host = new TestHost();
+        await host.RefreshToken();
+        var input = new { name = "  新站点  ", baseUrl = "  https://new.models.test/v1///  " };
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client.PutAsJsonAsync("/api/sites/1", input)).StatusCode);
+        await host.Login();
+        var site = await host.Create("/api/sites", new { name = "old site", baseUrl = "https://models.test", enabled = false });
+        var key = await host.Create($"/api/sites/{site}/keys", new { name = "key", value = "secret" });
+        var model = await host.Create($"/api/keys/{key}/models", new { name = "gpt-test" });
+        string secret = "";
+        var targetsJson = JsonSerializer.Serialize(new[] { new Target(model, "gpt-test", "key", "old site", "https://models.test", "secret") });
+        await host.WithDb(async db =>
+        {
+            secret = (await db.Keys.SingleAsync()).ProtectedValue;
+            (await db.Models.SingleAsync()).IsFavorite = true;
+            db.Results.Add(new DetectionResult { ModelId = model, SiteName = "old site", KeyName = "key", ModelName = "gpt-test", Status = "Success" });
+            db.Runs.Add(new DetectionRun { Status = "Queued", Total = 1, TargetsJson = targetsJson });
+            await db.SaveChangesAsync();
+        });
+        host.Client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync($"/api/sites/{site}", input)).StatusCode);
+        await host.RefreshToken();
+        await host.WithDb(async db => Assert.Equal("old site", (await db.Sites.SingleAsync()).Name));
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/sites/{site}", input)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await host.Client.PutAsJsonAsync("/api/sites/99999", input)).StatusCode);
+        await host.Restart();
+        await host.Login();
+        var sites = await host.Client.GetFromJsonAsync<JsonElement>("/api/sites");
+        Assert.Equal(1, sites.GetArrayLength());
+        Assert.Equal(site, sites[0].GetProperty("id").GetInt32());
+        Assert.Equal("新站点", sites[0].GetProperty("name").GetString());
+        Assert.Equal("https://new.models.test/v1", sites[0].GetProperty("baseUrl").GetString());
+        Assert.False(sites[0].GetProperty("enabled").GetBoolean());
+        Assert.Equal(key, sites[0].GetProperty("keys")[0].GetProperty("id").GetInt32());
+        await host.WithDb(async db =>
+        {
+            Assert.Equal(secret, (await db.Keys.SingleAsync()).ProtectedValue);
+            var savedModel = await db.Models.SingleAsync();
+            Assert.Equal(model, savedModel.Id);
+            Assert.Equal("gpt-test", savedModel.Name);
+            Assert.True(savedModel.IsFavorite);
+            Assert.Equal("old site", (await db.Results.SingleAsync()).SiteName);
+            Assert.Equal(targetsJson, (await db.Runs.SingleAsync()).TargetsJson);
+        });
+    }
+
+    [Fact]
+    public async Task EditSiteRejectsInvalidInputWithoutChangingStoredValues()
+    {
+        await using var host = new TestHost();
+        await host.Login();
+        var site = await host.Create("/api/sites", new { name = "original", baseUrl = "https://models.test" });
+        foreach (var name in new string?[] { null, "", "   " })
+            Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync($"/api/sites/{site}", new { name, baseUrl = "https://new.models.test" })).StatusCode);
+        foreach (var baseUrl in new string?[] { null, "", "   ", "relative/path", "ftp://models.test", "https://user:password@models.test", "https://models.test?key=secret", "https://models.test#fragment" })
+            Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync($"/api/sites/{site}", new { name = "changed", baseUrl })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync($"/api/sites/{site}", new { })).StatusCode);
+        await host.WithDb(async db =>
+        {
+            var saved = await db.Sites.SingleAsync();
+            Assert.Equal("original", saved.Name);
+            Assert.Equal("https://models.test", saved.BaseUrl);
+            Assert.True(saved.Enabled);
+        });
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/sites/{site}", new { name = "local", baseUrl = "http://localhost:8080/v1/" })).StatusCode);
+        await host.WithDb(async db => Assert.Equal("http://localhost:8080/v1", (await db.Sites.SingleAsync()).BaseUrl));
+    }
+
     private sealed class TestHost : IAsyncDisposable
     {
         public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), "truemodel-management-" + Guid.NewGuid());

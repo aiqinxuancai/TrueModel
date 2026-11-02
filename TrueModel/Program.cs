@@ -297,6 +297,18 @@ api.MapPost("/sites", async (SiteInput input, AppDb db) =>
     var site = new Site { Name = input.Name.Trim(), BaseUrl = input.BaseUrl.TrimEnd('/'), Enabled = input.Enabled };
     db.Sites.Add(site); await db.SaveChangesAsync(); return Results.Ok(new { site.Id });
 });
+api.MapPut("/sites/{id:int}", async (int id, SiteUpdateInput input, AppDb db, CancellationToken token) =>
+{
+    var name = input.Name?.Trim();
+    var baseUrl = input.BaseUrl?.Trim().TrimEnd('/');
+    if (string.IsNullOrEmpty(name)) return Results.BadRequest(new { error = "站点名称不能为空" });
+    if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")
+        || !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
+        return Results.BadRequest(new { error = "请输入有效的 HTTP/HTTPS Base URL，不能包含用户名、密码、查询参数或片段" });
+    var updated = await db.Sites.Where(s => s.Id == id).ExecuteUpdateAsync(s => s
+        .SetProperty(site => site.Name, name).SetProperty(site => site.BaseUrl, baseUrl!), token);
+    return updated == 0 ? Results.NotFound(new { error = "站点不存在" }) : Results.NoContent();
+});
 api.MapDelete("/sites/{id:int}", async (int id, AppDb db, DetectionControl control) => { await control.Delete(db, siteId: id); return Results.NoContent(); });
 api.MapPost("/sites/{id:int}/keys", async (int id, KeyInput input, AppDb db, IDataProtectionProvider protection) =>
 {
@@ -642,6 +654,7 @@ record EmptyBankInput(string Name);
 record ManualFingerprintInput(string Model, string DisplayName, string Family, int[]? Counts);
 record LoginRequest(string Username, string Password);
 record SiteInput(string Name, string BaseUrl, bool Enabled = true);
+record SiteUpdateInput(string? Name, string? BaseUrl);
 record KeyInput(string Name, string Value);
 record KeyRenameInput(string? Name);
 record ModelInput(string Name);
