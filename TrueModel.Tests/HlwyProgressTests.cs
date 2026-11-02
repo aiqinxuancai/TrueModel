@@ -87,7 +87,7 @@ public class HlwyProgressTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            var candy = CandyTestPrompts.IsCandy(body.GetProperty("messages")[0].GetProperty("content").GetString());
+            var candy = CandyTestPrompts.IsCandy(TestConversation.Prompt(body));
             if (candy) { Started.TrySetResult(); await Release.Task.WaitAsync(token); }
             return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = candy ? "21" : "42" }, finish_reason = "stop" } } }) };
         }

@@ -159,7 +159,7 @@ public class CandyProbeTests
             Calls++;
             if (delayMs > 0) await Task.Delay(delayMs, token);
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            var prompt = body.GetProperty("messages")[0].GetProperty("content").GetString();
+            var prompt = TestConversation.Prompt(body);
             Assert.True(CandyTestPrompts.IsCandy(prompt));
             if (Calls <= (error && effort == "default" ? 2 : 1)) Assert.Equal(CandyProbe.Prompt, prompt);
             else Assert.NotEqual(CandyProbe.Prompt, prompt);

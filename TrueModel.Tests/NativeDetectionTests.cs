@@ -30,24 +30,25 @@ public class NativeDetectionTests
     [Theory]
     [InlineData(3)]
     [InlineData(6)]
-    public async Task UsesConfiguredCountAndOriginalRequestShape(int count)
+    public async Task UsesConfiguredCountAndWrappedRequestShape(int count)
     {
         var handler = new RecordingHandler();
         var engine = new ModelTraceClient(new HttpClient(handler));
         var bank = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets/unified_bank.json"));
         var report = await engine.Test("https://example.test", "test-secret", "mock", bank, count, CancellationToken.None);
         Assert.Equal(count + 3, handler.Requests.Count);
-        Assert.Equal(CandyProbe.Prompt, handler.Requests[^3].GetProperty("messages")[0].GetProperty("content").GetString());
-        var secondPrompt = handler.Requests[^2].GetProperty("messages")[0].GetProperty("content").GetString();
+        Assert.Equal(CandyProbe.Prompt, TestConversation.Prompt(handler.Requests[^3]));
+        var secondPrompt = TestConversation.Prompt(handler.Requests[^2]);
         Assert.NotEqual(CandyProbe.Prompt, secondPrompt);
         Assert.True(CandyTestPrompts.IsCandy(secondPrompt));
-        var thirdPrompt = handler.Requests[^1].GetProperty("messages")[0].GetProperty("content").GetString()!;
+        var thirdPrompt = TestConversation.Prompt(handler.Requests[^1])!;
         Assert.NotEqual(CandyProbe.EnglishPrompt, thirdPrompt);
         Assert.Equal(CandyTestPrompts.WithoutWhitespace(CandyProbe.EnglishPrompt), CandyTestPrompts.WithoutWhitespace(thirdPrompt));
         Assert.Equal(count, report.GetProperty("result").GetProperty("used_outputs").GetInt32());
         Assert.Equal(count, report.GetProperty("responses").EnumerateArray().Select(r => r.GetProperty("ExpectedCount").GetInt32()).Distinct().Count());
         foreach (var body in handler.Requests)
         {
+            TestConversation.Prompt(body);
             Assert.False(body.TryGetProperty("max_tokens", out _));
             Assert.False(body.TryGetProperty("temperature", out _));
             Assert.False(body.TryGetProperty("stream", out _));
@@ -61,6 +62,7 @@ public class NativeDetectionTests
         var content = await engine.Completion("https://example.test/v1", "test-secret", "mock", "prompt", CancellationToken.None);
         Assert.NotEmpty(content);
         Assert.Equal(2, handler.Requests.Count);
+        Assert.All(handler.Requests, body => Assert.Equal("prompt", TestConversation.Prompt(body)));
         Assert.Equal(4096, handler.Requests[1].GetProperty("max_tokens").GetInt32());
     }
     private sealed class RecordingHandler : HttpMessageHandler

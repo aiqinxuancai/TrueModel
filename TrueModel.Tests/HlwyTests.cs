@@ -76,7 +76,7 @@ public class HlwyTests
         {
             Assert.Equal(1, request.GetProperty("temperature").GetDouble());
             Assert.Equal(256, request.GetProperty("max_tokens").GetInt32());
-            var prompt = request.GetProperty("messages")[0].GetProperty("content").GetString()!;
+            var prompt = TestConversation.Prompt(request)!;
             Assert.Equal(HlwyFingerprint.Prompt.Length + (antiTarget ? 1 : 0), prompt.Length);
         }
         Assert.False(handler.Bodies[^1].TryGetProperty("temperature", out _));
@@ -126,7 +126,7 @@ public class HlwyTests
         {
             var body = JsonSerializer.Deserialize<JsonElement>(await request.Content!.ReadAsStringAsync(cancellationToken));
             Bodies.Add(body);
-            var candy = CandyTestPrompts.IsCandy(body.GetProperty("messages")[0].GetProperty("content").GetString());
+            var candy = CandyTestPrompts.IsCandy(TestConversation.Prompt(body));
             return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = candy ? "21" : Text }, finish_reason = "stop" } } }) };
         }
     }

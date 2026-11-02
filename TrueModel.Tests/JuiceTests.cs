@@ -314,7 +314,7 @@ public class JuiceTests
         {
             Calls++;
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            var prompt = body.GetProperty("messages")[0].GetProperty("content").GetString();
+            var prompt = TestConversation.Prompt(body);
             if (CandyTestPrompts.IsCandy(prompt))
             {
                 if (ExpectedCandyEffort == "default") Assert.False(body.TryGetProperty("reasoning_effort", out _));

@@ -68,9 +68,9 @@ public class EnglishCandyTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            Assert.Equal(1, body.GetProperty("messages").GetArrayLength());
+            Assert.Equal(3, body.GetProperty("messages").GetArrayLength());
             Assert.Equal("high", body.GetProperty("reasoning_effort").GetString());
-            Prompts.Add(body.GetProperty("messages")[0].GetProperty("content").GetString()!);
+            Prompts.Add(TestConversation.Prompt(body)!);
             if (Prompts.Count == 2) AfterSecond?.Invoke();
             if (Prompts.Count == 1 || (Prompts.Count == 3 && error))
                 return new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = "secret error" }) };

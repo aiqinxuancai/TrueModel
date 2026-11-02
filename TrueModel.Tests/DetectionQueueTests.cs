@@ -166,7 +166,7 @@ public class DetectionQueueTests
             started.GetOrAdd(model, _ => Signal()).TrySetResult();
             try { await releases.GetOrAdd(model, _ => Signal()).Task.WaitAsync(token); }
             catch (OperationCanceledException) { Cancelled.TrySetResult(); throw; }
-            if (CandyTestPrompts.IsCandy(body.GetProperty("messages")[0].GetProperty("content").GetString()))
+            if (CandyTestPrompts.IsCandy(TestConversation.Prompt(body)))
             {
                 Assert.Equal("high", body.GetProperty("reasoning_effort").GetString());
                 return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "21" }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = 512 } } }) };

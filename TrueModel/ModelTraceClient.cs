@@ -21,15 +21,16 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false)
     {
         var errors = new List<string>();
+        var messages = ConversationEnvelope.Create(prompt);
         // An explicit OpenAI effort cannot be silently discarded on protocol fallback.
         foreach (var anthropic in reasoningEffort is null ? new[] { false, true } : new[] { false })
         {
-            try { return await Request(url, key, model, prompt, anthropic, token, observeStatus, reasoningEffort: reasoningEffort, observeReasoningTokens: observeReasoningTokens, statistical: statistical); }
+            try { return await Request(url, key, model, messages, anthropic, token, observeStatus, reasoningEffort: reasoningEffort, observeReasoningTokens: observeReasoningTokens, statistical: statistical); }
             catch (UpstreamException e) { errors.Add($"{(anthropic ? "anthropic" : "openai")}: {e.Message}"); }
         }
         throw new UpstreamException("接口格式自动探测失败；" + string.Join('；', errors));
     }
-    private async Task<string> Request(string url, string key, string model, string prompt, bool anthropic, CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false,
+    private async Task<string> Request(string url, string key, string model, ConversationMessage[] messages, bool anthropic, CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false,
         string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false)
     {
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
@@ -41,7 +42,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             var agent = Environment.GetEnvironmentVariable("MODELTRACE_USER_AGENT") ?? Environment.GetEnvironmentVariable("GPT56_USER_AGENT");
             request.Headers.TryAddWithoutValidation("User-Agent", string.IsNullOrWhiteSpace(agent) ? DefaultUserAgent : agent.Trim());
-            var body = new Dictionary<string, object> { ["model"] = model, ["messages"] = new[] { new { role = "user", content = prompt } } };
+            var body = new Dictionary<string, object> { ["model"] = model, ["messages"] = messages };
             if (reasoningEffort is not null) body["reasoning_effort"] = reasoningEffort;
             if (anthropic) { body["max_tokens"] = 4096; request.Headers.Add("x-api-key", key); request.Headers.Add("anthropic-version", "2023-06-01"); }
             if (statistical) { body["temperature"] = 1.0; body["max_tokens"] = 256; }
@@ -150,7 +151,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 envelope["juice_prompt"] = method.Prompt;
                 try
                 {
-                    var text = await Request(baseUrl, key, model, method.Prompt, false, token, null, maxAttempts: 1, juice: true,
+                    var text = await Request(baseUrl, key, model, ConversationEnvelope.Create(method.Prompt), false, token, null, maxAttempts: 1, juice: true,
                         reasoningEffort: reasoningEffort == "default" ? null : reasoningEffort);
                     var value = JuiceProbe.Parse(text);
                     if (juiceHistory is not null) await juiceHistory.Record(endpoint, model, method.Id, value.HasValue, token);

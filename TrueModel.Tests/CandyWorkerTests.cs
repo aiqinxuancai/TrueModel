@@ -109,7 +109,7 @@ public class CandyWorkerTests
         {
             Interlocked.Increment(ref Calls);
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            var prompt = body.GetProperty("messages")[0].GetProperty("content").GetString();
+            var prompt = TestConversation.Prompt(body);
             Assert.True(CandyTestPrompts.IsCandy(prompt));
             if (Calls == 1) Assert.Equal(CandyProbe.Prompt, prompt);
             else Assert.NotEqual(CandyProbe.Prompt, prompt);
