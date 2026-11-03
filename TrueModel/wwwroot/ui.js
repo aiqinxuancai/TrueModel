@@ -242,7 +242,7 @@ render = function () {
   if (!count) {
     const hasModels = sites.some((s) => s.keys.some((k) => k.models.length));
     $("modelRows").innerHTML =
-      `<tr><td colspan="10" class="empty">${icon(hasModels ? "search-x" : "box")}<strong>${hasModels ? "没有匹配的模型" : "暂无模型"}</strong><button ${hasModels ? "data-clear-filter" : 'data-go="configuration"'}>${hasModels ? "清除筛选" : "配置站点"}</button></td></tr>`;
+      `<tr><td colspan="11" class="empty">${icon(hasModels ? "search-x" : "box")}<strong>${hasModels ? "没有匹配的模型" : "暂无模型"}</strong><button ${hasModels ? "data-clear-filter" : 'data-go="configuration"'}>${hasModels ? "清除筛选" : "配置站点"}</button></td></tr>`;
   }
   $("siteRows").innerHTML = sites.map(configuredSiteCard).join("") ||
     `<div class="card empty">${icon("network")}<strong>暂无站点</strong><span>添加站点后即可配置 API Key 与模型</span><button data-create-site class="primary">${icon("plus")}添加站点</button></div>`;

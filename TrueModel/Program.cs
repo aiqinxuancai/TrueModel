@@ -29,6 +29,7 @@ var desktop = builder.Configuration.GetValue("Desktop:Enabled", desktopDefault);
 if (desktop) builder.WebHost.UseUrls("http://127.0.0.1:0");
 var data = Path.GetFullPath(builder.Configuration["DataDirectory"] ?? (desktop ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TrueModel") : "data"));
 Directory.CreateDirectory(data);
+PythonSandbox.ProtectDataDirectory(data);
 builder.Services.AddDbContext<AppDb>(o => o.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? $"Data Source={Path.Combine(data, "truemodel.db")}"));
 builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(data, "keys"))).SetApplicationName("TrueModel");
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(o =>
@@ -42,6 +43,10 @@ builder.Services.AddAuthorization();
 builder.Services.AddHttpClient("probe", c => { c.Timeout = Timeout.InfiniteTimeSpan; c.MaxResponseContentBufferSize = 1_000_000; }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHostedService<DetectionWorker>();
 builder.Services.AddHostedService<CandyWorker>();
+// Resolve lazily: test hosts apply DataDirectory overrides only after the builder runs.
+builder.Services.AddSingleton(sp => new WorldMapStore(Path.Combine(Path.GetFullPath(sp.GetRequiredService<IConfiguration>()["DataDirectory"] ?? data), "world-maps")));
+builder.Services.AddSingleton<PythonSandbox>();
+builder.Services.AddHostedService<WorldMapWorker>();
 builder.Services.AddSingleton<DetectionControl>();
 builder.Services.AddSingleton<JuiceHistory>();
 builder.Services.AddHttpClient<ModelTraceClient>(c => c.Timeout = Timeout.InfiniteTimeSpan);
@@ -98,7 +103,7 @@ using (var scope = app.Services.CreateScope())
         using (var reader = await command.ExecuteReaderAsync())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
         var additions = table == "Settings"
-            ? new Dictionary<string, string> { ["AttributionLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CandyLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy2Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy3Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''", ["JuiceReasoningEffort"] = "TEXT NOT NULL DEFAULT 'default'" }
+            ? new Dictionary<string, string> { ["AttributionLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CandyLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy2Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy3Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["WorldMapLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''", ["JuiceReasoningEffort"] = "TEXT NOT NULL DEFAULT 'default'" }
             : new Dictionary<string, string> { ["DetectionSettingsJson"] = "TEXT NULL" };
         foreach (var column in additions)
             if (!columns.Contains(column.Key))
@@ -191,6 +196,11 @@ using (var scope = app.Services.CreateScope())
         CREATE TABLE IF NOT EXISTS NotificationDeliveries (
           Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, RunId INTEGER NULL, Channel TEXT NOT NULL,
           CreatedAt TEXT NOT NULL, Success INTEGER NOT NULL, Message TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS WorldMapRuns (
+          Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, ModelId INTEGER NOT NULL, ModelName TEXT NOT NULL, Status TEXT NOT NULL,
+          Language TEXT NOT NULL, CreatedAt TEXT NOT NULL, CompletedAt TEXT NULL, LatencyMs INTEGER NULL, ReasoningTokens INTEGER NULL,
+          LandCount INTEGER NULL, Prompt TEXT NULL, Response TEXT NULL, Script TEXT NULL, Output TEXT NULL, Error TEXT NULL);
+        CREATE INDEX IF NOT EXISTS IX_WorldMapRuns_ModelId ON WorldMapRuns (ModelId);
         """);
     if (!await db.Notifications.AnyAsync()) db.Notifications.Add(new NotificationSettings());
     await db.Database.OpenConnectionAsync();
@@ -404,6 +414,7 @@ api.MapPost("/models/{id:int}/candy", async (int id, AppDb db, CancellationToken
     if (updated == 0) return Results.Conflict(new { error = "糖果检测已在队列中或运行中，请勿重复提交" });
     return Results.Accepted("/api/sites", new { candyRefreshStatus = "Queued", candyRequestedEffort = effort });
 });
+api.MapWorldMaps();
 api.MapPost("/candy/refresh-all", async (AppDb db, CancellationToken token) =>
 {
     var settings = await db.Settings.AsNoTracking().SingleAsync(token);
@@ -634,7 +645,7 @@ api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
     if (input.IntervalMinutes < 0 || input.IntervalMinutes > 525600 || input.MaxConcurrency is < 1 or > 16 || input.TimeoutSeconds is < 5 or > 600 || input.ChallengeCount is < 3 or > 6) return Results.BadRequest();
     if (!CandyProbe.ValidReasoningEffort(input.CandyReasoningEffort)) return Results.BadRequest(new { error = "不支持的糖果思考等级" });
     if (!CandyProbe.ValidReasoningEffort(input.JuiceReasoningEffort)) return Results.BadRequest(new { error = "不支持的 Juice 思考等级" });
-    if (new[] { input.AttributionLanguage, input.CandyLanguage, input.Candy2Language, input.Candy3Language }.Any(l => !PromptLanguages.IsValid(l)))
+    if (new[] { input.AttributionLanguage, input.CandyLanguage, input.Candy2Language, input.Candy3Language, input.WorldMapLanguage }.Any(l => !PromptLanguages.IsValid(l)))
         return Results.BadRequest(new { error = "不支持的题目语言" });
     var settings = await db.Settings.SingleAsync();
     if (input.DetectionMethod is not ("modeltrace" or "hlwy") || input.HlwySampleCount is < 40 or > 1000 || input.HlwyConcurrency is < 1 or > 50 || input.HlwyBaselinesJson is null)
@@ -654,6 +665,7 @@ api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
     if (payload.EnumerateObject().Any(p => p.Name.Equals("candyLanguage", StringComparison.OrdinalIgnoreCase))) settings.CandyLanguage = input.CandyLanguage;
     if (payload.EnumerateObject().Any(p => p.Name.Equals("candy2Language", StringComparison.OrdinalIgnoreCase))) settings.Candy2Language = input.Candy2Language;
     if (payload.EnumerateObject().Any(p => p.Name.Equals("candy3Language", StringComparison.OrdinalIgnoreCase))) settings.Candy3Language = input.Candy3Language;
+    if (payload.EnumerateObject().Any(p => p.Name.Equals("worldMapLanguage", StringComparison.OrdinalIgnoreCase))) settings.WorldMapLanguage = input.WorldMapLanguage;
     settings.IntervalMinutes = input.IntervalMinutes; settings.MaxConcurrency = input.MaxConcurrency; settings.TimeoutSeconds = 240; settings.ChallengeCount = input.ChallengeCount;
     settings.NextRunAt = input.IntervalMinutes > 0 ? DateTime.UtcNow.AddMinutes(input.IntervalMinutes) : null;
     await db.SaveChangesAsync(); return Results.NoContent();

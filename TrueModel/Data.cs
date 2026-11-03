@@ -16,12 +16,14 @@ public sealed class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
     public DbSet<AppSettings> Settings => Set<AppSettings>();
     public DbSet<NotificationSettings> Notifications => Set<NotificationSettings>();
     public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
+    public DbSet<WorldMapRun> WorldMaps => Set<WorldMapRun>();
     protected override void OnModelCreating(ModelBuilder model)
     {
         model.Entity<JuiceMethodStatistic>().HasKey(s => new { s.Endpoint, s.Model, s.Method });
         model.Entity<SiteKey>().HasOne<Site>().WithMany(s => s.Keys).HasForeignKey(k => k.SiteId).OnDelete(DeleteBehavior.Cascade);
         model.Entity<MonitoredModel>().HasOne<SiteKey>().WithMany(k => k.Models).HasForeignKey(m => m.SiteKeyId).OnDelete(DeleteBehavior.Cascade);
         model.Entity<MonitoredModel>().HasIndex(m => new { m.SiteKeyId, m.Name }).IsUnique();
+        model.Entity<WorldMapRun>().ToTable("WorldMapRuns").HasIndex(w => w.ModelId);
         // SQLite has no timezone metadata; restore UTC on reads for browser timers.
         var utc = new Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime, DateTime>(value => value, value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
         foreach (var entity in model.Model.GetEntityTypes())
@@ -83,6 +85,25 @@ public sealed class DetectionResult
     public long? Candy2LatencyMs { get; set; }
     public long? Candy3LatencyMs { get; set; }
 }
+// Manual-only probe history; each model keeps the newest WorldMapProbe.HistoryLimit runs.
+public sealed class WorldMapRun
+{
+    public int Id { get; set; }
+    public int ModelId { get; set; }
+    public string ModelName { get; set; } = "";
+    public string Status { get; set; } = "Queued";
+    public string Language { get; set; } = "zh";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? CompletedAt { get; set; }
+    public long? LatencyMs { get; set; }
+    public long? ReasoningTokens { get; set; }
+    public int? LandCount { get; set; }
+    public string? Prompt { get; set; }
+    public string? Response { get; set; }
+    public string? Script { get; set; }
+    public string? Output { get; set; }
+    public string? Error { get; set; }
+}
 public sealed class FingerprintBank
 {
     public bool IsDefault { get; set; }
@@ -99,6 +120,7 @@ public sealed class AppSettings
     public string CandyLanguage { get; set; } = "zh";
     public string Candy2Language { get; set; } = "zh";
     public string Candy3Language { get; set; } = "zh";
+    public string WorldMapLanguage { get; set; } = "zh";
     public string DetectionMethod { get; set; } = "modeltrace";
     public int HlwyConcurrency { get; set; } = 5;
     public int HlwySampleCount { get; set; } = 100;
