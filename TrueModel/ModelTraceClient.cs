@@ -18,20 +18,22 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         return normalized.EndsWith(suffix, StringComparison.Ordinal) ? normalized : normalized + (normalized.EndsWith("/v1", StringComparison.Ordinal) ? "" : "/v1") + suffix;
     }
     public async Task<string> Completion(string url, string key, string model, string prompt, CancellationToken token, Action<int>? observeStatus = null,
-        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false, TimeSpan? timeout = null, int? maxTokens = null, int maxAttempts = 3)
+        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false, TimeSpan? timeout = null, int? maxTokens = null, int maxAttempts = 3, bool stream = false)
     {
         var errors = new List<string>();
         var messages = ConversationEnvelope.Create(prompt);
         // An explicit OpenAI effort cannot be silently discarded on protocol fallback.
         foreach (var anthropic in reasoningEffort is null ? new[] { false, true } : new[] { false })
         {
-            try { return await Request(url, key, model, messages, anthropic, token, observeStatus, maxAttempts, reasoningEffort: reasoningEffort, observeReasoningTokens: observeReasoningTokens, statistical: statistical, timeout: timeout, maxTokens: maxTokens); }
+            try { return await Request(url, key, model, messages, anthropic, token, observeStatus, maxAttempts, reasoningEffort: reasoningEffort, observeReasoningTokens: observeReasoningTokens, statistical: statistical, timeout: timeout, maxTokens: maxTokens, stream: stream); }
+            // A broken stream after a 2xx response means the protocol was right; retrying another one only wastes the wait.
+            catch (UpstreamException e) when (e.ProtocolAccepted) { throw new UpstreamException($"{(anthropic ? "anthropic" : "openai")}: {e.Message}"); }
             catch (UpstreamException e) { errors.Add($"{(anthropic ? "anthropic" : "openai")}: {e.Message}"); }
         }
         throw new UpstreamException("接口格式自动探测失败；" + string.Join('；', errors));
     }
     private async Task<string> Request(string url, string key, string model, ConversationMessage[] messages, bool anthropic, CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false,
-        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false, Action<string, string>? observeJuiceFailure = null, TimeSpan? timeout = null, int? maxTokens = null)
+        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false, Action<string, string>? observeJuiceFailure = null, TimeSpan? timeout = null, int? maxTokens = null, bool stream = false)
     {
         var limit = timeout ?? TimeSpan.FromSeconds(240);
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
@@ -41,23 +43,28 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             using var request = new HttpRequestMessage(HttpMethod.Post, CompletionUrl(url, anthropic));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            if (stream) request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
             var agent = Environment.GetEnvironmentVariable("MODELTRACE_USER_AGENT") ?? Environment.GetEnvironmentVariable("GPT56_USER_AGENT");
             request.Headers.TryAddWithoutValidation("User-Agent", string.IsNullOrWhiteSpace(agent) ? DefaultUserAgent : agent.Trim());
             var body = new Dictionary<string, object> { ["model"] = model, ["messages"] = messages };
             if (reasoningEffort is not null) body["reasoning_effort"] = reasoningEffort;
             if (anthropic) { body["max_tokens"] = maxTokens ?? 4096; request.Headers.Add("x-api-key", key); request.Headers.Add("anthropic-version", "2023-06-01"); }
             if (statistical) { body["temperature"] = 1.0; body["max_tokens"] = 256; }
+            if (stream) body["stream"] = true;
             request.Content = JsonContent.Create(body);
             try
             {
-                using var response = await client.SendAsync(request, deadline.Token);
+                using var response = await client.SendAsync(request, stream ? HttpCompletionOption.ResponseHeadersRead : HttpCompletionOption.ResponseContentRead, deadline.Token);
                 observeStatus?.Invoke((int)response.StatusCode);
+                if (response.IsSuccessStatusCode && response.Content.Headers.ContentType?.MediaType == "text/event-stream")
+                    return await ReadEventStream(response, anthropic, observeReasoningTokens, deadline.Token);
                 var text = await response.Content.ReadAsStringAsync(deadline.Token);
                 if (!response.IsSuccessStatusCode)
                 {
                     if (attempt < maxAttempts && Retryable.Contains((int)response.StatusCode)) { await Delay(attempt, token); continue; }
-                    throw new UpstreamException($"HTTP {(int)response.StatusCode}: {CompactError(text)}" + (attempt > 1 ? $"（已自动重试 {attempt - 1} 次）" : ""));
+                    throw new UpstreamException($"HTTP {(int)response.StatusCode}: {CompactError(text)}" + ((int)response.StatusCode == 524 ? "（Cloudflare 等待源站响应超时，通常为 100 秒）" : "") + (attempt > 1 ? $"（已自动重试 {attempt - 1} 次）" : ""));
                 }
+                // Some gateways ignore "stream" and answer with a single JSON body.
                 using var payload = JsonDocument.Parse(text);
                 if (juice)
                 {
@@ -83,6 +90,55 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             { throw new UpstreamException($"接口请求超时（{limit.TotalSeconds:0} 秒）"); }
         }
         throw new UpstreamException("无法连接接口");
+    }
+    // Server-sent events keep long reasoning requests alive behind proxies such as Cloudflare (HTTP 524 after ~100 s idle).
+    private static async Task<string> ReadEventStream(HttpResponseMessage response, bool anthropic, Action<long?>? observeReasoningTokens, CancellationToken token)
+    {
+        var text = new System.Text.StringBuilder();
+        string? finish = null;
+        long? reasoningTokens = null;
+        var events = 0;
+        try
+        {
+            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(token));
+            while (await reader.ReadLineAsync(token) is { } line)
+            {
+                if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+                var data = line[5..].Trim();
+                if (data == "[DONE]") break;
+                if (data.Length == 0) continue;
+                using var chunk = JsonDocument.Parse(data);
+                var root = chunk.RootElement;
+                events++;
+                if (root.TryGetProperty("error", out _)) throw new UpstreamException("流式响应返回错误：" + CompactError(data), protocolAccepted: true);
+                if (anthropic)
+                {
+                    var type = root.TryGetProperty("type", out var kind) ? kind.GetString() : null;
+                    if (type == "content_block_delta" && root.TryGetProperty("delta", out var delta) && delta.TryGetProperty("text", out var piece) && piece.ValueKind == JsonValueKind.String)
+                        text.Append(piece.GetString());
+                    else if (type == "message_delta" && root.TryGetProperty("delta", out var summary) && summary.TryGetProperty("stop_reason", out var stop) && stop.ValueKind == JsonValueKind.String)
+                        finish = stop.GetString();
+                    continue;
+                }
+                if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array)
+                    foreach (var choice in choices.EnumerateArray())
+                    {
+                        if (choice.TryGetProperty("delta", out var delta) && delta.TryGetProperty("content", out var piece) && piece.ValueKind == JsonValueKind.String)
+                            text.Append(piece.GetString());
+                        if (choice.TryGetProperty("finish_reason", out var reason) && reason.ValueKind == JsonValueKind.String) finish = reason.GetString();
+                    }
+                reasoningTokens = ExtractReasoningTokens(root) ?? reasoningTokens;
+            }
+        }
+        catch (Exception e) when (e is IOException or HttpRequestException)
+        { throw new UpstreamException($"流式响应中断（已接收 {text.Length} 个字符）：{e.Message}", protocolAccepted: true); }
+        catch (JsonException)
+        { throw new UpstreamException("流式响应格式异常，无法解析", protocolAccepted: true); }
+        if (finish is "length" or "max_tokens" or "content_filter" or "refusal")
+            throw new UpstreamException($"回答未正常完成（{finish}），本次回答不计入", protocolAccepted: true);
+        if (events == 0) throw new UpstreamException("流式响应为空，未收到任何数据", protocolAccepted: true);
+        observeReasoningTokens?.Invoke(reasoningTokens);
+        return text.ToString();
     }
     private static Task Delay(int attempt, CancellationToken token) => Task.Delay(TimeSpan.FromSeconds(attempt + RandomNumberGenerator.GetInt32(500001) / 1_000_000d), token);
     public static long? ExtractReasoningTokens(JsonElement payload)
@@ -267,4 +323,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         return document.RootElement.Clone();
     }
 }
-public sealed class UpstreamException(string message) : Exception(message);
+public sealed class UpstreamException(string message, bool protocolAccepted = false) : Exception(message)
+{
+    public bool ProtocolAccepted { get; } = protocolAccepted;
+}

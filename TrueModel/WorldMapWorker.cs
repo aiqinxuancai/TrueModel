@@ -134,7 +134,7 @@ public sealed class WorldMapWorker(IServiceScopeFactory scopes, IDataProtectionP
         try
         {
             run.Response = await scope.ServiceProvider.GetRequiredService<ModelTraceClient>().Completion(target.BaseUrl, key, target.Name, run.Prompt, token,
-                observeReasoningTokens: value => reasoningTokens = value, timeout: RequestTimeout, maxTokens: 32_000, maxAttempts: 2);
+                observeReasoningTokens: value => reasoningTokens = value, timeout: RequestTimeout, maxTokens: 32_000, maxAttempts: 2, stream: true);
         }
         catch (Exception e) when (e is UpstreamException or HttpRequestException or System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException)
         {
