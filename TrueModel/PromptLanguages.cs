@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace TrueModel;
 
-public sealed record PromptTranslation(string Attribution, string Hlwy, string Candy, string[] Keywords, string WorldMap, string WorldMapDelivery);
+public sealed record PromptTranslation(string Attribution, string Hlwy, string Candy, string[] Keywords, string WorldMap, string WorldMapDelivery, string CraneRiding);
 
 public static class PromptLanguages
 {
