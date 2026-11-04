@@ -536,9 +536,9 @@ td code { font-size: 12px; }
 /* World map: pixelated 0/1 matrices, never smoothed by the browser. */
 .world-map-cell { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .crane-cell { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.crane-thumb { position: relative; display: inline-grid; place-items: center; width: 92px; height: 64px; padding: 0; border: 1px solid var(--border-strong); border-radius: 4px; background: #fff; overflow: hidden; cursor: zoom-in; }
+.crane-thumb { position: relative; display: inline-grid; place-items: center; width: 138px; height: 96px; padding: 0; border: 1px solid var(--border-strong); border-radius: 4px; background: #fff; overflow: hidden; cursor: zoom-in; }
 .crane-thumb.is-empty { background: var(--surface-2); }
-.crane-thumb img { display: block; width: 90px; height: 62px; object-fit: contain; }
+.crane-thumb img { display: block; width: 135px; height: 93px; object-fit: contain; }
 .crane-status { position: absolute; right: 2px; bottom: 2px; padding: 0 4px; border-radius: 3px; background: var(--surface); font-size: 11px; line-height: 16px; }
 .crane-thumb.is-empty .crane-status { position: static; background: none; }
 .crane-none { font-size: 12px; }
