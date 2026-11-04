@@ -27,6 +27,29 @@ $("themeToggle").onclick = () => {
 };
 applyTheme(document.documentElement.dataset.theme || "light");
 
+// Keep each overview group's visibility independent of model data refreshes.
+for (const group of document.querySelectorAll("#overview [data-overview-group]")) {
+  const button = group.querySelector(".overview-group-toggle");
+  const name = button.querySelector(".overview-group-name").textContent;
+  const panels = button.getAttribute("aria-controls").split(" ").map($);
+  const storageKey = `truemodel-overview-collapsed-${group.dataset.overviewGroup}`;
+  function setCollapsed(collapsed) {
+    group.classList.toggle("is-collapsed", collapsed);
+    button.setAttribute("aria-expanded", String(!collapsed));
+    button.setAttribute("aria-label", `${collapsed ? "展开" : "收起"}${name}分组`);
+    button.title = `${collapsed ? "展开" : "收起"}分组`;
+    for (const panel of panels) panel.hidden = collapsed;
+  }
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(storageKey) === "true"; } catch {}
+  setCollapsed(collapsed);
+  button.addEventListener("click", () => {
+    const collapsed = button.getAttribute("aria-expanded") === "true";
+    setCollapsed(collapsed);
+    try { localStorage.setItem(storageKey, String(collapsed)); } catch {}
+  });
+}
+
 const password = $("loginForm").elements.password;
 $("togglePassword").onclick = () => {
   const visible = password.type === "password";

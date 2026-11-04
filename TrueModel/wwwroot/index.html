@@ -82,14 +82,14 @@
             </div>
             <div id="stats" class="stats"></div>
 
-            <div class="card">
+            <div class="card overview-group" data-overview-group="accurate">
               <div class="card-header">
                 <div>
-                  <h2><i data-lucide="badge-check"></i>最近归因正确率 ≥80%<span id="accurateModelCount" class="count">0</span></h2>
-                  <p class="card-hint">按最近 10 次检测中归因一致的占比筛选；不足 10 次按实际次数计算，失败或无归因结果计为不正确。</p>
+                  <h2><button type="button" class="overview-group-toggle" aria-expanded="true" aria-controls="accurateModelTable accurateModelHint" aria-label="收起最近归因正确率 ≥80% 分组"><i data-lucide="badge-check" aria-hidden="true"></i><span class="overview-group-name">最近归因正确率 ≥80%</span><span id="accurateModelCount" class="count">0</span><i data-lucide="chevron-down" class="overview-group-chevron" aria-hidden="true"></i></button></h2>
+                  <p id="accurateModelHint" class="card-hint">按最近 10 次检测中归因一致的占比筛选；不足 10 次按实际次数计算，失败或无归因结果计为不正确。</p>
                 </div>
               </div>
-              <div class="table-wrap" tabindex="0" aria-label="最近归因正确率达标模型表">
+              <div id="accurateModelTable" class="table-wrap" tabindex="0" aria-label="最近归因正确率达标模型表">
                 <table>
                   <thead>
                     <tr>
@@ -111,11 +111,11 @@
               </div>
             </div>
 
-            <div class="card">
+            <div class="card overview-group" data-overview-group="favorite">
               <div class="card-header">
-                <h2><i data-lucide="star"></i>收藏模型<span id="favoriteModelCount" class="count">0</span></h2>
+                <h2><button type="button" class="overview-group-toggle" aria-expanded="true" aria-controls="favoriteModelTable" aria-label="收起收藏模型分组"><i data-lucide="star" aria-hidden="true"></i><span class="overview-group-name">收藏模型</span><span id="favoriteModelCount" class="count">0</span><i data-lucide="chevron-down" class="overview-group-chevron" aria-hidden="true"></i></button></h2>
               </div>
-              <div class="table-wrap" tabindex="0" aria-label="收藏模型状态表">
+              <div id="favoriteModelTable" class="table-wrap" tabindex="0" aria-label="收藏模型状态表">
                 <table>
                   <thead>
                     <tr>
@@ -137,10 +137,10 @@
               </div>
             </div>
 
-            <div class="card">
+            <div class="card overview-group" data-overview-group="models">
               <div class="card-header">
-                <h2><i data-lucide="boxes"></i>模型状态<span id="modelCount" class="count">0</span></h2>
-                <div class="filters">
+                <h2><button type="button" class="overview-group-toggle" aria-expanded="true" aria-controls="modelTable modelFilters" aria-label="收起模型状态分组"><i data-lucide="boxes" aria-hidden="true"></i><span class="overview-group-name">模型状态</span><span id="modelCount" class="count">0</span><i data-lucide="chevron-down" class="overview-group-chevron" aria-hidden="true"></i></button></h2>
+                <div id="modelFilters" class="filters">
                   <div class="search-field"><i data-lucide="search"></i><input id="search" type="search" placeholder="搜索站点、Key、模型" aria-label="搜索模型" /></div>
                   <select id="statusFilter" aria-label="筛选模型状态">
                     <option value="all">全部状态</option>
@@ -152,7 +152,7 @@
                   </select>
                 </div>
               </div>
-              <div class="table-wrap" tabindex="0" aria-label="模型状态表">
+              <div id="modelTable" class="table-wrap" tabindex="0" aria-label="模型状态表">
                 <table>
                   <thead>
                     <tr>
