@@ -114,11 +114,13 @@ public sealed class CraneRidingRun
     public string ModelName { get; set; } = "";
     public string Status { get; set; } = "Queued";
     public string Language { get; set; } = "zh";
+    public bool SimulatedContext { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
     public long? LatencyMs { get; set; }
     public long? ReasoningTokens { get; set; }
     public string? Prompt { get; set; }
+    public string? ConversationJson { get; set; }
     public string? Response { get; set; }
     public string? Svg { get; set; }
     public string? Error { get; set; }
@@ -141,6 +143,7 @@ public sealed class AppSettings
     public string Candy3Language { get; set; } = "zh";
     public string WorldMapLanguage { get; set; } = "zh";
     public string CraneRidingLanguage { get; set; } = "zh";
+    public bool CraneRidingSimulatedContext { get; set; }
     public string DetectionMethod { get; set; } = "modeltrace";
     public int HlwyConcurrency { get; set; } = 5;
     public int HlwySampleCount { get; set; } = 100;

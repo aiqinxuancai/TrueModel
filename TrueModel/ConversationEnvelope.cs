@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Serialization;
 
 namespace TrueModel;
@@ -9,6 +10,17 @@ public sealed record ConversationMessage(
 
 public static class ConversationEnvelope
 {
+    public const int MinimumSimulatedTurns = 64;
+    // Roughly 15k tokens at four English characters per token; actual tokenization varies by model.
+    public const int MinimumSimulatedCharacters = 60_000;
+    private static readonly (string Topic, string Unit)[] ContextTopics =
+    [
+        ("notebook inventory", "notebooks"), ("library shelf inventory", "books"),
+        ("reading progress", "pages"), ("garden container capacity", "litres"),
+        ("walking distance", "metres"), ("practice session duration", "minutes"),
+        ("packing box inventory", "items"), ("ribbon length", "centimetres"),
+    ];
+
     // Pick a language first, then independently vary both sides of the greeting.
     // Keep the prelude neutral: it must not prescribe an answer or a language.
     private static readonly (string[] Users, string[] Assistants)[] Greetings =
@@ -40,5 +52,34 @@ public static class ConversationEnvelope
             new("assistant", greeting.Assistants[RandomNumberGenerator.GetInt32(greeting.Assistants.Length)]),
             new("user", prompt),
         ];
+    }
+
+    public static ConversationMessage[] CreateSimulatedContext(string prompt)
+    {
+        var messages = Create(prompt)[..2].ToList();
+        var characters = messages.Sum(m => m.Content.Length);
+        // Generate complete, neutral U/A turns locally. Only the final question is sent for completion.
+        while (messages.Count / 2 < MinimumSimulatedTurns || characters < MinimumSimulatedCharacters)
+        {
+            var (topic, unit) = ContextTopics[RandomNumberGenerator.GetInt32(ContextTopics.Length)];
+            var values = Enumerable.Range(0, 6).Select(_ => RandomNumberGenerator.GetInt32(10, 1000)).ToArray();
+            var batch = messages.Count / 2;
+            var question = new StringBuilder($"Please check {topic} batch {batch}. Summarize each entry with a running total, then give the overall total, the smallest and largest values, and the values in ascending order. These are the six recorded entries:\n");
+            var answer = new StringBuilder($"Here is the summary of the six entries in {topic} batch {batch}, measured in {unit}:\n");
+            var total = 0;
+            for (var i = 0; i < values.Length; i++)
+            {
+                question.AppendLine($"Entry {i + 1}: {values[i]} {unit}.");
+                total += values[i];
+                answer.AppendLine($"Entry {i + 1} contains {values[i]} {unit}. After including this entry, the running total for entries 1 through {i + 1} is {total} {unit}.");
+            }
+            answer.AppendLine($"The overall total is {total} {unit} across all six entries. The smallest recorded value is {values.Min()} {unit}, and the largest is {values.Max()} {unit}.");
+            answer.Append($"In ascending order, the values are {string.Join(", ", values.Order())} {unit}. This completes the summary of this batch.");
+            messages.Add(new("user", question.ToString()));
+            messages.Add(new("assistant", answer.ToString()));
+            characters += question.Length + answer.Length;
+        }
+        messages.Add(new("user", prompt));
+        return messages.ToArray();
     }
 }

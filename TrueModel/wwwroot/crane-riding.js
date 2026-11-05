@@ -9,7 +9,7 @@ function craneSeconds(ms) { return ms == null ? '—' : (ms / 1000).toFixed(1) +
 function craneTooltip(run, count) {
     if (!run) return '尚未进行丹顶鹤骑行检测';
     const elapsed = craneIsBusy(run) ? `\n已等待：${relativeTime(run.createdAt).replace('前', '')}` : '';
-    return `丹顶鹤骑行 · ${craneStatusNames[run.status] || run.status}${elapsed}\n时间：${time(run.createdAt)}\n语言：${craneLanguageNames[run.language] || run.language}\n模型用时：${craneSeconds(run.latencyMs)} · Reason Tok：${run.reasoningTokens ?? '—'}${run.error ? '\n' + run.error : ''}\n点击查看最近 ${count} 次记录`;
+    return `丹顶鹤骑行 · ${craneStatusNames[run.status] || run.status}${elapsed}\n时间：${time(run.createdAt)}\n语言：${craneLanguageNames[run.language] || run.language}\n10k+ 模拟上下文：${run.simulatedContext ? '开启' : '关闭'}\n模型用时：${craneSeconds(run.latencyMs)} · Reason Tok：${run.reasoningTokens ?? '—'}${run.error ? '\n' + run.error : ''}\n点击查看最近 ${count} 次记录`;
 }
 function craneRidingCell(model) {
     const entry = craneRides.find(r => r.modelId === model.id);
@@ -36,15 +36,25 @@ async function startCraneRiding(id) {
 }
 function craneHistoryItem(run) {
     const selected = run.id === craneSelectedRun;
-    return `<button type="button" class="crane-history-item${selected ? ' is-selected' : ''}" data-crane-run="${run.id}" aria-pressed="${selected}">${run.status === 'Success' ? `<img src="/api/crane-rides/${run.id}/image.svg" alt="丹顶鹤骑行检测结果">` : `<span class="crane-history-placeholder probe-${esc(run.status)}">${esc(craneStatusNames[run.status] || run.status)}</span>`}<span class="crane-history-meta"><span>${esc(time(run.createdAt))}</span><span class="probe-${esc(run.status)}">${esc(craneStatusNames[run.status] || run.status)} · ${esc(craneLanguageNames[run.language] || run.language)}</span></span></button>`;
+    return `<button type="button" class="crane-history-item${selected ? ' is-selected' : ''}" data-crane-run="${run.id}" aria-pressed="${selected}">${run.status === 'Success' ? `<img src="/api/crane-rides/${run.id}/image.svg" alt="丹顶鹤骑行检测结果">` : `<span class="crane-history-placeholder probe-${esc(run.status)}">${esc(craneStatusNames[run.status] || run.status)}</span>`}<span class="crane-history-meta"><span>${esc(time(run.createdAt))}</span><span class="probe-${esc(run.status)}">${esc(craneStatusNames[run.status] || run.status)} · ${esc(craneLanguageNames[run.language] || run.language)}${run.simulatedContext ? ' · 10k+' : ''}</span></span></button>`;
+}
+function craneConversationDetail(run) {
+    if (!run.conversationJson) return '';
+    const messages = JSON.parse(run.conversationJson);
+    const history = messages.slice(0, -1);
+    const estimatedTokens = history.reduce((sum, m) => sum + m.content.length, 0) / 4;
+    const text = messages.map(m => `${m.role === 'user' ? 'U' : 'A'}:\n${m.content}`).join('\n\n');
+    return `<details><summary>请求对话（${history.length / 2} 轮 U/A 上下文 · 约 ${(estimatedTokens / 1000).toFixed(1)}k tokens，估算）</summary><pre>${esc(text)}</pre></details>`;
 }
 function craneRunDetail(run) {
     return `${run.status === 'Success' ? `<img class="crane-large" src="/api/crane-rides/${run.id}/image.svg" alt="${esc(run.modelName)} 绘制的丹顶鹤骑自行车"><div class="crane-downloads"><a href="/api/crane-rides/${run.id}/image.svg?download=true" download>下载 SVG</a></div>` : ''}
 <div class="detail-metrics"><div><span>状态</span><strong class="probe-${esc(run.status)}">${esc(craneStatusNames[run.status] || run.status)}</strong></div><div><span>模型用时</span><strong>${craneSeconds(run.latencyMs)}</strong></div><div><span>Reason Tok</span><strong>${esc(run.reasoningTokens ?? '—')}</strong></div></div>
 <p class="muted">${esc(time(run.createdAt))} · 题目语言：${esc(craneLanguageNames[run.language] || run.language)}${run.completedAt ? ' · 完成于 ' + esc(time(run.completedAt)) : ''}</p>
+<p class="muted">10k+ 模拟上下文：${run.simulatedContext ? '开启（先模拟多轮 U/A 对话再提问）' : '关闭'}</p>
 ${run.error ? `<p class="inline-error">${esc(run.error)}</p>` : ''}
 ${run.svg ? `<details><summary>展示用 SVG 源代码</summary><pre>${esc(run.svg)}</pre></details>` : ''}
 ${run.prompt ? `<details><summary>题目</summary><pre>${esc(run.prompt)}</pre></details>` : ''}
+${craneConversationDetail(run)}
 ${run.response ? `<details><summary>模型完整回复</summary><pre>${esc(run.response)}</pre></details>` : ''}`;
 }
 async function openCraneHistory(modelId, runId) {

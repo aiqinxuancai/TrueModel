@@ -1,10 +1,11 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 namespace TrueModel;
 
-// Manual only; queued tasks survive page closure and retain the language chosen on submission.
+// Manual only; queued tasks survive page closure and retain settings chosen on submission.
 public sealed class CraneRidingWorker(IServiceScopeFactory scopes, IDataProtectionProvider protection, ILogger<CraneRidingWorker> logger) : BackgroundService
 {
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(30);
@@ -56,12 +57,14 @@ public sealed class CraneRidingWorker(IServiceScopeFactory scopes, IDataProtecti
             {
                 key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue);
                 run.Prompt = CraneRidingProbe.CreatePrompt(PromptLanguages.IsValid(run.Language) ? run.Language : "zh");
+                var conversation = run.SimulatedContext ? ConversationEnvelope.CreateSimulatedContext(run.Prompt) : null;
+                if (conversation is not null) run.ConversationJson = JsonSerializer.Serialize(conversation);
                 await db.SaveChangesAsync(token);
                 var watch = Stopwatch.StartNew();
                 try
                 {
                     run.Response = await scope.ServiceProvider.GetRequiredService<ModelTraceClient>().Completion(target.BaseUrl, key, target.Name, run.Prompt, token,
-                        observeReasoningTokens: value => run.ReasoningTokens = value, timeout: RequestTimeout, maxTokens: 32_000, maxAttempts: 2, stream: true);
+                        observeReasoningTokens: value => run.ReasoningTokens = value, timeout: RequestTimeout, maxTokens: 32_000, maxAttempts: 2, stream: true, conversation: conversation);
                 }
                 finally { run.LatencyMs = watch.ElapsedMilliseconds; }
                 run.Svg = CraneRidingProbe.ExtractSvg(run.Response);

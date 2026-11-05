@@ -302,6 +302,7 @@
             <div class="settings-tabs" role="tablist" aria-label="设置分类">
               <button id="mtTab" class="settings-tab selected" role="tab" aria-selected="true" aria-controls="mtPanel"><i data-lucide="target"></i>ModelTrace 方式</button>
               <button id="hlwyTab" class="settings-tab" role="tab" aria-selected="false" aria-controls="hlwyPanel" tabindex="-1"><i data-lucide="chart-column"></i>HLWY 方式</button>
+              <button id="craneTab" class="settings-tab" role="tab" aria-selected="false" aria-controls="cranePanel" tabindex="-1"><i data-lucide="bike"></i>丹顶鹤骑行</button>
               <button id="commonTab" class="settings-tab" role="tab" aria-selected="false" aria-controls="commonPanel" tabindex="-1"><i data-lucide="sliders"></i>通用设置</button>
             </div>
 
@@ -360,6 +361,39 @@
                     </div>
                   </div>
                   <p class="notice info"><i data-lucide="info"></i><span>默认基准更新、导入和恢复默认请前往“指纹库 → HLWY 基准”。</span></p>
+                </div>
+              </div>
+
+              <!-- 丹顶鹤骑行特殊设置 -->
+              <div id="cranePanel" class="settings-panel card" role="tabpanel" aria-labelledby="craneTab" hidden>
+                <div class="settings-section">
+                  <h2>丹顶鹤骑行特殊设置</h2>
+                  <p class="section-hint">仅用于手动丹顶鹤骑行检测；已排队任务保留提交时的设置。</p>
+                  <div class="setting-group">
+                    <label for="craneRidingLanguage"><span class="label-text">丹顶鹤骑行题目语言</span><span class="label-hint">绘图题目使用的语言</span></label>
+                    <div class="input-wrapper">
+                      <select id="craneRidingLanguage" name="craneRidingLanguage">
+                        <option value="zh">中文</option>
+                        <option value="en">英语</option>
+                        <option value="ja">日语</option>
+                        <option value="ko">韩语</option>
+                        <option value="fr">法语</option>
+                        <option value="es">西班牙语</option>
+                        <option value="de">德语</option>
+                        <option value="pt">葡萄牙语</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="setting-group">
+                    <span class="setting-label">
+                      <span class="label-text">10k+ 模拟上下文</span>
+                      <span class="label-hint">默认关闭</span>
+                    </span>
+                    <div class="input-wrapper">
+                      <label class="switch"><input name="craneRidingSimulatedContext" type="checkbox" role="switch" /><span class="switch-track" aria-hidden="true"></span><span>先模拟多轮 U/A 对话再提问</span></label>
+                      <span class="input-hint">开启后先加入至少 64 轮用户/助手历史对话，再发送丹顶鹤骑行题目。对话在本地生成，随题目一次发送；10k+ token 为长度估算，实际用量随模型而异，会增加输入用量和请求耗时。</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -467,21 +501,6 @@
                     <label for="candy3Language"><span class="label-text">糖果第三题语言</span><span class="label-hint">第三题独立选择语言</span></label>
                     <div class="input-wrapper">
                       <select id="candy3Language" name="candy3Language">
-                        <option value="zh">中文</option>
-                        <option value="en">英语</option>
-                        <option value="ja">日语</option>
-                        <option value="ko">韩语</option>
-                        <option value="fr">法语</option>
-                        <option value="es">西班牙语</option>
-                        <option value="de">德语</option>
-                        <option value="pt">葡萄牙语</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div class="setting-group">
-                    <label for="craneRidingLanguage"><span class="label-text">丹顶鹤骑行题目语言</span><span class="label-hint">仅手动丹顶鹤骑行检测使用</span></label>
-                    <div class="input-wrapper">
-                      <select id="craneRidingLanguage" name="craneRidingLanguage">
                         <option value="zh">中文</option>
                         <option value="en">英语</option>
                         <option value="ja">日语</option>

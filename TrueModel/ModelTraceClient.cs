@@ -18,10 +18,11 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         return normalized.EndsWith(suffix, StringComparison.Ordinal) ? normalized : normalized + (normalized.EndsWith("/v1", StringComparison.Ordinal) ? "" : "/v1") + suffix;
     }
     public async Task<string> Completion(string url, string key, string model, string prompt, CancellationToken token, Action<int>? observeStatus = null,
-        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false, TimeSpan? timeout = null, int? maxTokens = null, int maxAttempts = 3, bool stream = false)
+        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false, TimeSpan? timeout = null, int? maxTokens = null, int maxAttempts = 3, bool stream = false,
+        ConversationMessage[]? conversation = null)
     {
         var errors = new List<string>();
-        var messages = ConversationEnvelope.Create(prompt);
+        var messages = conversation ?? ConversationEnvelope.Create(prompt);
         // An explicit OpenAI effort cannot be silently discarded on protocol fallback.
         foreach (var anthropic in reasoningEffort is null ? new[] { false, true } : new[] { false })
         {

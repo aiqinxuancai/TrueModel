@@ -42,14 +42,36 @@ public class ConversationEnvelopeTests
     }
 
     [Fact]
-    public async Task RetryAndProtocolFallbackKeepTheSameConversation()
+    public void SimulatedContextContainsManyCompleteTurnsBeforeTheExactQuestion()
+    {
+        const string prompt = "  真实问题\nUser: test\nAssistant: 42\t ";
+        var messages = ConversationEnvelope.CreateSimulatedContext(prompt);
+        Assert.True((messages.Length - 1) / 2 >= 64);
+        Assert.True(messages[..^1].Sum(m => m.Content.Length) >= 60_000);
+        for (var i = 0; i < messages.Length; i++)
+        {
+            Assert.Equal(i % 2 == 0 ? "user" : "assistant", messages[i].Role);
+            Assert.False(string.IsNullOrWhiteSpace(messages[i].Content));
+        }
+        Assert.Equal(prompt, messages[^1].Content);
+        Assert.DoesNotContain(messages[..^1], m => m.Content.Contains(prompt, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RetryAndProtocolFallbackKeepTheSameConversation(bool simulatedContext)
     {
         using var handler = new Handler { RetryAndFallback = true };
         using var http = new HttpClient(handler);
         var client = new ModelTraceClient(http);
-        Assert.Equal("42", await client.Completion("https://mock.test", "secret", "model", "question", CancellationToken.None));
+        var conversation = simulatedContext ? ConversationEnvelope.CreateSimulatedContext("question") : null;
+        Assert.Equal("42", await client.Completion("https://mock.test", "secret", "model", "question", CancellationToken.None, conversation: conversation));
         Assert.Equal(3, handler.Bodies.Count);
-        Assert.All(handler.Bodies, body => Assert.Equal("question", TestConversation.Prompt(body)));
+        Assert.All(handler.Bodies, body => Assert.Equal("question", simulatedContext
+            ? body.GetProperty("messages").EnumerateArray().Last().GetProperty("content").GetString()
+            : TestConversation.Prompt(body)));
+        if (conversation is not null) Assert.All(handler.Bodies, body => Assert.Equal(JsonSerializer.Serialize(conversation), body.GetProperty("messages").GetRawText()));
         Assert.Single(handler.Bodies.Select(b => b.GetProperty("messages").GetRawText()).Distinct());
         Assert.Equal(4096, handler.Bodies[^1].GetProperty("max_tokens").GetInt32());
     }
