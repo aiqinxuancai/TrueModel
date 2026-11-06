@@ -104,7 +104,7 @@ using (var scope = app.Services.CreateScope())
         using (var reader = await command.ExecuteReaderAsync())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
         var additions = table == "Settings"
-            ? new Dictionary<string, string> { ["AttributionLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CandyLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy2Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy3Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["WorldMapLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CraneRidingLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CraneRidingSimulatedContext"] = "INTEGER NOT NULL DEFAULT 0", ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''", ["JuiceReasoningEffort"] = "TEXT NOT NULL DEFAULT 'default'" }
+            ? new Dictionary<string, string> { ["AttributionLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CandyLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy2Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy3Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["WorldMapLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CraneRidingLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CraneRidingSimulatedContext"] = "INTEGER NOT NULL DEFAULT 0", ["CraneRidingReasoningEffort"] = "TEXT NOT NULL DEFAULT 'medium'", ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''", ["JuiceReasoningEffort"] = "TEXT NOT NULL DEFAULT 'default'" }
             : new Dictionary<string, string> { ["DetectionSettingsJson"] = "TEXT NULL" };
         foreach (var column in additions)
             if (!columns.Contains(column.Key))
@@ -205,7 +205,7 @@ using (var scope = app.Services.CreateScope())
         CREATE TABLE IF NOT EXISTS CraneRidingRuns (
           Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, ModelId INTEGER NOT NULL, ModelName TEXT NOT NULL, Status TEXT NOT NULL,
           Language TEXT NOT NULL, CreatedAt TEXT NOT NULL, CompletedAt TEXT NULL, LatencyMs INTEGER NULL, ReasoningTokens INTEGER NULL,
-          SimulatedContext INTEGER NOT NULL DEFAULT 0, ConversationJson TEXT NULL,
+          SimulatedContext INTEGER NOT NULL DEFAULT 0, ConversationJson TEXT NULL, ReasoningEffort TEXT NOT NULL DEFAULT 'default',
           Prompt TEXT NULL, Response TEXT NULL, Svg TEXT NULL, Error TEXT NULL);
         CREATE INDEX IF NOT EXISTS IX_CraneRidingRuns_ModelId ON CraneRidingRuns (ModelId);
         """);
@@ -219,6 +219,7 @@ using (var scope = app.Services.CreateScope())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
         if (!columns.Contains("SimulatedContext")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE CraneRidingRuns ADD COLUMN SimulatedContext INTEGER NOT NULL DEFAULT 0");
         if (!columns.Contains("ConversationJson")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE CraneRidingRuns ADD COLUMN ConversationJson TEXT NULL");
+        if (!columns.Contains("ReasoningEffort")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE CraneRidingRuns ADD COLUMN ReasoningEffort TEXT NOT NULL DEFAULT 'default'");
     }
     using (var command = db.Database.GetDbConnection().CreateCommand())
     {
@@ -662,6 +663,7 @@ api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
     if (input.IntervalMinutes < 0 || input.IntervalMinutes > 525600 || input.MaxConcurrency is < 1 or > 16 || input.TimeoutSeconds is < 5 or > 600 || input.ChallengeCount is < 3 or > 6) return Results.BadRequest();
     if (!CandyProbe.ValidReasoningEffort(input.CandyReasoningEffort)) return Results.BadRequest(new { error = "不支持的糖果思考等级" });
     if (!CandyProbe.ValidReasoningEffort(input.JuiceReasoningEffort)) return Results.BadRequest(new { error = "不支持的 Juice 思考等级" });
+    if (!CandyProbe.ValidReasoningEffort(input.CraneRidingReasoningEffort)) return Results.BadRequest(new { error = "不支持的丹顶鹤骑行思考等级" });
     if (new[] { input.AttributionLanguage, input.CandyLanguage, input.Candy2Language, input.Candy3Language, input.WorldMapLanguage, input.CraneRidingLanguage }.Any(l => !PromptLanguages.IsValid(l)))
         return Results.BadRequest(new { error = "不支持的题目语言" });
     var settings = await db.Settings.SingleAsync();
@@ -685,6 +687,7 @@ api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
     if (payload.EnumerateObject().Any(p => p.Name.Equals("worldMapLanguage", StringComparison.OrdinalIgnoreCase))) settings.WorldMapLanguage = input.WorldMapLanguage;
     if (payload.EnumerateObject().Any(p => p.Name.Equals("craneRidingLanguage", StringComparison.OrdinalIgnoreCase))) settings.CraneRidingLanguage = input.CraneRidingLanguage;
     if (payload.EnumerateObject().Any(p => p.Name.Equals("craneRidingSimulatedContext", StringComparison.OrdinalIgnoreCase))) settings.CraneRidingSimulatedContext = input.CraneRidingSimulatedContext;
+    if (payload.EnumerateObject().Any(p => p.Name.Equals("craneRidingReasoningEffort", StringComparison.OrdinalIgnoreCase))) settings.CraneRidingReasoningEffort = input.CraneRidingReasoningEffort;
     settings.IntervalMinutes = input.IntervalMinutes; settings.MaxConcurrency = input.MaxConcurrency; settings.TimeoutSeconds = 240; settings.ChallengeCount = input.ChallengeCount;
     settings.NextRunAt = input.IntervalMinutes > 0 ? DateTime.UtcNow.AddMinutes(input.IntervalMinutes) : null;
     await db.SaveChangesAsync(); return Results.NoContent();

@@ -4,23 +4,23 @@ using Microsoft.EntityFrameworkCore;
 
 namespace TrueModel;
 
-public sealed record CraneRidingSummary(int Id, int ModelId, string ModelName, string Status, string Language, bool SimulatedContext,
+public sealed record CraneRidingSummary(int Id, int ModelId, string ModelName, string Status, string Language, bool SimulatedContext, string ReasoningEffort,
     DateTime CreatedAt, DateTime? CompletedAt, long? LatencyMs, long? ReasoningTokens, string? Error);
 
 public static class CraneRidingEndpoints
 {
     private static readonly Expression<Func<CraneRidingRun, CraneRidingSummary>> Summary = r =>
-        new(r.Id, r.ModelId, r.ModelName, r.Status, r.Language, r.SimulatedContext, r.CreatedAt, r.CompletedAt, r.LatencyMs, r.ReasoningTokens, r.Error);
+        new(r.Id, r.ModelId, r.ModelName, r.Status, r.Language, r.SimulatedContext, r.ReasoningEffort, r.CreatedAt, r.CompletedAt, r.LatencyMs, r.ReasoningTokens, r.Error);
 
     public static void MapCraneRides(this RouteGroupBuilder api)
     {
         api.MapPost("/models/{id:int}/crane-riding", async (int id, AppDb db, CancellationToken token) =>
         {
-            var settings = await db.Settings.Select(s => new { s.CraneRidingLanguage, s.CraneRidingSimulatedContext }).SingleAsync(token);
+            var settings = await db.Settings.Select(s => new { s.CraneRidingLanguage, s.CraneRidingSimulatedContext, s.CraneRidingReasoningEffort }).SingleAsync(token);
             // Snapshot probe settings and de-duplicate concurrent submissions in one SQLite statement.
             var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
-                INSERT INTO CraneRidingRuns (ModelId, ModelName, Status, Language, SimulatedContext, CreatedAt)
-                SELECT Id, Name, 'Queued', {settings.CraneRidingLanguage}, {settings.CraneRidingSimulatedContext}, {DateTime.UtcNow} FROM Models WHERE Id = {id}
+                INSERT INTO CraneRidingRuns (ModelId, ModelName, Status, Language, SimulatedContext, ReasoningEffort, CreatedAt)
+                SELECT Id, Name, 'Queued', {settings.CraneRidingLanguage}, {settings.CraneRidingSimulatedContext}, {settings.CraneRidingReasoningEffort}, {DateTime.UtcNow} FROM Models WHERE Id = {id}
                 AND NOT EXISTS (SELECT 1 FROM CraneRidingRuns WHERE ModelId = {id} AND Status IN ('Queued', 'Running'))
                 """, token);
             if (inserted == 0)

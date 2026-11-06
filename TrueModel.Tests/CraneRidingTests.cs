@@ -83,6 +83,7 @@ public class CraneRidingTests
         Assert.Equal(HttpStatusCode.Unauthorized, (await browser.GetAsync("/api/crane-rides/1/image.svg")).StatusCode);
         await Login(browser);
         var modelId = await SeedModel(app, "ja");
+        Assert.Equal("medium", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingReasoningEffort").GetString());
         Assert.Equal(HttpStatusCode.NotFound, (await browser.PostAsJsonAsync("/api/models/99999/crane-riding", new { })).StatusCode);
         Assert.Equal(HttpStatusCode.Accepted, (await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { })).StatusCode);
         await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(20));
@@ -92,6 +93,8 @@ public class CraneRidingTests
         Assert.Equal("Success", run.GetProperty("status").GetString());
         Assert.Equal(1, handler.Calls);
         Assert.True(handler.StreamRequested);
+        Assert.Equal("medium", handler.ReasoningEffort);
+        Assert.Equal("medium", run.GetProperty("reasoningEffort").GetString());
         Assert.Equal(3, handler.Messages.GetArrayLength());
         Assert.False(run.GetProperty("simulatedContext").GetBoolean());
         Assert.Contains("タンチョウ", CandyTestPrompts.WithoutWhitespace(handler.Prompt));
@@ -99,6 +102,7 @@ public class CraneRidingTests
         var id = run.GetProperty("id").GetInt32();
         var detail = await browser.GetFromJsonAsync<JsonElement>($"/api/crane-rides/{id}");
         Assert.Equal(handler.Prompt, detail.GetProperty("prompt").GetString());
+        Assert.Equal("medium", detail.GetProperty("reasoningEffort").GetString());
         Assert.Equal(JsonValueKind.Null, detail.GetProperty("conversationJson").ValueKind);
         Assert.Equal(handler.Reply, detail.GetProperty("response").GetString());
         var image = await browser.GetAsync($"/api/crane-rides/{id}/image.svg");
@@ -120,6 +124,49 @@ public class CraneRidingTests
         Assert.Equal(id, latest[0].GetProperty("latestSuccessId").GetInt32());
         Assert.Equal(failedId, latest[0].GetProperty("latest").GetProperty("id").GetInt32());
         Assert.Equal(2, latest[0].GetProperty("count").GetInt32());
+        Assert.Equal("medium", latest[0].GetProperty("latest").GetProperty("reasoningEffort").GetString());
+    }
+
+    [Fact]
+    public async Task ReasoningEffortLevelsAreValidatedAndSentToTheModel()
+    {
+        using var handler = new SvgHandler(Svg);
+        await using var app = Create(NewDirectory(), handler);
+        using var browser = app.CreateClient();
+        await Login(browser);
+        var modelId = await SeedModel(app, "zh");
+        foreach (var effort in new[] { "default", "none", "minimal", "low", "medium", "high", "xhigh" })
+        {
+            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingReasoningEffort = effort })).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { challengeCount = 4 })).StatusCode);
+            Assert.Equal(effort, (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingReasoningEffort").GetString());
+            Assert.Equal(HttpStatusCode.Accepted, (await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { })).StatusCode);
+            var run = await WaitForCompletion(browser, modelId);
+            Assert.Equal("Success", run.GetProperty("status").GetString());
+            Assert.Equal(effort, run.GetProperty("reasoningEffort").GetString());
+            Assert.Equal(effort == "default" ? null : effort, handler.ReasoningEffort);
+        }
+        Assert.Equal(7, handler.Calls);
+        foreach (var invalid in new object?[] { null, "", "invalid", "Medium", 123 })
+            Assert.Equal(HttpStatusCode.BadRequest, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingReasoningEffort = invalid })).StatusCode);
+        Assert.Equal("xhigh", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingReasoningEffort").GetString());
+    }
+
+    [Fact]
+    public async Task UnsupportedExplicitEffortFailsWithoutDroppingTheRequestedLevel()
+    {
+        using var handler = new SvgHandler(Svg) { RejectExplicitEffort = true };
+        await using var app = Create(NewDirectory(), handler);
+        using var browser = app.CreateClient();
+        await Login(browser);
+        var modelId = await SeedModel(app, "zh");
+        Assert.Equal(HttpStatusCode.Accepted, (await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { })).StatusCode);
+        var run = await WaitForCompletion(browser, modelId);
+        Assert.Equal("Failed", run.GetProperty("status").GetString());
+        Assert.Equal("medium", run.GetProperty("reasoningEffort").GetString());
+        Assert.Contains("unsupported reasoning_effort", run.GetProperty("error").GetString());
+        Assert.Equal("medium", handler.ReasoningEffort);
+        Assert.Equal(1, handler.Calls);
     }
 
     [Fact]
@@ -132,6 +179,7 @@ public class CraneRidingTests
             await legacy.Database.EnsureCreatedAsync();
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CraneRidingLanguage");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CraneRidingSimulatedContext");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CraneRidingReasoningEffort");
             await legacy.Database.ExecuteSqlRawAsync("DROP TABLE CraneRidingRuns");
             legacy.WorldMaps.Add(new WorldMapRun { ModelId = 999, ModelName = "old map", Status = "Queued" });
             await legacy.SaveChangesAsync();
@@ -144,22 +192,24 @@ public class CraneRidingTests
             await Login(browser);
             Assert.Equal("zh", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingLanguage").GetString());
             Assert.False((await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingSimulatedContext").GetBoolean());
+            Assert.Equal("medium", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingReasoningEffort").GetString());
             foreach (var language in new[] { "zh", "en", "ja", "ko", "fr", "es", "de", "pt" })
                 Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingLanguage = language })).StatusCode);
             foreach (var invalid in new string?[] { null, "", "xx" })
                 Assert.Equal(HttpStatusCode.BadRequest, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingLanguage = invalid })).StatusCode);
             modelId = await SeedModel(app, "ja");
-            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingSimulatedContext = true })).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingSimulatedContext = true, craneRidingReasoningEffort = "high" })).StatusCode);
             Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { challengeCount = 4 })).StatusCode);
             Assert.True((await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingSimulatedContext").GetBoolean());
             Assert.Equal(HttpStatusCode.Accepted, (await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { })).StatusCode);
             Assert.Equal(HttpStatusCode.Conflict, (await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { })).StatusCode);
-            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingLanguage = "de", craneRidingSimulatedContext = false })).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingLanguage = "de", craneRidingSimulatedContext = false, craneRidingReasoningEffort = "low" })).StatusCode);
             Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { challengeCount = 4 })).StatusCode);
             using var scope = app.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDb>();
             Assert.Equal("ja", (await db.CraneRides.SingleAsync()).Language);
             Assert.True((await db.CraneRides.SingleAsync()).SimulatedContext);
+            Assert.Equal("high", (await db.CraneRides.SingleAsync()).ReasoningEffort);
             Assert.Equal("Queued", (await db.WorldMaps.SingleAsync()).Status);
             var interrupted = new CraneRidingRun { ModelId = modelId + 1, Status = "Running" };
             db.CraneRides.Add(interrupted);
@@ -181,33 +231,40 @@ public class CraneRidingTests
             Assert.Equal("Success", run.GetProperty("status").GetString());
             Assert.Equal("ja", run.GetProperty("language").GetString());
             Assert.True(run.GetProperty("simulatedContext").GetBoolean());
+            Assert.Equal("high", run.GetProperty("reasoningEffort").GetString());
+            Assert.Equal("high", handler.ReasoningEffort);
             Assert.True((handler.Messages.GetArrayLength() - 1) / 2 >= 64);
             Assert.True(handler.Messages.EnumerateArray().SkipLast(1).Sum(m => m.GetProperty("content").GetString()!.Length) >= 60_000);
             var detail = await browser.GetFromJsonAsync<JsonElement>($"/api/crane-rides/{run.GetProperty("id").GetInt32()}");
             Assert.Equal(handler.Messages.GetRawText(), detail.GetProperty("conversationJson").GetString());
             Assert.Equal(handler.Prompt, detail.GetProperty("prompt").GetString());
+            Assert.Equal("high", detail.GetProperty("reasoningEffort").GetString());
             Assert.True(handler.StreamRequested);
             Assert.Equal(1, handler.Calls);
             Assert.Contains("タンチョウ", CandyTestPrompts.WithoutWhitespace(handler.Prompt));
             Assert.Equal("de", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingLanguage").GetString());
             Assert.False((await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingSimulatedContext").GetBoolean());
+            Assert.Equal("low", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingReasoningEffort").GetString());
             Assert.Equal("Interrupted", (await browser.GetFromJsonAsync<JsonElement>($"/api/crane-rides/{interruptedId}")).GetProperty("status").GetString());
         }
     }
 
     [Fact]
-    public async Task ExistingCraneHistoryUpgradesWithSimulatedContextDisabled()
+    public async Task ExistingCraneHistoryUpgradesWithOriginalRequestDefaults()
     {
         var directory = NewDirectory();
         var options = new DbContextOptionsBuilder<AppDb>().UseSqlite($"Data Source={Path.Combine(directory, "test.db")}").Options;
         await using (var legacy = new AppDb(options))
         {
             await legacy.Database.EnsureCreatedAsync();
+            legacy.Settings.Add(new AppSettings());
             legacy.CraneRides.Add(new CraneRidingRun { Status = "Success", Svg = Svg, Prompt = "old question" });
             await legacy.SaveChangesAsync();
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE CraneRidingRuns DROP COLUMN SimulatedContext");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE CraneRidingRuns DROP COLUMN ConversationJson");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE CraneRidingRuns DROP COLUMN ReasoningEffort");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CraneRidingSimulatedContext");
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CraneRidingReasoningEffort");
         }
         using var handler = new SvgHandler(Svg);
         await using var app = Create(directory, handler, worker: false);
@@ -218,8 +275,10 @@ public class CraneRidingTests
         Assert.Equal("old question", detail.GetProperty("prompt").GetString());
         Assert.Equal(Svg, detail.GetProperty("svg").GetString());
         Assert.False(detail.GetProperty("simulatedContext").GetBoolean());
+        Assert.Equal("default", detail.GetProperty("reasoningEffort").GetString());
         Assert.Equal(JsonValueKind.Null, detail.GetProperty("conversationJson").ValueKind);
         Assert.False((await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingSimulatedContext").GetBoolean());
+        Assert.Equal("medium", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingReasoningEffort").GetString());
         foreach (var enabled in new[] { true, false })
         {
             Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingSimulatedContext = enabled })).StatusCode);
@@ -313,6 +372,8 @@ public class CraneRidingTests
         public JsonElement Messages;
         public int Calls;
         public bool StreamRequested;
+        public string? ReasoningEffort;
+        public bool RejectExplicitEffort;
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -322,8 +383,11 @@ public class CraneRidingTests
             Messages = body.GetProperty("messages").Clone();
             Prompt = Messages[Messages.GetArrayLength() - 1].GetProperty("content").GetString()!;
             StreamRequested = body.GetProperty("stream").GetBoolean();
+            ReasoningEffort = body.TryGetProperty("reasoning_effort", out var effort) ? effort.GetString() : null;
             Started.TrySetResult();
             if (hold) await Release.Task.WaitAsync(token);
+            if (RejectExplicitEffort && ReasoningEffort is not null)
+                return new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = "unsupported reasoning_effort" }) };
             var payload = stream
                 ? "data: " + JsonSerializer.Serialize(new { choices = new[] { new { delta = new { content = Reply }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = 123 } } }) + "\n\ndata: [DONE]\n\n"
                 : JsonSerializer.Serialize(new { choices = new[] { new { message = new { content = Reply }, finish_reason = "stop" } } });

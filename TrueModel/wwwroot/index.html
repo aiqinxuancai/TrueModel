@@ -385,6 +385,21 @@
                     </div>
                   </div>
                   <div class="setting-group">
+                    <label for="craneRidingReasoningEffort"><span class="label-text">丹顶鹤骑行思考等级</span><span class="label-hint">默认中思考</span></label>
+                    <div class="input-wrapper">
+                      <select id="craneRidingReasoningEffort" name="craneRidingReasoningEffort">
+                        <option value="default">接口默认</option>
+                        <option value="none">none · 不思考</option>
+                        <option value="minimal">minimal · 最低</option>
+                        <option value="low">low · 低</option>
+                        <option value="medium" selected>medium · 中</option>
+                        <option value="high">high · 高</option>
+                        <option value="xhigh">xhigh · 更高</option>
+                      </select>
+                      <span class="input-hint">显式等级需要模型接口支持；仅支持 Anthropic 协议的接口请选择“接口默认”。</span>
+                    </div>
+                  </div>
+                  <div class="setting-group">
                     <span class="setting-label">
                       <span class="label-text">10k+ 模拟上下文</span>
                       <span class="label-hint">默认关闭</span>

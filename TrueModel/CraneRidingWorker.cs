@@ -64,6 +64,7 @@ public sealed class CraneRidingWorker(IServiceScopeFactory scopes, IDataProtecti
                 try
                 {
                     run.Response = await scope.ServiceProvider.GetRequiredService<ModelTraceClient>().Completion(target.BaseUrl, key, target.Name, run.Prompt, token,
+                        reasoningEffort: run.ReasoningEffort == "default" ? null : run.ReasoningEffort,
                         observeReasoningTokens: value => run.ReasoningTokens = value, timeout: RequestTimeout, maxTokens: 32_000, maxAttempts: 2, stream: true, conversation: conversation);
                 }
                 finally { run.LatencyMs = watch.ElapsedMilliseconds; }

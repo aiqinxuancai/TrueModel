@@ -2,6 +2,7 @@
 const startingCraneRides = new Set();
 const craneLanguageNames = {zh:'中文', en:'英语', ja:'日语', ko:'韩语', fr:'法语', es:'西班牙语', de:'德语', pt:'葡萄牙语'};
 const craneStatusNames = {Queued:'排队中', Running:'绘制中', Success:'已生成', Failed:'失败', Interrupted:'已中断'};
+const craneEffortNames = {default:'接口默认', none:'none · 不思考', minimal:'minimal · 最低', low:'low · 低', medium:'medium · 中', high:'high · 高', xhigh:'xhigh · 更高'};
 let craneDialogModel = null, craneSelectedRun = null, cranePollTimer = null, craneDialogRequest = 0;
 
 function craneIsBusy(run) { return ['Queued', 'Running'].includes(run?.status); }
@@ -9,7 +10,7 @@ function craneSeconds(ms) { return ms == null ? '—' : (ms / 1000).toFixed(1) +
 function craneTooltip(run, count) {
     if (!run) return '尚未进行丹顶鹤骑行检测';
     const elapsed = craneIsBusy(run) ? `\n已等待：${relativeTime(run.createdAt).replace('前', '')}` : '';
-    return `丹顶鹤骑行 · ${craneStatusNames[run.status] || run.status}${elapsed}\n时间：${time(run.createdAt)}\n语言：${craneLanguageNames[run.language] || run.language}\n10k+ 模拟上下文：${run.simulatedContext ? '开启' : '关闭'}\n模型用时：${craneSeconds(run.latencyMs)} · Reason Tok：${run.reasoningTokens ?? '—'}${run.error ? '\n' + run.error : ''}\n点击查看最近 ${count} 次记录`;
+    return `丹顶鹤骑行 · ${craneStatusNames[run.status] || run.status}${elapsed}\n时间：${time(run.createdAt)}\n语言：${craneLanguageNames[run.language] || run.language}\n思考等级：${craneEffortNames[run.reasoningEffort ?? 'default'] || run.reasoningEffort}\n10k+ 模拟上下文：${run.simulatedContext ? '开启' : '关闭'}\n模型用时：${craneSeconds(run.latencyMs)} · Reason Tok：${run.reasoningTokens ?? '—'}${run.error ? '\n' + run.error : ''}\n点击查看最近 ${count} 次记录`;
 }
 function craneRidingCell(model) {
     const entry = craneRides.find(r => r.modelId === model.id);
@@ -50,6 +51,7 @@ function craneRunDetail(run) {
     return `${run.status === 'Success' ? `<img class="crane-large" src="/api/crane-rides/${run.id}/image.svg" alt="${esc(run.modelName)} 绘制的丹顶鹤骑自行车"><div class="crane-downloads"><a href="/api/crane-rides/${run.id}/image.svg?download=true" download>下载 SVG</a></div>` : ''}
 <div class="detail-metrics"><div><span>状态</span><strong class="probe-${esc(run.status)}">${esc(craneStatusNames[run.status] || run.status)}</strong></div><div><span>模型用时</span><strong>${craneSeconds(run.latencyMs)}</strong></div><div><span>Reason Tok</span><strong>${esc(run.reasoningTokens ?? '—')}</strong></div></div>
 <p class="muted">${esc(time(run.createdAt))} · 题目语言：${esc(craneLanguageNames[run.language] || run.language)}${run.completedAt ? ' · 完成于 ' + esc(time(run.completedAt)) : ''}</p>
+<p class="muted">思考等级：${esc(craneEffortNames[run.reasoningEffort ?? 'default'] || run.reasoningEffort)}</p>
 <p class="muted">10k+ 模拟上下文：${run.simulatedContext ? '开启（先模拟多轮 U/A 对话再提问）' : '关闭'}</p>
 ${run.error ? `<p class="inline-error">${esc(run.error)}</p>` : ''}
 ${run.svg ? `<details><summary>展示用 SVG 源代码</summary><pre>${esc(run.svg)}</pre></details>` : ''}

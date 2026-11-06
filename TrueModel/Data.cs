@@ -115,6 +115,7 @@ public sealed class CraneRidingRun
     public string Status { get; set; } = "Queued";
     public string Language { get; set; } = "zh";
     public bool SimulatedContext { get; set; }
+    public string ReasoningEffort { get; set; } = "default";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
     public long? LatencyMs { get; set; }
@@ -144,6 +145,7 @@ public sealed class AppSettings
     public string WorldMapLanguage { get; set; } = "zh";
     public string CraneRidingLanguage { get; set; } = "zh";
     public bool CraneRidingSimulatedContext { get; set; }
+    public string CraneRidingReasoningEffort { get; set; } = "medium";
     public string DetectionMethod { get; set; } = "modeltrace";
     public int HlwyConcurrency { get; set; } = 5;
     public int HlwySampleCount { get; set; } = 100;
