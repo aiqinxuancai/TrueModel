@@ -49,6 +49,19 @@ public class PromptLanguageTests
     }
 
     [Fact]
+    public async Task EnrollmentCanCollectMoreQuestionsThanUniqueExpectedLengths()
+    {
+        using var handler = new Handler();
+        using var http = new HttpClient(handler);
+        var client = new ModelTraceClient(http);
+        var responses = await FingerprintEnrollment.Collect(client, "https://mock.test", "secret", "model", 45, CancellationToken.None, "ja");
+        Assert.Equal(45, responses.Length);
+        Assert.Equal(45, handler.Prompts.Count);
+        Assert.Equal(41, responses.Take(41).Select(r => r.ExpectedCount).Distinct().Count());
+        Assert.Equal(4, responses.Skip(41).Select(r => r.ExpectedCount).Distinct().Count());
+    }
+
+    [Fact]
     public async Task CandyAttemptsUseIndependentLanguagesAndNewWhitespaceOnRepeat()
     {
         using var handler = new Handler();

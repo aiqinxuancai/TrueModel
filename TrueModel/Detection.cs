@@ -30,10 +30,11 @@ public static class DetectionJobs
         if (settings.DetectionMethod == "modeltrace")
         {
             var banks = await db.Banks.AsNoTracking().Where(b => b.IsDefault || b.Active)
-                .OrderByDescending(b => b.IsDefault).ThenByDescending(b => b.Id).ToArrayAsync();
+                .OrderBy(b => b.IsDefault).ThenByDescending(b => b.Id).ToArrayAsync();
             if (banks.Length == 0) throw new InvalidOperationException("没有可用的指纹库");
             await FingerprintBankSnapshot.Remember(db, banks);
-            run.BankId = banks[0].Id;
+            // BankId identifies the calibration source. The snapshot order determines candidate priority.
+            run.BankId = (banks.FirstOrDefault(b => b.IsDefault) ?? banks[0]).Id;
             run.BankSelectionJson = JsonSerializer.Serialize(banks.Select(b => new FingerprintBankReference(b.Id, b.Sha256)));
         }
         db.Runs.Add(run); await db.SaveChangesAsync(); return run;
@@ -94,7 +95,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                                 .Where(t => !completed.Contains(t.ModelId) && !control.Active.ContainsKey((run.Id, t.ModelId))).ToArray();
                             if (targets.Length == 0) continue;
                             var runSettings = run.DetectionSettingsJson is null ? new AppSettings { ChallengeCount = settings.ChallengeCount, CandyReasoningEffort = settings.CandyReasoningEffort, JuiceReasoningEffort = settings.JuiceReasoningEffort, AttributionLanguage = settings.AttributionLanguage, CandyLanguage = settings.CandyLanguage, Candy2Language = settings.Candy2Language, Candy3Language = settings.Candy3Language } : JsonSerializer.Deserialize<AppSettings>(run.DetectionSettingsJson)!;
-                            var banks = runSettings.DetectionMethod == "hlwy" ? [] : await LoadBanks(db, run, stoppingToken);
+                            (string[] Json, int CalibrationBankIndex) banks = runSettings.DetectionMethod == "hlwy" ? ([], 0) : await LoadBanks(db, run, stoppingToken);
                             foreach (var target in targets)
                             {
                                 if (control.Active.Count >= settings.MaxConcurrency) break;
@@ -126,18 +127,20 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
         }
     }
 
-    private static async Task<string[]> LoadBanks(AppDb db, DetectionRun run, CancellationToken token)
+    private static async Task<(string[] Json, int CalibrationBankIndex)> LoadBanks(AppDb db, DetectionRun run, CancellationToken token)
     {
         if (run.BankSelectionJson is null)
         {
             var legacyBank = await db.Banks.Where(b => b.Id == run.BankId).Select(b => b.Json).SingleOrDefaultAsync(token);
-            return legacyBank is null ? [] : [legacyBank];
+            return (legacyBank is null ? [] : [legacyBank], 0);
         }
         var references = JsonSerializer.Deserialize<FingerprintBankReference[]>(run.BankSelectionJson)!;
         var hashes = references.Select(b => b.Sha256).Distinct().ToArray();
         var snapshots = await db.FingerprintBankSnapshots.Where(b => hashes.Contains(b.Sha256))
             .ToDictionaryAsync(b => b.Sha256, b => b.Json, token);
-        return snapshots.Count == hashes.Length ? references.Select(b => snapshots[b.Sha256]).ToArray() : [];
+        if (snapshots.Count != hashes.Length) return ([], 0);
+        var calibrationIndex = Array.FindIndex(references, b => b.Id == run.BankId);
+        return (references.Select(b => snapshots[b.Sha256]).ToArray(), Math.Max(0, calibrationIndex));
     }
 
     private async Task NotifyRun(DetectionRun run, CancellationToken token)
@@ -152,7 +155,7 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
         catch (Exception) { logger.LogWarning("Notification delivery could not be recorded for run {RunId}", run.Id); }
     }
 
-    private async Task RunDetection(Target target, int runId, string[] banks, AppSettings settings, CancellationTokenSource cancellation, CancellationToken stoppingToken)
+    private async Task RunDetection(Target target, int runId, (string[] Json, int CalibrationBankIndex) banks, AppSettings settings, CancellationTokenSource cancellation, CancellationToken stoppingToken)
     {
         try
         {
@@ -259,10 +262,10 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 .SetProperty(r => r.CandyReasoningTokens, result.CandyReasoningTokens));
     }
 
-    private async Task<DetectionResult> Probe(Target target, int runId, string[] banks, AppSettings settings, CancellationToken token)
+    private async Task<DetectionResult> Probe(Target target, int runId, (string[] Json, int CalibrationBankIndex) banks, AppSettings settings, CancellationToken token)
     {
         var result = new DetectionResult { RunId = runId, ModelId = target.ModelId, SiteName = target.SiteName, KeyName = target.KeyName, ModelName = target.ModelName };
-        if (settings.DetectionMethod == "modeltrace" && banks.Length == 0)
+        if (settings.DetectionMethod == "modeltrace" && banks.Json.Length == 0)
         {
             result.Status = "Failed";
             result.Error = "检测任务的指纹库已丢失，请重新提交检测";
@@ -274,7 +277,8 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
             var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedKey);
             var response = settings.DetectionMethod == "hlwy"
                 ? await client.TestHlwy(target.BaseUrl, key, target.ModelName, settings, token, includeSupplemental: false)
-                : await client.Test(target.BaseUrl, key, target.ModelName, banks, settings.ChallengeCount, token, settings.CandyReasoningEffort, settings.JuiceReasoningEffort, settings.AttributionLanguage, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language);
+                : await client.Test(target.BaseUrl, key, target.ModelName, banks.Json, settings.ChallengeCount, token, settings.CandyReasoningEffort, settings.JuiceReasoningEffort,
+                    settings.AttributionLanguage, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language, banks.CalibrationBankIndex);
             result.ResponsesJson = response.GetProperty("responses").GetRawText();
             result.JuiceValue = response.TryGetProperty("juice_value", out var juice) && juice.ValueKind == JsonValueKind.Number ? juice.GetInt32() : null;
             result.JuiceStatus = response.TryGetProperty("juice_status", out var juiceStatus) ? juiceStatus.GetString() : null;

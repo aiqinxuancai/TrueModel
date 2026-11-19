@@ -293,7 +293,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         Test(baseUrl, key, model, [bank], challengeCount, token, candyReasoningEffort, juiceReasoningEffort, attributionLanguage, candyLanguage, candy2Language, candy3Language);
 
     internal async Task<JsonElement> Test(string baseUrl, string key, string model, IReadOnlyList<string> banks, int challengeCount, CancellationToken token, string candyReasoningEffort, string juiceReasoningEffort,
-        string attributionLanguage = "zh", string candyLanguage = "zh", string candy2Language = "zh", string candy3Language = "zh")
+        string attributionLanguage = "zh", string candyLanguage = "zh", string candy2Language = "zh", string candy3Language = "zh", int calibrationBankIndex = 0)
     {
         var watch = Stopwatch.StartNew();
         var responses = new List<object>();
@@ -317,7 +317,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         envelope["duration_ms"] = watch.ElapsedMilliseconds;
         try
         {
-            var report = Attribution.AnalyzeGlobal(outputs, banks);
+            var report = Attribution.AnalyzeGlobal(outputs, banks, calibrationBankIndex);
             report["api_test"] = new { requested = challengeCount, attempted = challengeCount, max_attempts = challengeCount, received = report["used_outputs"], errors };
             envelope["result"] = report;
         }

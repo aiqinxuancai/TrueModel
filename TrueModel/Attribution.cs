@@ -209,23 +209,24 @@ public static partial class Attribution
     }
     public static Dictionary<string, object?> AnalyzeGlobal(IReadOnlyList<ProbeOutput> outputs, string json) => AnalyzeGlobal(outputs, [json]);
 
-    // Banks are supplied in priority order. The first bank supplies the calibration, normally the default.
-    public static Dictionary<string, object?> AnalyzeGlobal(IReadOnlyList<ProbeOutput> outputs, IReadOnlyList<string> banks)
+    // Banks are supplied in candidate priority order. The calibration bank is usually the default.
+    public static Dictionary<string, object?> AnalyzeGlobal(IReadOnlyList<ProbeOutput> outputs, IReadOnlyList<string> banks, int calibrationBankIndex = 0)
     {
         if (banks.Count == 0) throw new InvalidOperationException("没有可用的指纹库");
+        if (calibrationBankIndex < 0 || calibrationBankIndex >= banks.Count) throw new ArgumentOutOfRangeException(nameof(calibrationBankIndex));
         var documents = new List<JsonDocument>(banks.Count);
         try
         {
             foreach (var bank in banks) documents.Add(JsonDocument.Parse(bank));
             var candidates = SelectCandidates(documents.Select(d => d.RootElement));
-            var calibration = documents[0].RootElement.GetProperty("calibration");
-            return BuildGlobalReport(outputs, candidates, calibration);
+            return BuildGlobalReport(outputs, candidates, documents[calibrationBankIndex].RootElement);
         }
         finally { foreach (var document in documents) document.Dispose(); }
     }
 
-    private static Dictionary<string, object?> BuildGlobalReport(IReadOnlyList<ProbeOutput> outputs, BankCandidates[] banks, JsonElement calibration)
+    private static Dictionary<string, object?> BuildGlobalReport(IReadOnlyList<ProbeOutput> outputs, BankCandidates[] banks, JsonElement calibrationBank)
     {
+        var calibration = calibrationBank.GetProperty("calibration");
         var samples = Samples(outputs);
         var diagnostics = samples.Select((s, i) => new { index = i, parsed_numbers = s.Numbers.Length, minimum_numbers = s.Minimum, accepted = s.Numbers.Length >= s.Minimum }).ToArray();
         var accepted = samples.Where(s => s.Numbers.Length >= s.Minimum).Select(s => s.Numbers).ToArray();
@@ -250,7 +251,7 @@ public static partial class Attribution
         var winner = report.Candidates[0];
         var familyWinner = report.Families.MaxBy(f => f.Value);
         var queries = Math.Min(report.UsedOutputs, 3).ToString();
-        double? cvAccuracy = banks.Length == 1 && calibration.GetProperty(queries).TryGetProperty("cv_accuracy", out var accuracy) &&
+        double? cvAccuracy = banks.Length == 1 && banks[0].Bank.Equals(calibrationBank) && calibration.GetProperty(queries).TryGetProperty("cv_accuracy", out var accuracy) &&
             accuracy.ValueKind == JsonValueKind.Number && accuracy.TryGetDouble(out var cv) && double.IsFinite(cv) ? cv : null;
         return new()
         {

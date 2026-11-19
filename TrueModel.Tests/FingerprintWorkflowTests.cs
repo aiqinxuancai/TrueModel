@@ -44,15 +44,20 @@ public class FingerprintWorkflowTests
         var detectionBlocker = await Post($"/api/keys/{key}/models", new { name = "hold-detection" });
         var defaultId = (await client.GetFromJsonAsync<JsonElement>("/api/banks"))[0].GetProperty("id").GetInt32();
         var defaultExport = await client.GetStringAsync($"/api/banks/{defaultId}/export");
+        using var original = JsonDocument.Parse(defaultExport);
+        var defaultDisplayName = original.RootElement.GetProperty("models").EnumerateArray()
+            .Single(m => m.GetProperty("id").GetString() == "gpt-6-sol").GetProperty("display_name").GetString();
         var templateId = await Post("/api/banks/empty", new { name = "temporary template" });
 
         var running = await Enroll(slow, defaultId, "cancelled-running");
         await handler.EnrollmentBlocked.Task.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(1, (await GetTask(running)).GetProperty("collected").GetInt32());
-        var queued = await Enroll(usable, defaultId, "cancelled-queued");
+        var queued = await Enroll(usable, defaultId, "cancelled-queued", count: 17);
         Assert.Equal("Queued", (await GetTask(queued)).GetProperty("status").GetString());
+        Assert.Equal(17, (await GetTask(queued)).GetProperty("total").GetInt32());
         await Cancel(queued);
-        var published = await Enroll(usable, templateId, "collected-fingerprint");
+        var published = await Post($"/api/models/{usable}/fingerprint",
+            new { bankId = templateId, model = "gpt-6-sol", displayName = "Local GPT", family = "custom" }, HttpStatusCode.Accepted);
         (await client.DeleteAsync($"/api/banks/{templateId}")).EnsureSuccessStatusCode();
         await Cancel(running);
         await handler.EnrollmentCancelled.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -61,14 +66,17 @@ public class FingerprintWorkflowTests
         Assert.Equal(JsonValueKind.Null, (await GetTask(running)).GetProperty("resultBankId").ValueKind);
 
         var task = await WaitFor(() => GetTask(published), t => t.GetProperty("status").GetString() == "Completed");
-        Assert.Equal(3, task.GetProperty("collected").GetInt32());
+        Assert.Equal(10, task.GetProperty("total").GetInt32());
+        Assert.Equal(10, task.GetProperty("collected").GetInt32());
         var collectedBank = task.GetProperty("resultBankId").GetInt32();
         var banks = await client.GetFromJsonAsync<JsonElement>("/api/banks");
         Assert.Equal(2, banks.GetArrayLength());
         Assert.True(banks[0].GetProperty("isDefault").GetBoolean());
         Assert.True(banks[1].GetProperty("active").GetBoolean());
         var detail = await client.GetFromJsonAsync<JsonElement>($"/api/banks/{collectedBank}");
-        Assert.Equal("collected-fingerprint", Assert.Single(detail.GetProperty("models").EnumerateArray()).GetProperty("id").GetString());
+        var fingerprint = Assert.Single(detail.GetProperty("models").EnumerateArray());
+        Assert.Equal("gpt-6-sol", fingerprint.GetProperty("id").GetString());
+        Assert.Equal(10, fingerprint.GetProperty("responseCount").GetInt32());
 
         var extra = await Post("/api/banks/empty", new { name = "second custom bank" });
         var counts = Enumerable.Repeat(1, 355).ToArray();
@@ -85,19 +93,20 @@ public class FingerprintWorkflowTests
         var runs = await client.GetFromJsonAsync<JsonElement>("/api/runs");
         var entry = runs.EnumerateArray().Single(r => r.GetProperty("id").GetInt32() == run);
         Assert.Equal("Queued", entry.GetProperty("status").GetString());
-        Assert.Equal(new[] { defaultId, extra, collectedBank }, entry.GetProperty("bankIds").EnumerateArray().Select(i => i.GetInt32()));
+        Assert.Equal(defaultId, entry.GetProperty("bankId").GetInt32());
+        Assert.Equal(new[] { extra, collectedBank, defaultId }, entry.GetProperty("bankIds").EnumerateArray().Select(i => i.GetInt32()));
         (await client.DeleteAsync($"/api/banks/{extra}")).EnsureSuccessStatusCode();
         (await client.PostAsJsonAsync($"/api/banks/{collectedBank}/deactivate", new { })).EnsureSuccessStatusCode();
         (await client.PostAsJsonAsync($"/api/runs/{blockedRun}/cancel", new { })).EnsureSuccessStatusCode();
 
         var candidates = await Candidates(run);
-        Assert.Contains("collected-fingerprint", candidates);
-        Assert.Contains("second-fingerprint", candidates);
-        Assert.Contains("gpt-6-sol", candidates);
+        Assert.Equal("Local GPT", candidates["gpt-6-sol"]);
+        Assert.Contains("second-fingerprint", candidates.Keys);
+        Assert.Contains("claude-opus-5-5", candidates.Keys);
         var next = await Post("/api/detect", new { modelId = usable }, HttpStatusCode.Accepted);
         var nextCandidates = await Candidates(next);
-        Assert.DoesNotContain("collected-fingerprint", nextCandidates);
-        Assert.DoesNotContain("second-fingerprint", nextCandidates);
+        Assert.Equal(defaultDisplayName, nextCandidates["gpt-6-sol"]);
+        Assert.DoesNotContain("second-fingerprint", nextCandidates.Keys);
         Assert.Equal(defaultExport, await client.GetStringAsync($"/api/banks/{defaultId}/export"));
 
         async Task Token()
@@ -112,21 +121,22 @@ public class FingerprintWorkflowTests
             Assert.Equal(expected, response.StatusCode);
             return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
         }
-        Task<int> Enroll(int model, int bankId, string name) => Post($"/api/models/{model}/fingerprint",
-            new { bankId, model = name, displayName = name, family = "custom", challengeCount = 3 }, HttpStatusCode.Accepted);
+        Task<int> Enroll(int model, int bankId, string name, int count = 3) => Post($"/api/models/{model}/fingerprint",
+            new { bankId, model = name, displayName = name, family = "custom", challengeCount = count }, HttpStatusCode.Accepted);
         Task<JsonElement> GetTask(int id) => client.GetFromJsonAsync<JsonElement>($"/api/fingerprint-tasks/{id}");
         async Task Cancel(int id)
         {
             using var response = await client.PostAsJsonAsync($"/api/fingerprint-tasks/{id}/cancel", new { });
             Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         }
-        async Task<string[]> Candidates(int runId)
+        async Task<Dictionary<string, string>> Candidates(int runId)
         {
             var results = await WaitFor(() => client.GetFromJsonAsync<JsonElement>($"/api/results?runId={runId}"), rows => rows.GetArrayLength() > 0);
             var result = results[0];
             Assert.Equal("Success", result.GetProperty("status").GetString());
             using var report = JsonDocument.Parse(result.GetProperty("attributionJson").GetString()!);
-            return report.RootElement.GetProperty("Candidates").EnumerateArray().Select(c => c.GetProperty("Model").GetString()!).ToArray();
+            return report.RootElement.GetProperty("Candidates").EnumerateArray()
+                .ToDictionary(c => c.GetProperty("Model").GetString()!, c => c.GetProperty("DisplayName").GetString()!);
         }
     }
 

@@ -77,7 +77,7 @@ public static partial class Attribution
     }
 }
 
-public sealed record EnrollmentInput(int BankId, string Model, string DisplayName, string Family, int ChallengeCount = 6);
+public sealed record EnrollmentInput(int BankId, string Model, string DisplayName, string Family, int ChallengeCount = 10);
 
 public static class FingerprintEnrollment
 {
@@ -85,7 +85,7 @@ public static class FingerprintEnrollment
         Func<int, CancellationToken, Task>? progress = null)
     {
         var outputs = new List<ProbeOutput>();
-        foreach (var challenge in Challenges.Generate(count, language))
+        foreach (var challenge in Challenges.GenerateSequence(count, language))
         {
             token.ThrowIfCancellationRequested();
             var text = await client.Completion(url, key, model, challenge.Prompt, token);

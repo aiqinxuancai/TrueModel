@@ -247,7 +247,7 @@
                 </div>
               </div>
               <div class="card-body">
-                <p class="notice"><i data-lucide="info"></i><span>默认库与所有已启用的自定义库联合匹配。同一模型标识优先使用默认库，其次使用最新创建的已启用自定义库。归因概率用于比较候选模型。</span></p>
+                <p class="notice"><i data-lucide="info"></i><span>默认库与所有已启用的自定义库联合匹配。模型标识重复时优先使用最新创建的已启用自定义库。归因概率用于比较候选模型。</span></p>
                 <p id="bankUpdateStatus" class="status-line" role="status" aria-live="polite"></p>
               </div>
               <div id="bankRows" class="list"></div>
@@ -262,7 +262,7 @@
                 <label>来源模型<select name="source" required></select></label>
                 <div class="form-grid">
                   <label>基础指纹库<select name="bank" required></select></label>
-                  <label>采集题数<select name="count"><option value="6">6</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+                  <label>采集题数<input name="count" type="number" min="3" step="1" value="10" required /></label>
                   <label>指纹模型标识<input name="model" maxlength="200" required /></label>
                   <label>显示名称<input name="displayName" maxlength="200" required /></label>
                 </div>

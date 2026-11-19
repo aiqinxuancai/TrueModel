@@ -45,9 +45,10 @@ public static class FingerprintTaskEndpoints
 
     private static async Task<IResult> Enqueue(int id, EnrollmentInput input, AppDb db, CancellationToken token)
     {
-        if (input.ChallengeCount is < 3 or > 6 || string.IsNullOrWhiteSpace(input.Model) || input.Model.Length > 200 ||
+        if (input.ChallengeCount < 3) return Results.BadRequest(new { error = "采集题数至少为 3" });
+        if (string.IsNullOrWhiteSpace(input.Model) || input.Model.Length > 200 ||
             string.IsNullOrWhiteSpace(input.DisplayName) || input.DisplayName.Length > 200 || string.IsNullOrWhiteSpace(input.Family) || input.Family.Length > 100)
-            return Results.BadRequest(new { error = "请填写模型标识、显示名称和家族，采集题数须为 3–6" });
+            return Results.BadRequest(new { error = "请填写有效的模型标识、显示名称和家族" });
         var template = await db.Banks.AsNoTracking().SingleOrDefaultAsync(b => b.Id == input.BankId, token);
         if (template is null) return Results.NotFound(new { error = "基础指纹库不存在" });
         var target = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
