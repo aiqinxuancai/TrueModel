@@ -533,6 +533,9 @@ td code { font-size: 12px; }
 .juice-refresh:hover { background: var(--surface-3); color: var(--primary-text); }
 .juice-refresh svg.lucide { width: 12px; height: 12px; }
 .juice-refresh[aria-busy="true"] svg.lucide { animation: spin 1s linear infinite; }
+.juice-refresh[data-candy-status="Queued"] { opacity: 1; }
+.juice-refresh[data-candy-status="Running"] { opacity: 1; color: var(--primary-text); background: var(--primary-soft); }
+.juice-refresh[data-candy-status="Interrupted"] { color: var(--danger); }
 .probe-Success { color: var(--success); }
 .probe-Unavailable { color: var(--warning); }
 .probe-Failed { color: var(--danger); }
@@ -580,7 +583,6 @@ td code { font-size: 12px; }
 @media (max-width: 760px) { .world-map-run .detail-metrics { grid-template-columns: 1fr 1fr; } }
 .candy-summary { display: inline-grid; grid-template-columns: max-content max-content; column-gap: 8px; row-gap: 1px; font-size: 12.5px; }
 .candy-summary .candy-attempt-3 { grid-column: 1 / -1; }
-.candy-progress { color: var(--primary-text); font-size: 11.5px; }
 
 .model-actions { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .model-actions button + button { margin-left: 0; }

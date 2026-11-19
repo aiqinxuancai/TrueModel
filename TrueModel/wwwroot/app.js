@@ -48,9 +48,18 @@ function candyIsBusy(m) {
 function candyCell(m, r) {
     const latest = m.candyCheckedAt && (!r || new Date(m.candyCheckedAt).getTime() > new Date(r.startedAt).getTime() + r.latencyMs) ? m : r;
     const busy = candyIsBusy(m);
-    const progress = busy ? `${m.candyRefreshStatus === 'Running' ? '检测中' : '排队中'}` : m.candyRefreshStatus === 'Interrupted' ? '检测已中断，请重新开始' : '';
+    const status = busy && m.candyRefreshStatus !== 'Running' ? 'Queued' : m.candyRefreshStatus;
+    const progress = {Queued:'糖果检测排队中', Running:'糖果检测中', Interrupted:'糖果检测已中断，请重新开始'}[status];
     const tooltip = (progress ? progress + '\n以下为上次结果：\n' : '') + candyTooltip(latest);
-    return `<span class="juice-cell"><span class="candy-cell-content" tabindex="0" data-tooltip-key="candy-${m.id}" data-tooltip="${esc(tooltip)}">${progress ? `<small class="candy-progress">${esc(progress)}</small> ` : ''}${candySummary(latest)}</span><button class="icon-button juice-refresh" data-candy="${m.id}" title="单独刷新糖果" aria-label="刷新 ${esc(m.name)} 的糖果" ${busy ? 'disabled aria-busy="true"' : ''}><i data-lucide="refresh-cw"></i></button></span>`;
+    const icon = {Queued:'clock', Interrupted:'circle-alert'}[status] || 'refresh-cw';
+    const label = busy ? `${m.name} ${progress}` : `刷新 ${m.name} 的糖果`;
+    return `<span class="juice-cell">
+        <span class="candy-cell-content" tabindex="0" data-tooltip-key="candy-${m.id}" data-tooltip="${esc(tooltip)}">${candySummary(latest)}</span>
+        <button type="button" class="icon-button juice-refresh" data-candy="${m.id}" data-candy-status="${esc(status)}"
+            title="${progress || '单独刷新糖果'}" aria-label="${esc(label)}" ${busy ? 'disabled' : ''} ${status === 'Running' ? 'aria-busy="true"' : ''}>
+            <i data-lucide="${icon}"></i>
+        </button>
+    </span>`;
 }
 async function refreshProbe(id, kind) {
     const busy = kind === 'juice' ? refreshingJuice : refreshingCandy;
