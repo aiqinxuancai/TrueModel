@@ -12,8 +12,6 @@ public static class DetectionJobs
     public static async Task<DetectionRun> Enqueue(AppDb db, DetectionScope scope, string source, HlwyBaselineUpdater? baselines = null)
     {
         var settings = await db.Settings.AsNoTracking().SingleOrDefaultAsync() ?? new AppSettings();
-        var bank = await db.Banks.SingleOrDefaultAsync(b => b.Active);
-        if (settings.DetectionMethod == "modeltrace" && bank is null) throw new InvalidOperationException("No active fingerprint bank.");
         if (settings.DetectionMethod == "hlwy") settings.HlwyBaselinesJson = JsonSerializer.Serialize(baselines?.Baselines(settings.HlwyBaselinesJson) ?? HlwyFingerprint.Baselines(settings.HlwyBaselinesJson));
         var targets = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
             where m.Enabled && k.Enabled && s.Enabled && (scope.SiteId == null || s.Id == scope.SiteId) && (scope.KeyId == null || k.Id == scope.KeyId) && (scope.ModelId == null || m.Id == scope.ModelId)
@@ -28,7 +26,16 @@ public static class DetectionJobs
             .Where(t => !completed.Contains((r.Id, t.ModelId))).Select(t => t.ModelId)).ToHashSet();
         targets = targets.Where(t => !busyModels.Contains(t.ModelId)).ToArray();
         if (targets.Length == 0) throw new InvalidOperationException("所选模型已在检测中或队列中，请勿重复提交。");
-        var run = new DetectionRun { Total = targets.Length, BankId = settings.DetectionMethod == "hlwy" ? 0 : bank!.Id, DetectionSettingsJson = JsonSerializer.Serialize(settings), TargetsJson = JsonSerializer.Serialize(targets), Source = source };
+        var run = new DetectionRun { Total = targets.Length, DetectionSettingsJson = JsonSerializer.Serialize(settings), TargetsJson = JsonSerializer.Serialize(targets), Source = source };
+        if (settings.DetectionMethod == "modeltrace")
+        {
+            var banks = await db.Banks.AsNoTracking().Where(b => b.IsDefault || b.Active)
+                .OrderByDescending(b => b.IsDefault).ThenByDescending(b => b.Id).ToArrayAsync();
+            if (banks.Length == 0) throw new InvalidOperationException("没有可用的指纹库");
+            await FingerprintBankSnapshot.Remember(db, banks);
+            run.BankId = banks[0].Id;
+            run.BankSelectionJson = JsonSerializer.Serialize(banks.Select(b => new FingerprintBankReference(b.Id, b.Sha256)));
+        }
         db.Runs.Add(run); await db.SaveChangesAsync(); return run;
     }
 }
@@ -83,18 +90,19 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                             }
                             if (run.CancelRequested || control.Active.Count >= settings.MaxConcurrency) continue;
                             var completed = (await db.Results.Where(r => r.RunId == run.Id).Select(r => r.ModelId).ToArrayAsync(stoppingToken)).ToHashSet();
-                            var targets = JsonSerializer.Deserialize<Target[]>(run.TargetsJson) ?? [];
+                            var targets = (JsonSerializer.Deserialize<Target[]>(run.TargetsJson) ?? [])
+                                .Where(t => !completed.Contains(t.ModelId) && !control.Active.ContainsKey((run.Id, t.ModelId))).ToArray();
+                            if (targets.Length == 0) continue;
                             var runSettings = run.DetectionSettingsJson is null ? new AppSettings { ChallengeCount = settings.ChallengeCount, CandyReasoningEffort = settings.CandyReasoningEffort, JuiceReasoningEffort = settings.JuiceReasoningEffort, AttributionLanguage = settings.AttributionLanguage, CandyLanguage = settings.CandyLanguage, Candy2Language = settings.Candy2Language, Candy3Language = settings.Candy3Language } : JsonSerializer.Deserialize<AppSettings>(run.DetectionSettingsJson)!;
-                            var bank = runSettings.DetectionMethod == "hlwy" ? "" : (await db.Banks.SingleAsync(b => b.Id == run.BankId, stoppingToken)).Json;
+                            var banks = runSettings.DetectionMethod == "hlwy" ? [] : await LoadBanks(db, run, stoppingToken);
                             foreach (var target in targets)
                             {
                                 if (control.Active.Count >= settings.MaxConcurrency) break;
-                                if (completed.Contains(target.ModelId) || control.Active.ContainsKey((run.Id, target.ModelId))) continue;
                                 var cancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
                                 control.Active.Add((run.Id, target.ModelId), cancellation);
                                 run.Status = "Running";
                                 // Each detection holds one global slot through its result commit and supplemental probes.
-                                workers.Add(RunDetection(target, run.Id, bank, runSettings, cancellation, stoppingToken));
+                                workers.Add(RunDetection(target, run.Id, banks, runSettings, cancellation, stoppingToken));
                             }
                         }
                         await db.SaveChangesAsync(stoppingToken);
@@ -118,6 +126,20 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
         }
     }
 
+    private static async Task<string[]> LoadBanks(AppDb db, DetectionRun run, CancellationToken token)
+    {
+        if (run.BankSelectionJson is null)
+        {
+            var legacyBank = await db.Banks.Where(b => b.Id == run.BankId).Select(b => b.Json).SingleOrDefaultAsync(token);
+            return legacyBank is null ? [] : [legacyBank];
+        }
+        var references = JsonSerializer.Deserialize<FingerprintBankReference[]>(run.BankSelectionJson)!;
+        var hashes = references.Select(b => b.Sha256).Distinct().ToArray();
+        var snapshots = await db.FingerprintBankSnapshots.Where(b => hashes.Contains(b.Sha256))
+            .ToDictionaryAsync(b => b.Sha256, b => b.Json, token);
+        return snapshots.Count == hashes.Length ? references.Select(b => snapshots[b.Sha256]).ToArray() : [];
+    }
+
     private async Task NotifyRun(DetectionRun run, CancellationToken token)
     {
         using var scope = scopes.CreateScope();
@@ -130,11 +152,11 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
         catch (Exception) { logger.LogWarning("Notification delivery could not be recorded for run {RunId}", run.Id); }
     }
 
-    private async Task RunDetection(Target target, int runId, string bank, AppSettings settings, CancellationTokenSource cancellation, CancellationToken stoppingToken)
+    private async Task RunDetection(Target target, int runId, string[] banks, AppSettings settings, CancellationTokenSource cancellation, CancellationToken stoppingToken)
     {
         try
         {
-            var result = await Probe(target, runId, bank, settings, cancellation.Token);
+            var result = await Probe(target, runId, banks, settings, cancellation.Token);
             using var scope = scopes.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDb>();
             await control.Gate.WaitAsync(stoppingToken);
@@ -237,16 +259,22 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
                 .SetProperty(r => r.CandyReasoningTokens, result.CandyReasoningTokens));
     }
 
-    private async Task<DetectionResult> Probe(Target target, int runId, string bank, AppSettings settings, CancellationToken token)
+    private async Task<DetectionResult> Probe(Target target, int runId, string[] banks, AppSettings settings, CancellationToken token)
     {
         var result = new DetectionResult { RunId = runId, ModelId = target.ModelId, SiteName = target.SiteName, KeyName = target.KeyName, ModelName = target.ModelName };
+        if (settings.DetectionMethod == "modeltrace" && banks.Length == 0)
+        {
+            result.Status = "Failed";
+            result.Error = "检测任务的指纹库已丢失，请重新提交检测";
+            return result;
+        }
         var watch = Stopwatch.StartNew();
         try
         {
             var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedKey);
             var response = settings.DetectionMethod == "hlwy"
                 ? await client.TestHlwy(target.BaseUrl, key, target.ModelName, settings, token, includeSupplemental: false)
-                : await client.Test(target.BaseUrl, key, target.ModelName, bank, settings.ChallengeCount, token, settings.CandyReasoningEffort, settings.JuiceReasoningEffort, settings.AttributionLanguage, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language);
+                : await client.Test(target.BaseUrl, key, target.ModelName, banks, settings.ChallengeCount, token, settings.CandyReasoningEffort, settings.JuiceReasoningEffort, settings.AttributionLanguage, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language);
             result.ResponsesJson = response.GetProperty("responses").GetRawText();
             result.JuiceValue = response.TryGetProperty("juice_value", out var juice) && juice.ValueKind == JsonValueKind.Number ? juice.GetInt32() : null;
             result.JuiceStatus = response.TryGetProperty("juice_status", out var juiceStatus) ? juiceStatus.GetString() : null;

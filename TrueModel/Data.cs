@@ -13,6 +13,8 @@ public sealed class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
     public DbSet<DetectionResult> Results => Set<DetectionResult>();
     public DbSet<JuiceMethodStatistic> JuiceMethodStatistics => Set<JuiceMethodStatistic>();
     public DbSet<FingerprintBank> Banks => Set<FingerprintBank>();
+    public DbSet<FingerprintBankSnapshot> FingerprintBankSnapshots => Set<FingerprintBankSnapshot>();
+    public DbSet<FingerprintTask> FingerprintTasks => Set<FingerprintTask>();
     public DbSet<AppSettings> Settings => Set<AppSettings>();
     public DbSet<NotificationSettings> Notifications => Set<NotificationSettings>();
     public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
@@ -26,6 +28,8 @@ public sealed class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
         model.Entity<MonitoredModel>().HasIndex(m => new { m.SiteKeyId, m.Name }).IsUnique();
         model.Entity<WorldMapRun>().ToTable("WorldMapRuns").HasIndex(w => w.ModelId);
         model.Entity<CraneRidingRun>().ToTable("CraneRidingRuns").HasIndex(w => w.ModelId);
+        model.Entity<FingerprintBankSnapshot>().HasKey(b => b.Sha256);
+        model.Entity<FingerprintTask>().HasIndex(t => new { t.Status, t.Id });
         // SQLite has no timezone metadata; restore UTC on reads for browser timers.
         var utc = new Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime, DateTime>(value => value, value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
         foreach (var entity in model.Model.GetEntityTypes())
@@ -43,6 +47,7 @@ public sealed class DetectionRun
     public int Total { get; set; }
     public int Completed { get; set; }
     public int BankId { get; set; }
+    public string? BankSelectionJson { get; set; }
     public bool CancelRequested { get; set; }
     public string TargetsJson { get; set; } = "[]";
     public string? DetectionSettingsJson { get; set; }
@@ -135,6 +140,42 @@ public sealed class FingerprintBank
     public string Sha256 { get; set; } = "";
     public DateTime ImportedAt { get; set; } = DateTime.UtcNow;
     public bool Active { get; set; }
+}
+public sealed record FingerprintBankReference(int Id, string Sha256);
+public sealed class FingerprintBankSnapshot
+{
+    public string Sha256 { get; set; } = "";
+    public string Json { get; set; } = "";
+
+    public static async Task Remember(AppDb db, FingerprintBank[] banks, CancellationToken token = default)
+    {
+        var hashes = banks.Select(b => b.Sha256).Distinct().ToArray();
+        var stored = (await db.FingerprintBankSnapshots.Where(b => hashes.Contains(b.Sha256)).Select(b => b.Sha256).ToArrayAsync(token)).ToHashSet();
+        // Share immutable JSON across queued tasks, including simultaneous submissions.
+        foreach (var bank in banks.DistinctBy(b => b.Sha256).Where(b => !stored.Contains(b.Sha256)))
+            await db.Database.ExecuteSqlInterpolatedAsync($"INSERT OR IGNORE INTO FingerprintBankSnapshots (Sha256, Json) VALUES ({bank.Sha256}, {bank.Json})", token);
+    }
+}
+public sealed class FingerprintTask
+{
+    public int Id { get; set; }
+    public int ModelId { get; set; }
+    public string ModelName { get; set; } = "";
+    public string SiteName { get; set; } = "";
+    public string KeyName { get; set; } = "";
+    public string TemplateName { get; set; } = "";
+    public string TemplateSha256 { get; set; } = "";
+    public string FingerprintModel { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string Family { get; set; } = "";
+    public string Language { get; set; } = "zh";
+    public int Total { get; set; }
+    public int Collected { get; set; }
+    public string Status { get; set; } = "Queued";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? CompletedAt { get; set; }
+    public string? Error { get; set; }
+    public int? ResultBankId { get; set; }
 }
 public sealed class AppSettings
 {

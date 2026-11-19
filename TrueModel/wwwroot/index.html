@@ -179,6 +179,7 @@
                 <h2><i data-lucide="activity"></i>任务</h2>
               </div>
               <div id="runRows"></div>
+              <div id="overviewFingerprintTasks" class="list" hidden></div>
             </div>
           </section>
 
@@ -241,15 +242,44 @@
                 <div class="actions">
                   <button id="updateDefaultBank"><i data-lucide="cloud-download"></i>从上游更新默认库</button>
                   <button id="createEmptyBank"><i data-lucide="file-plus"></i>新建空指纹库</button>
-                  <button id="collectFingerprint"><i data-lucide="sparkles"></i>采集模型指纹</button>
+                  <button id="collectFingerprint" type="button" aria-expanded="false" aria-controls="fingerprintSetup"><i data-lucide="sparkles"></i>采集模型指纹</button>
                   <button id="importBank" class="primary"><i data-lucide="upload"></i>导入指纹库</button>
                 </div>
               </div>
               <div class="card-body">
-                <p class="notice"><i data-lucide="info"></i><span>归因概率仅在当前候选库内比较，不代表模型身份已得到独立验证。</span></p>
+                <p class="notice"><i data-lucide="info"></i><span>默认库与所有已启用的自定义库联合匹配。同一模型标识优先使用默认库，其次使用最新创建的已启用自定义库。归因概率用于比较候选模型。</span></p>
                 <p id="bankUpdateStatus" class="status-line" role="status" aria-live="polite"></p>
               </div>
               <div id="bankRows" class="list"></div>
+            </div>
+
+            <div id="fingerprintSetup" class="card" hidden>
+              <div class="card-header">
+                <h2><i data-lucide="sparkles"></i>采集模型指纹</h2>
+              </div>
+              <form id="fingerprintForm" class="card-body">
+                <p class="notice">请选择身份可信的来源模型。采集成功后自动启用生成的自定义库，采用基础库的特征参数。</p>
+                <label>来源模型<select name="source" required></select></label>
+                <div class="form-grid">
+                  <label>基础指纹库<select name="bank" required></select></label>
+                  <label>采集题数<select name="count"><option value="6">6</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+                  <label>指纹模型标识<input name="model" maxlength="200" required /></label>
+                  <label>显示名称<input name="displayName" maxlength="200" required /></label>
+                </div>
+                <label>家族（如 gpt、claude）<input name="family" maxlength="100" value="custom" required /></label>
+                <p id="fingerprintStatus" class="status-line" role="status" aria-live="polite"></p>
+                <div class="actions">
+                  <button id="submitFingerprint" type="submit" class="primary"><i data-lucide="play"></i>提交采集任务</button>
+                  <button id="closeFingerprint" type="button">收起</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2><i data-lucide="activity"></i>指纹采集任务</h2>
+              </div>
+              <div id="fingerprintTaskRows" class="list"></div>
             </div>
 
             <div class="card">

@@ -48,6 +48,8 @@ builder.Services.AddSingleton(sp => new WorldMapStore(Path.Combine(Path.GetFullP
 builder.Services.AddSingleton<PythonSandbox>();
 builder.Services.AddHostedService<WorldMapWorker>();
 builder.Services.AddHostedService<CraneRidingWorker>();
+builder.Services.AddSingleton<FingerprintEnrollmentWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<FingerprintEnrollmentWorker>());
 builder.Services.AddSingleton<DetectionControl>();
 builder.Services.AddSingleton<JuiceHistory>();
 builder.Services.AddHttpClient<ModelTraceClient>(c => c.Timeout = Timeout.InfiniteTimeSpan);
@@ -105,7 +107,7 @@ using (var scope = app.Services.CreateScope())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
         var additions = table == "Settings"
             ? new Dictionary<string, string> { ["AttributionLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CandyLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy2Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy3Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["WorldMapLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CraneRidingLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CraneRidingSimulatedContext"] = "INTEGER NOT NULL DEFAULT 0", ["CraneRidingReasoningEffort"] = "TEXT NOT NULL DEFAULT 'medium'", ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''", ["JuiceReasoningEffort"] = "TEXT NOT NULL DEFAULT 'default'" }
-            : new Dictionary<string, string> { ["DetectionSettingsJson"] = "TEXT NULL" };
+            : new Dictionary<string, string> { ["DetectionSettingsJson"] = "TEXT NULL", ["BankSelectionJson"] = "TEXT NULL" };
         foreach (var column in additions)
             if (!columns.Contains(column.Key))
             {
@@ -208,6 +210,14 @@ using (var scope = app.Services.CreateScope())
           SimulatedContext INTEGER NOT NULL DEFAULT 0, ConversationJson TEXT NULL, ReasoningEffort TEXT NOT NULL DEFAULT 'default',
           Prompt TEXT NULL, Response TEXT NULL, Svg TEXT NULL, Error TEXT NULL);
         CREATE INDEX IF NOT EXISTS IX_CraneRidingRuns_ModelId ON CraneRidingRuns (ModelId);
+        CREATE TABLE IF NOT EXISTS FingerprintBankSnapshots (Sha256 TEXT NOT NULL PRIMARY KEY, Json TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS FingerprintTasks (
+          Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, ModelId INTEGER NOT NULL, ModelName TEXT NOT NULL,
+          SiteName TEXT NOT NULL, KeyName TEXT NOT NULL, TemplateName TEXT NOT NULL, TemplateSha256 TEXT NOT NULL,
+          FingerprintModel TEXT NOT NULL, DisplayName TEXT NOT NULL, Family TEXT NOT NULL, Language TEXT NOT NULL,
+          Total INTEGER NOT NULL, Collected INTEGER NOT NULL, Status TEXT NOT NULL, CreatedAt TEXT NOT NULL,
+          CompletedAt TEXT NULL, Error TEXT NULL, ResultBankId INTEGER NULL);
+        CREATE INDEX IF NOT EXISTS IX_FingerprintTasks_Status_Id ON FingerprintTasks (Status, Id);
         """);
     if (!await db.Notifications.AnyAsync()) db.Notifications.Add(new NotificationSettings());
     await db.Database.OpenConnectionAsync();
@@ -243,7 +253,7 @@ using (var scope = app.Services.CreateScope())
     await db.Database.CloseConnectionAsync();
     var defaultJson = await File.ReadAllTextAsync(Path.Combine(app.Environment.ContentRootPath, "Assets", "unified_bank.json"));
     var defaultHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(defaultJson)));
-    if (!await db.Banks.AnyAsync())
+    if (!await db.Banks.AnyAsync(b => b.IsDefault))
     {
         Attribution.Validate(defaultJson);
         db.Banks.Add(new FingerprintBank { Name = "ModelTrace 55a2e4a", Json = defaultJson, Active = true, IsDefault = true, Sha256 = defaultHash });
@@ -259,6 +269,15 @@ using (var scope = app.Services.CreateScope())
         await db.SaveChangesAsync();
     }
     await db.SaveChangesAsync();
+    // Preserve the single-bank selection of detections queued before bank snapshots existed.
+    await db.Database.ExecuteSqlRawAsync("""
+        INSERT OR IGNORE INTO FingerprintBankSnapshots (Sha256, Json)
+        SELECT b.Sha256, b.Json FROM Banks b WHERE EXISTS (
+            SELECT 1 FROM Runs r WHERE r.BankId = b.Id AND r.Status = 'Queued' AND r.BankSelectionJson IS NULL);
+        UPDATE Runs SET BankSelectionJson = (
+            SELECT json_array(json_object('Id', b.Id, 'Sha256', b.Sha256)) FROM Banks b WHERE b.Id = Runs.BankId)
+        WHERE Status = 'Queued' AND BankId <> 0 AND BankSelectionJson IS NULL;
+        """);
 }
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -433,6 +452,7 @@ api.MapPost("/models/{id:int}/candy", async (int id, AppDb db, CancellationToken
 });
 api.MapWorldMaps();
 api.MapCraneRides();
+api.MapFingerprintTasks();
 api.MapPost("/candy/refresh-all", async (AppDb db, CancellationToken token) =>
 {
     var settings = await db.Settings.AsNoTracking().SingleAsync(token);
@@ -454,7 +474,7 @@ api.MapGet("/runs", async (AppDb db, DetectionControl control, CancellationToken
     await control.Gate.WaitAsync(token);
     try { active = control.Active.Keys.ToArray(); }
     finally { control.Gate.Release(); }
-    var runs = await db.Runs.AsNoTracking().OrderByDescending(r => r.Id).Take(100).Select(r => new { r.Id, r.StartedAt, r.CompletedAt, r.Status, r.Source, r.Total, r.Completed, r.BankId, r.TargetsJson }).ToArrayAsync(token);
+    var runs = await db.Runs.AsNoTracking().OrderByDescending(r => r.Id).Take(100).Select(r => new { r.Id, r.StartedAt, r.CompletedAt, r.Status, r.Source, r.Total, r.Completed, r.BankId, r.BankSelectionJson, r.TargetsJson }).ToArrayAsync(token);
     var ids = runs.Select(r => r.Id).ToArray();
     var completedTargets = await db.Results.AsNoTracking().Where(r => ids.Contains(r.RunId))
         .Select(r => new { r.RunId, r.ModelId }).ToArrayAsync(token);
@@ -465,6 +485,8 @@ api.MapGet("/runs", async (AppDb db, DetectionControl control, CancellationToken
     return Results.Ok(runs.Select(run => new
     {
         run.Id, run.StartedAt, run.CompletedAt, run.Status, run.Source, run.Total, run.Completed, run.BankId,
+        BankIds = run.BankSelectionJson is null ? (run.BankId == 0 ? [] : new[] { run.BankId })
+            : JsonSerializer.Deserialize<FingerprintBankReference[]>(run.BankSelectionJson)!.Select(b => b.Id).ToArray(),
         CompletedModelIds = completedLookup[run.Id].Distinct(),
         ActiveModelIds = active.Where(t => t.RunId == run.Id).Select(t => t.ModelId),
         Targets = System.Text.Json.JsonSerializer.Deserialize<Target[]>(run.TargetsJson)?.Select(t => new { t.ModelId, t.ModelName, t.KeyName, t.SiteName }),
@@ -489,7 +511,8 @@ api.MapGet("/results", async (int? runId, int? modelId, bool? perModel, AppDb db
         return await query.Where(r => db.Models.Any(m => m.Id == r.ModelId && m.Name == r.ModelName) && db.Results.Count(newer => newer.ModelId == r.ModelId && newer.ModelName == r.ModelName && newer.Id > r.Id) < 10).OrderByDescending(r => r.Id).ToArrayAsync();
     return await query.OrderByDescending(r => r.Id).Take(200).ToArrayAsync();
 });
-api.MapGet("/banks", async (AppDb db) => await db.Banks.Select(b => new { b.Id, b.Name, b.Sha256, b.ImportedAt, b.Active }).ToArrayAsync());
+api.MapGet("/banks", async (AppDb db) => await db.Banks.OrderByDescending(b => b.IsDefault).ThenByDescending(b => b.Id)
+    .Select(b => new { b.Id, b.Name, b.Sha256, b.ImportedAt, b.IsDefault, Active = b.IsDefault || b.Active }).ToArrayAsync());
 api.MapPost("/banks/update-default", async (AppDb db, DefaultBankUpdater updater, CancellationToken token) =>
 {
     try { return Results.Ok(await updater.Update(db, token)); }
@@ -536,7 +559,7 @@ api.MapGet("/banks/{id:int}", async (int id, AppDb db) =>
     {
         using var document = JsonDocument.Parse(bank.Json);
         var root = document.RootElement;
-        return Results.Ok(new { bank.Id, bank.Name, bank.Sha256, bank.ImportedAt, bank.Active,
+        return Results.Ok(new { bank.Id, bank.Name, bank.Sha256, bank.ImportedAt, bank.IsDefault, Active = bank.IsDefault || bank.Active,
             builtAt = root.TryGetProperty("built_at", out var built) ? built.GetString() : null,
             models = root.GetProperty("models").EnumerateArray().Select(m => new { id = m.GetProperty("id").GetString(), displayName = m.GetProperty("display_name").GetString(),
                 family = m.TryGetProperty("family", out var f) ? f.GetString() : "models", responseCount = m.TryGetProperty("response_count", out var c) ? c.GetInt32() : 0,
@@ -546,39 +569,45 @@ api.MapGet("/banks/{id:int}", async (int id, AppDb db) =>
 });
 api.MapDelete("/banks/{id:int}", async (int id, AppDb db) =>
 {
-    var bank = await db.Banks.FindAsync(id);
+    var bank = await db.Banks.AsNoTracking().SingleOrDefaultAsync(b => b.Id == id);
     if (bank is null) return Results.NotFound();
-    if (bank.Active) return Results.Conflict(new { error = "当前指纹库正在使用，请先切换到其他指纹库" });
-    db.Banks.Remove(bank); await db.SaveChangesAsync(); return Results.NoContent();
+    if (bank.IsDefault) return Results.Conflict(new { error = "默认指纹库由上游维护" });
+    await db.Banks.Where(b => b.Id == id).ExecuteDeleteAsync();
+    return Results.NoContent();
 });
 api.MapPost("/banks/{id:int}/models", async (int id, ManualFingerprintInput input, AppDb db) =>
 {
-    var bank = await db.Banks.FindAsync(id);
+    var bank = await db.Banks.AsNoTracking().SingleOrDefaultAsync(b => b.Id == id);
     if (bank is null) return Results.NotFound();
+    if (bank.IsDefault) return Results.Conflict(new { error = "请在自定义库中新增指纹" });
     if (string.IsNullOrWhiteSpace(input.Model) || string.IsNullOrWhiteSpace(input.DisplayName) || string.IsNullOrWhiteSpace(input.Family) || input.Counts is null || input.Counts.Length != 355 || input.Counts.Any(x => x < 0))
         return Results.BadRequest(new { error = "模型信息必填，counts 必须是 355 个非负整数" });
-    var total = input.Counts.Sum();
-    if (total is < 80 or > 1_000_000) return Results.BadRequest(new { error = "counts 总数必须在 80 到 1000000 之间" });
+    var totalCount = input.Counts.Sum(x => (long)x);
+    if (totalCount is < 80 or > 1_000_000) return Results.BadRequest(new { error = "counts 总数必须在 80 到 1000000 之间" });
+    var total = (int)totalCount;
     try
     {
         var text = string.Join(',', input.Counts.SelectMany((count, i) => Enumerable.Repeat(i + 1, count)));
         var json = Attribution.Enroll(bank.Json, input.Model.Trim(), input.DisplayName.Trim(), input.Family.Trim(), [new(text, total), new(text, total), new(text, total)]);
-        bank.Json = json; bank.Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))); await db.SaveChangesAsync();
-        return Results.Ok(new { bank.Id });
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+        var updated = await db.Banks.Where(b => b.Id == id && b.Sha256 == bank.Sha256)
+            .ExecuteUpdateAsync(s => s.SetProperty(b => b.Json, json).SetProperty(b => b.Sha256, hash));
+        return updated == 1 ? Results.Ok(new { bank.Id }) : Results.Conflict(new { error = "指纹库已变更，请刷新后重试" });
     }
     catch (Exception e) when (e is JsonException or FormatException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException) { return Results.BadRequest(new { error = "无法生成指纹，请检查基础库或 counts" }); }
 });
 api.MapDelete("/banks/{id:int}/models/{modelId}", async (int id, string modelId, AppDb db) =>
 {
-    var bank = await db.Banks.FindAsync(id);
+    var bank = await db.Banks.AsNoTracking().SingleOrDefaultAsync(b => b.Id == id);
     if (bank is null) return Results.NotFound();
+    if (bank.IsDefault) return Results.Conflict(new { error = "默认指纹库由上游维护" });
     try
     {
         var root = JsonNode.Parse(bank.Json)!;
         var models = root["models"]!.AsArray();
         var match = models.Select((m, i) => (m, i)).SingleOrDefault(x => x.m?["id"]?.GetValue<string>() == modelId);
         var index = match.m is null ? -1 : match.i;
-        if (index < 0 || models.Count <= 2) return Results.Conflict(new { error = "指纹库至少需要保留 2 个模型" });
+        if (index < 0) return Results.NotFound();
         models.RemoveAt(index); root["robust"]!["model_order"]!.AsArray().RemoveAt(index);
         foreach (var name in new[] { "hellinger", "ordered_blocks" })
         {
@@ -586,46 +615,22 @@ api.MapDelete("/banks/{id:int}/models/{modelId}", async (int id, string modelId,
             artifact["centroids"]!.AsArray().RemoveAt(index);
             if (name == "ordered_blocks") foreach (var environment in artifact["environment_centroids"]!.AsArray()) environment!.AsArray().RemoveAt(index);
         }
-        var json = root.ToJsonString(); Attribution.Validate(json); bank.Json = json; bank.Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))); await db.SaveChangesAsync(); return Results.NoContent();
+        var json = root.ToJsonString();
+        Attribution.Validate(json, allowIncomplete: true);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+        var hasModels = models.Count > 0;
+        var updated = await db.Banks.Where(b => b.Id == id && b.Sha256 == bank.Sha256).ExecuteUpdateAsync(s => s
+            .SetProperty(b => b.Json, json).SetProperty(b => b.Sha256, hash).SetProperty(b => b.Active, b => hasModels && b.Active));
+        return updated == 1 ? Results.NoContent() : Results.Conflict(new { error = "指纹库已变更，请刷新后重试" });
     }
     catch (Exception e) when (e is JsonException or FormatException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException) { return Results.BadRequest(new { error = "指纹库内容损坏，无法删除" }); }
-});
-api.MapPost("/models/{id:int}/fingerprint", async (int id, EnrollmentInput input, AppDb db, ModelTraceClient client, IDataProtectionProvider protection, CancellationToken token) =>
-{
-    if (input.ChallengeCount is < 3 or > 6 || string.IsNullOrWhiteSpace(input.Model) || input.Model.Length > 200 ||
-        string.IsNullOrWhiteSpace(input.DisplayName) || input.DisplayName.Length > 200 || string.IsNullOrWhiteSpace(input.Family) || input.Family.Length > 100)
-        return Results.BadRequest(new { error = "请填写模型标识、显示名称和家族，采集题数须为 3–6" });
-    var source = await db.Banks.AsNoTracking().SingleOrDefaultAsync(b => b.Id == input.BankId, token);
-    var target = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
-        where m.Id == id select new { m.Name, k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
-    if (source is null || target is null) return Results.NotFound();
-    string key;
-    try { key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue); }
-    catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
-    try
-    {
-        var language = await db.Settings.Select(s => s.AttributionLanguage).SingleAsync(token);
-        var outputs = await FingerprintEnrollment.Collect(client, target.BaseUrl, key, target.Name, input.ChallengeCount, token, language);
-        var json = Attribution.Enroll(source.Json, input.Model.Trim(), input.DisplayName.Trim(), input.Family.Trim(), outputs);
-        var bank = new FingerprintBank { Name = $"{input.DisplayName.Trim()} · 采集 {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} · 基于 #{source.Id}",
-            Json = json, Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))) };
-        db.Banks.Add(bank);
-        await db.SaveChangesAsync(token);
-        return Results.Ok(new { bank.Id, collected = outputs.Length, calibrationRefitted = false });
-    }
-    catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-    catch (Exception e) when (e is UpstreamException or HttpRequestException or System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException or FormatException or IndexOutOfRangeException)
-    {
-        // Upstream payloads may contain credentials; never return them to the browser.
-        return Results.BadRequest(new { error = "指纹采集失败：接口异常、回答无效或基础库不兼容；未保存新版本" });
-    }
 });
 api.MapGet("/banks/{id:int}/export", async (int id, AppDb db) => { var bank = await db.Banks.FindAsync(id); return bank is null ? Results.NotFound() : Results.File(Encoding.UTF8.GetBytes(bank.Json), "application/json", $"bank-{id}.json"); });
 api.MapPost("/banks/empty", async (EmptyBankInput input, AppDb db, CancellationToken token) =>
 {
     if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Length > 200)
         return Results.BadRequest(new { error = "请填写指纹库名称（最多 200 字符）" });
-    var template = await File.ReadAllTextAsync(Path.Combine(app.Environment.ContentRootPath, "Assets", "unified_bank.json"), token);
+    var template = await db.Banks.Where(b => b.IsDefault).Select(b => b.Json).SingleAsync(token);
     var json = Attribution.CreateEmptyBank(template);
     var bank = new FingerprintBank { Name = input.Name.Trim(), Json = json,
         Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))) };
@@ -645,13 +650,18 @@ api.MapPost("/banks/{id:int}/activate", async (int id, AppDb db) =>
 {
     var bank = await db.Banks.AsNoTracking().SingleOrDefaultAsync(b => b.Id == id);
     if (bank is null) return Results.NotFound();
+    if (bank.IsDefault) return Results.NoContent();
     using var document = JsonDocument.Parse(bank.Json);
-    if (document.RootElement.GetProperty("models").GetArrayLength() < 2)
-        return Results.Conflict(new { error = "至少添加两个模型指纹后才能设为当前库" });
-    await using var transaction = await db.Database.BeginTransactionAsync();
-    await db.Banks.ExecuteUpdateAsync(s => s.SetProperty(b => b.Active, false));
-    await db.Banks.Where(b => b.Id == id).ExecuteUpdateAsync(s => s.SetProperty(b => b.Active, true));
-    await transaction.CommitAsync(); return Results.NoContent();
+    if (document.RootElement.GetProperty("models").GetArrayLength() == 0)
+        return Results.Conflict(new { error = "添加至少一个模型指纹后即可启用联合匹配" });
+    var updated = await db.Banks.Where(b => b.Id == id && b.Sha256 == bank.Sha256).ExecuteUpdateAsync(s => s.SetProperty(b => b.Active, true));
+    return updated == 1 ? Results.NoContent() : Results.Conflict(new { error = "指纹库已变更，请刷新后重试" });
+});
+api.MapPost("/banks/{id:int}/deactivate", async (int id, AppDb db) =>
+{
+    var updated = await db.Banks.Where(b => b.Id == id && !b.IsDefault).ExecuteUpdateAsync(s => s.SetProperty(b => b.Active, false));
+    if (updated == 1) return Results.NoContent();
+    return await db.Banks.AnyAsync(b => b.Id == id) ? Results.Conflict(new { error = "默认指纹库始终参与匹配" }) : Results.NotFound();
 });
 api.MapGet("/settings", async (AppDb db) => await db.Settings.SingleAsync());
 api.MapPut("/settings", async (JsonElement payload, AppDb db) =>

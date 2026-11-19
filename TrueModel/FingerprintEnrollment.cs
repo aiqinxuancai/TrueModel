@@ -7,7 +7,7 @@ public static partial class Attribution
 {
     public static string CreateEmptyBank(string templateJson)
     {
-        Validate(templateJson);
+        Validate(templateJson, allowIncomplete: true);
         var bank = JsonNode.Parse(templateJson)!;
         bank["models"]!.AsArray().Clear();
         bank["robust"]!["model_order"]!.AsArray().Clear();
@@ -81,7 +81,8 @@ public sealed record EnrollmentInput(int BankId, string Model, string DisplayNam
 
 public static class FingerprintEnrollment
 {
-    public static async Task<ProbeOutput[]> Collect(ModelTraceClient client, string url, string key, string model, int count, CancellationToken token, string language = "zh")
+    public static async Task<ProbeOutput[]> Collect(ModelTraceClient client, string url, string key, string model, int count, CancellationToken token, string language = "zh",
+        Func<int, CancellationToken, Task>? progress = null)
     {
         var outputs = new List<ProbeOutput>();
         foreach (var challenge in Challenges.Generate(count, language))
@@ -91,6 +92,7 @@ public static class FingerprintEnrollment
             if (Attribution.ParseNumbers(text).Length < Math.Max(80, Math.Ceiling(challenge.ExpectedCount * .55)))
                 throw new InvalidOperationException("模型回答未达到有效数字阈值；未保存指纹");
             outputs.Add(new(text, challenge.ExpectedCount));
+            if (progress is not null) await progress(outputs.Count, token);
         }
         return outputs.ToArray();
     }

@@ -162,8 +162,8 @@ button.block { width: 100%; }
 .icon-button.sm svg.lucide { width: 15px; height: 15px; }
 .icon-button.xs { width: 24px; height: 24px; min-height: 24px; border-radius: 6px; }
 .icon-button.xs svg.lucide { width: 13px; height: 13px; }
-[data-delete], [data-delete-bank] { color: var(--danger); }
-[data-delete]:hover, [data-delete-bank]:hover { color: var(--danger) !important; background: var(--danger-soft) !important; border-color: var(--danger-border) !important; }
+[data-delete], [data-bank-action="delete"], [data-stop-fingerprint] { color: var(--danger); }
+[data-delete]:hover, [data-bank-action="delete"]:hover, [data-stop-fingerprint]:hover { color: var(--danger) !important; background: var(--danger-soft) !important; border-color: var(--danger-border) !important; }
 button[aria-busy="true"] svg.lucide { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -437,6 +437,8 @@ td.empty strong { display: block; }
 .row .actions button, .row .actions a.button { min-height: 32px; padding: 5px 11px; font-size: 12.5px; }
 .row .actions .icon-button { width: 32px; padding: 0; }
 .delivery-status { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+#overviewFingerprintTasks { border-top: 1px solid var(--border); }
+.fingerprint-task-progress { min-width: 120px; }
 
 /* ==========================================================================
    Stats

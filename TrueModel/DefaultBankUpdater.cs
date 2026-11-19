@@ -23,7 +23,7 @@ public sealed class DefaultBankUpdater(HttpClient client)
             if (bank is not null && bank.Sha256 == hash) return new(bank.Id, false, sha);
             if (bank is null)
             {
-                bank = new FingerprintBank { IsDefault = true, Active = !await db.Banks.AnyAsync(b => b.Active, token) };
+                bank = new FingerprintBank { IsDefault = true, Active = true };
                 db.Banks.Add(bank);
             }
             bank.Name = $"ModelTrace {sha[..7]}";

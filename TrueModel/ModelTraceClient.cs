@@ -288,7 +288,11 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 string.IsNullOrEmpty(key) ? e.Message : e.Message.Replace(key, "[REDACTED]", StringComparison.Ordinal), reasoningEffort, reasoningTokens, watch.ElapsedMilliseconds);
         }
     }
-    public async Task<JsonElement> Test(string baseUrl, string key, string model, string bank, int challengeCount, CancellationToken token, string candyReasoningEffort = "default", string juiceReasoningEffort = "default",
+    public Task<JsonElement> Test(string baseUrl, string key, string model, string bank, int challengeCount, CancellationToken token, string candyReasoningEffort = "default", string juiceReasoningEffort = "default",
+        string attributionLanguage = "zh", string candyLanguage = "zh", string candy2Language = "zh", string candy3Language = "zh") =>
+        Test(baseUrl, key, model, [bank], challengeCount, token, candyReasoningEffort, juiceReasoningEffort, attributionLanguage, candyLanguage, candy2Language, candy3Language);
+
+    internal async Task<JsonElement> Test(string baseUrl, string key, string model, IReadOnlyList<string> banks, int challengeCount, CancellationToken token, string candyReasoningEffort, string juiceReasoningEffort,
         string attributionLanguage = "zh", string candyLanguage = "zh", string candy2Language = "zh", string candy3Language = "zh")
     {
         var watch = Stopwatch.StartNew();
@@ -313,7 +317,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         envelope["duration_ms"] = watch.ElapsedMilliseconds;
         try
         {
-            var report = Attribution.AnalyzeGlobal(outputs, bank);
+            var report = Attribution.AnalyzeGlobal(outputs, banks);
             report["api_test"] = new { requested = challengeCount, attempted = challengeCount, max_attempts = challengeCount, received = report["used_outputs"], errors };
             envelope["result"] = report;
         }

@@ -11,7 +11,7 @@ namespace TrueModel.Tests;
 public class EmptyBankTests
 {
     [Fact]
-    public async Task EmptyBankCanBeExportedImportedAndFilledBeforeActivation()
+    public async Task EmptyBankCanBeExportedImportedAndEnabledWithOneModel()
     {
         var directory = Path.Combine(Path.GetTempPath(), "truemodel-empty-" + Guid.NewGuid());
         Directory.CreateDirectory(directory);
@@ -49,12 +49,11 @@ public class EmptyBankTests
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/banks", new { name = "导入空库", json })).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync(route + "/activate", new { })).StatusCode);
         var counts = Enumerable.Repeat(1, 355).ToArray();
-        foreach (var model in new[] { "first", "second" })
-        {
-            Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(route + "/models", new { model, displayName = model, family = "custom", counts })).StatusCode);
-            if (model == "first") Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync(route + "/activate", new { })).StatusCode);
-        }
-        Attribution.Validate(await client.GetStringAsync(route + "/export"));
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(route + "/models", new { model = "first", displayName = "first", family = "custom", counts })).StatusCode);
+        Attribution.Validate(await client.GetStringAsync(route + "/export"), allowIncomplete: true);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync(route + "/activate", new { })).StatusCode);
+        Assert.True((await client.GetFromJsonAsync<JsonElement>(route)).GetProperty("active").GetBoolean());
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(route + "/models/first")).StatusCode);
+        Assert.False((await client.GetFromJsonAsync<JsonElement>(route)).GetProperty("active").GetBoolean());
     }
 }

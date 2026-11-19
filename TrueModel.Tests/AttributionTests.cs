@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using TrueModel;
 
 namespace TrueModel.Tests;
@@ -39,6 +40,31 @@ public class AttributionTests
         using var document = JsonDocument.Parse(Bank);
         Assert.Equal(2, report.UsedOutputs);
         Assert.Equal(document.RootElement.GetProperty("calibration").GetProperty("2").GetProperty("beta").GetDouble(), report.Beta);
+    }
+
+    [Fact]
+    public void PoolsSingleModelBanksInTheirOwnFeatureSpacesAndUsesTheFirstEntryForDuplicateIds()
+    {
+        var bank = Bank;
+        var sample = new ProbeOutput(string.Join(',', Enumerable.Range(1, 310)), 310);
+        var empty = Attribution.CreateEmptyBank(bank);
+        var first = Attribution.Enroll(empty, "supplement-a", "First", "custom", [sample, sample, sample]);
+        var shifted = JsonNode.Parse(empty)!;
+        shifted["robust"]!["hellinger"]!["feature_mean"]![0] = 20;
+        shifted["robust"]!["ordered_blocks"]!["feature_mean"]![0] = 20;
+        var second = Attribution.Enroll(shifted.ToJsonString(), "supplement-b", "Second", "custom", [sample, sample, sample]);
+        var overlapsDefault = Attribution.Enroll(second, "gpt-6-sol", "Duplicate", "custom", [sample, sample, sample]);
+        var overlapsFirst = Attribution.Enroll(overlapsDefault, "supplement-a", "Other Duplicate", "custom", [sample, sample, sample]);
+        var result = JsonSerializer.SerializeToElement(Attribution.AnalyzeGlobal([sample], [bank, first, overlapsFirst]));
+        var candidates = result.GetProperty("results").EnumerateArray().ToDictionary(c => c.GetProperty("model").GetString()!);
+        Assert.Equal(18, candidates.Count);
+        Assert.Equal(3, result.GetProperty("candidate_bank_count").GetInt32());
+        Assert.NotEqual("Duplicate", candidates["gpt-6-sol"].GetProperty("display_name").GetString());
+        Assert.Equal("First", candidates["supplement-a"].GetProperty("display_name").GetString());
+        Assert.Equal(candidates["supplement-a"].GetProperty("score").GetDouble(), candidates["supplement-b"].GetProperty("score").GetDouble(), 10);
+        Assert.Equal(1, candidates.Values.Sum(c => c.GetProperty("probability").GetDouble()), 10);
+        Assert.Equal(Attribution.Analyze([sample], bank).Beta, result.GetProperty("calibration").GetProperty("beta").GetDouble());
+        Assert.Equal(JsonValueKind.Null, result.GetProperty("calibration").GetProperty("cv_accuracy").ValueKind);
     }
     [Fact]
     public void PasswordHashIsSaltedAndVerifies()
