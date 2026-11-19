@@ -19,6 +19,40 @@ const fingerprintForm = $('fingerprintForm');
 const fingerprintFields = fingerprintForm.elements;
 const stopRequests = new Set();
 
+function selectedDestinationBank() {
+    return fingerprintFields.saveMode.value === 'accumulate' ? Number(fingerprintFields.bank.value) : 0;
+}
+
+async function loadFingerprintModelOptions() {
+    const options = $('fingerprintModelOptions');
+    options.replaceChildren();
+    const id = selectedDestinationBank();
+    if (!id) return;
+    try {
+        const bank = await api(`/banks/${id}`);
+        if (selectedDestinationBank() === id) options.innerHTML = bank.models.map(m =>
+            `<option value="${esc(m.id)}" label="${esc(m.displayName)}"></option>`).join('');
+    } catch (error) {
+        if (selectedDestinationBank() === id && !$('fingerprintSetup').hidden) $('fingerprintStatus').textContent = error.message;
+    }
+}
+
+function updateFingerprintBankOptions() {
+    const accumulate = fingerprintFields.saveMode.value === 'accumulate';
+    const available = accumulate ? banks.filter(bank => !bank.isDefault) : banks;
+    const current = available.find(bank => String(bank.id) === fingerprintFields.bank.value);
+    const selected = current ?? available.find(bank => bank.isDefault) ?? available[0];
+    fingerprintFields.bank.innerHTML = available.map(bank =>
+        `<option value="${bank.id}" ${bank === selected ? 'selected' : ''}>${esc(bank.name)}</option>`).join('');
+    if (accumulate && !available.length) fingerprintFields.bank.innerHTML = '<option value="">请先新建或导入自定义库</option>';
+    $('fingerprintBankLabel').textContent = accumulate ? '目标自定义库' : '基础指纹库';
+    $('fingerprintSaveHint').textContent = accumulate
+        ? '按模型标识写入目标库。已有指纹会累加本次样本，新的标识会添加到库中。'
+        : '请选择身份可信的来源模型。采集成功后自动启用生成的自定义库。';
+    $('fingerprintStatus').textContent = '';
+    loadFingerprintModelOptions();
+}
+
 function showFingerprintSetup(open) {
     const section = $('fingerprintSetup');
     const restoreFocus = !open && section.contains(document.activeElement);
@@ -35,13 +69,13 @@ $('collectFingerprint').onclick = () => {
     const sources = sites.flatMap(s => s.keys.flatMap(k => k.models.map(m =>
         `<option value="${m.id}" data-name="${esc(m.name)}">${esc(s.name)} / ${esc(k.name)} / ${esc(m.name)}</option>`)));
     fingerprintFields.source.innerHTML = sources.join('') || '<option value="">请先在站点中添加模型</option>';
-    fingerprintFields.bank.innerHTML = banks.map(b =>
-        `<option value="${b.id}" ${b.isDefault ? 'selected' : ''}>${esc(b.name)}</option>`).join('');
     fingerprintFields.source.onchange();
-    $('fingerprintStatus').textContent = '';
+    updateFingerprintBankOptions();
     showFingerprintSetup(true);
     fingerprintFields.source.focus();
 };
+fingerprintFields.saveMode.onchange = updateFingerprintBankOptions;
+fingerprintFields.bank.onchange = loadFingerprintModelOptions;
 fingerprintFields.source.onchange = () => {
     const name = fingerprintFields.source.selectedOptions[0]?.dataset.name || '';
     fingerprintFields.model.value = name;
@@ -56,7 +90,7 @@ fingerprintForm.onsubmit = async event => {
     const input = {
         bankId: Number(fingerprintFields.bank.value), model: fingerprintFields.model.value.trim(),
         displayName: fingerprintFields.displayName.value.trim(), family: fingerprintFields.family.value.trim(),
-        challengeCount: Number(fingerprintFields.count.value)
+        challengeCount: Number(fingerprintFields.count.value), accumulate: fingerprintFields.saveMode.value === 'accumulate'
     };
     button.disabled = true;
     $('fingerprintStatus').textContent = '正在提交采集任务…';
@@ -125,6 +159,7 @@ function fingerprintTaskRow(task) {
             <div>
                 <div class="row-title"><b>采集指纹 · ${esc(task.displayName)}</b>${badge(task.status)}</div>
                 <small>#${task.id} · ${esc(task.siteName)} / ${esc(task.keyName)} / ${esc(task.modelName)} · ${time(task.createdAt)}</small>
+                ${task.destinationBankId ? `<small>目标库 ${esc(task.templateName)}</small>` : ''}
                 ${task.error ? `<small class="inline-error">${esc(task.error)}</small>` : ''}
             </div>
         </div>
@@ -169,8 +204,8 @@ async function showFingerprintBank(id) {
     </div></div>
     <p class="detail-hash">SHA256 <code>${esc(bank.sha256)}</code></p>
     <div class="table-wrap bordered"><table>
-        <thead><tr><th>模型标识</th><th>名称</th><th>家族</th><th>有效数字</th></tr></thead>
-        <tbody>${bank.models.map(m => `<tr><td><code>${esc(m.id)}</code></td><td>${esc(m.displayName)}</td><td><span class="pill">${esc(m.family)}</span></td><td>${m.validNumberCount}</td></tr>`).join('')}</tbody>
+        <thead><tr><th>模型标识</th><th>名称</th><th>家族</th><th>有效回答</th><th>有效数字</th></tr></thead>
+        <tbody>${bank.models.map(m => `<tr><td><code>${esc(m.id)}</code></td><td>${esc(m.displayName)}</td><td><span class="pill">${esc(m.family)}</span></td><td>${m.responseCount}</td><td>${m.validNumberCount}</td></tr>`).join('')}</tbody>
     </table></div>`;
     $('detail').showModal();
 }

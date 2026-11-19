@@ -73,6 +73,42 @@ public class AttributionTests
         Assert.Equal(1, overridden.GetProperty("candidate_bank_count").GetInt32());
         Assert.Equal(JsonValueKind.Null, overridden.GetProperty("calibration").GetProperty("cv_accuracy").ValueKind);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AccumulatesFrequenciesAndUpdatesCentroidsInAnExportedBank(bool legacy)
+    {
+        var empty = Attribution.CreateEmptyBank(Bank);
+        static ProbeOutput Sample(IEnumerable<int> numbers) => new(string.Join(',', numbers), 310);
+        ProbeOutput[] first = [Sample(Enumerable.Range(1, 310)), Sample(Enumerable.Repeat(17, 310)), Sample(Enumerable.Repeat(304, 310))];
+        ProbeOutput[] second = [Sample(Enumerable.Range(22, 310).Reverse()), Sample(Enumerable.Repeat(277, 310)), Sample(Enumerable.Repeat(34, 310))];
+        var enrolled = JsonNode.Parse(Attribution.Enroll(empty, "local", "Original", "gpt", first))!;
+        if (legacy) enrolled["models"]![0]!["enrollment"]!.AsObject().Remove("centroid_sum_norms");
+        var added = JsonNode.Parse(Attribution.Enroll(enrolled.ToJsonString(), "local", "Different name", "custom", second, accumulate: true))!;
+        var combined = JsonNode.Parse(Attribution.Enroll(empty, "local", "Original", "gpt", [.. first, .. second]))!;
+        var model = Assert.Single(added["models"]!.AsArray())!;
+        Assert.Equal(6, model["response_count"]!.GetValue<int>());
+        Assert.Equal(1860, model["valid_number_count"]!.GetValue<int>());
+        Assert.Equal("Original", model["display_name"]!.GetValue<string>());
+        Assert.Equal("gpt", model["family"]!.GetValue<string>());
+        Assert.Equal(combined["models"]![0]!["counts"]!.Deserialize<int[]>(), model["counts"]!.Deserialize<int[]>());
+
+        static IEnumerable<double> Centroids(JsonNode bank)
+        {
+            var robust = bank["robust"]!;
+            var ordered = robust["ordered_blocks"]!;
+            return robust["hellinger"]!["centroids"]![0]!.AsArray().Concat(ordered["centroids"]![0]!.AsArray())
+                .Concat(ordered["environment_centroids"]!.AsArray().SelectMany(env => env![0]!.AsArray()))
+                .Select(v => v!.GetValue<double>());
+        }
+        var actual = Centroids(added).ToArray();
+        Assert.All(actual, v => Assert.True(double.IsFinite(v)));
+        Assert.False(Centroids(enrolled).SequenceEqual(actual));
+        if (!legacy)
+            Assert.All(Centroids(combined).Zip(actual), pair => Assert.InRange(Math.Abs(pair.First - pair.Second), 0, 1e-12));
+    }
+
     [Fact]
     public void PasswordHashIsSaltedAndVerifies()
     {

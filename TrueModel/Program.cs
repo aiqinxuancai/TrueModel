@@ -216,11 +216,19 @@ using (var scope = app.Services.CreateScope())
           SiteName TEXT NOT NULL, KeyName TEXT NOT NULL, TemplateName TEXT NOT NULL, TemplateSha256 TEXT NOT NULL,
           FingerprintModel TEXT NOT NULL, DisplayName TEXT NOT NULL, Family TEXT NOT NULL, Language TEXT NOT NULL,
           Total INTEGER NOT NULL, Collected INTEGER NOT NULL, Status TEXT NOT NULL, CreatedAt TEXT NOT NULL,
-          CompletedAt TEXT NULL, Error TEXT NULL, ResultBankId INTEGER NULL);
+          CompletedAt TEXT NULL, Error TEXT NULL, ResultBankId INTEGER NULL, DestinationBankId INTEGER NULL);
         CREATE INDEX IF NOT EXISTS IX_FingerprintTasks_Status_Id ON FingerprintTasks (Status, Id);
         """);
     if (!await db.Notifications.AnyAsync()) db.Notifications.Add(new NotificationSettings());
     await db.Database.OpenConnectionAsync();
+    using (var command = db.Database.GetDbConnection().CreateCommand())
+    {
+        command.CommandText = "PRAGMA table_info(FingerprintTasks)";
+        var hasDestination = false;
+        using (var reader = await command.ExecuteReaderAsync())
+            while (await reader.ReadAsync()) hasDestination |= reader.GetString(1) == "DestinationBankId";
+        if (!hasDestination) await db.Database.ExecuteSqlRawAsync("ALTER TABLE FingerprintTasks ADD COLUMN DestinationBankId INTEGER NULL");
+    }
     using (var command = db.Database.GetDbConnection().CreateCommand())
     {
         command.CommandText = "PRAGMA table_info(CraneRidingRuns)";

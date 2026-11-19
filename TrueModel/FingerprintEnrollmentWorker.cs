@@ -10,11 +10,11 @@ public static class FingerprintTaskEndpoints
 {
     private sealed record Summary(int Id, string ModelName, string SiteName, string KeyName, string TemplateName,
         string FingerprintModel, string DisplayName, string Language, int Total, int Collected, string Status,
-        DateTime CreatedAt, DateTime? CompletedAt, string? Error, int? ResultBankId);
+        DateTime CreatedAt, DateTime? CompletedAt, string? Error, int? ResultBankId, int? DestinationBankId);
 
     private static readonly Expression<Func<FingerprintTask, Summary>> Project = t => new(t.Id, t.ModelName, t.SiteName,
         t.KeyName, t.TemplateName, t.FingerprintModel, t.DisplayName, t.Language, t.Total, t.Collected, t.Status,
-        t.CreatedAt, t.CompletedAt, t.Error, t.ResultBankId);
+        t.CreatedAt, t.CompletedAt, t.Error, t.ResultBankId, t.DestinationBankId);
 
     public static void MapFingerprintTasks(this RouteGroupBuilder api)
     {
@@ -50,16 +50,17 @@ public static class FingerprintTaskEndpoints
             string.IsNullOrWhiteSpace(input.DisplayName) || input.DisplayName.Length > 200 || string.IsNullOrWhiteSpace(input.Family) || input.Family.Length > 100)
             return Results.BadRequest(new { error = "请填写有效的模型标识、显示名称和家族" });
         var template = await db.Banks.AsNoTracking().SingleOrDefaultAsync(b => b.Id == input.BankId, token);
-        if (template is null) return Results.NotFound(new { error = "基础指纹库不存在" });
+        if (template is null) return Results.NotFound(new { error = input.Accumulate ? "目标自定义库不存在" : "基础指纹库不存在" });
+        if (input.Accumulate && template.IsDefault) return Results.Conflict(new { error = "请选择自定义库作为累加目标" });
         var target = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
             where m.Id == id select new { ModelName = m.Name, KeyName = k.Name, SiteName = s.Name }).SingleOrDefaultAsync(token);
         if (target is null) return Results.NotFound(new { error = "来源模型不存在" });
         var language = await db.Settings.Select(s => s.AttributionLanguage).SingleAsync(token);
-        await FingerprintBankSnapshot.Remember(db, [template], token);
+        if (!input.Accumulate) await FingerprintBankSnapshot.Remember(db, [template], token);
         var task = new FingerprintTask
         {
             ModelId = id, ModelName = target.ModelName, KeyName = target.KeyName, SiteName = target.SiteName,
-            TemplateName = template.Name, TemplateSha256 = template.Sha256, Language = language,
+            TemplateName = template.Name, TemplateSha256 = template.Sha256, DestinationBankId = input.Accumulate ? template.Id : null, Language = language,
             FingerprintModel = input.Model.Trim(), DisplayName = input.DisplayName.Trim(), Family = input.Family.Trim(), Total = input.ChallengeCount
         };
         db.FingerprintTasks.Add(task);
@@ -147,28 +148,17 @@ public sealed class FingerprintEnrollmentWorker(IServiceScopeFactory scopes, IDa
             var target = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
                 where m.Id == task.ModelId && m.Name == task.ModelName select new { k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
             if (target is null) error = "来源模型已删除或更名";
+            else if (task.DestinationBankId is int bankId && !await db.Banks.AnyAsync(b => b.Id == bankId && !b.IsDefault, token))
+                error = "目标自定义库已删除";
             else
             {
                 var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue);
-                var template = await db.FingerprintBankSnapshots.Where(b => b.Sha256 == task.TemplateSha256).Select(b => b.Json).SingleAsync(token);
-                var empty = Attribution.CreateEmptyBank(template);
+                var empty = task.DestinationBankId is null ? Attribution.CreateEmptyBank(await db.FingerprintBankSnapshots
+                    .Where(b => b.Sha256 == task.TemplateSha256).Select(b => b.Json).SingleAsync(token)) : null;
                 var outputs = await FingerprintEnrollment.Collect(client, target.BaseUrl, key, task.ModelName, task.Total, token, task.Language,
                     (count, ct) => running.ExecuteUpdateAsync(s => s.SetProperty(t => t.Collected, count), ct));
-                token.ThrowIfCancellationRequested();
-                var json = Attribution.Enroll(empty, task.FingerprintModel, task.DisplayName, task.Family, outputs);
-                var bank = new FingerprintBank
-                {
-                    Name = $"{task.DisplayName} · 采集 #{task.Id}", Json = json, Active = true,
-                    Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)))
-                };
-                // Commit the bank only if this worker wins the race with cancellation.
-                await using var transaction = await db.Database.BeginTransactionAsync(token);
-                db.Banks.Add(bank);
-                await db.SaveChangesAsync(token);
-                var updated = await running.ExecuteUpdateAsync(s => s.SetProperty(t => t.Status, "Completed")
-                    .SetProperty(t => t.ResultBankId, bank.Id).SetProperty(t => t.CompletedAt, DateTime.UtcNow), token);
-                if (updated == 1) await transaction.CommitAsync(token);
-                return;
+                if (await SaveResult(db, task, running, empty, outputs, token)) return;
+                error = "目标自定义库已删除";
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -182,5 +172,43 @@ public sealed class FingerprintEnrollmentWorker(IServiceScopeFactory scopes, IDa
         }
         await running.ExecuteUpdateAsync(s => s.SetProperty(t => t.Status, status).SetProperty(t => t.Error, error)
             .SetProperty(t => t.CompletedAt, DateTime.UtcNow));
+    }
+
+    private static async Task<bool> SaveResult(AppDb db, FingerprintTask task, IQueryable<FingerprintTask> running,
+        string? empty, ProbeOutput[] outputs, CancellationToken token)
+    {
+        var destinations = db.Banks.Where(b => b.Id == task.DestinationBankId && !b.IsDefault);
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            var destination = task.DestinationBankId.HasValue ? await destinations.AsNoTracking().SingleOrDefaultAsync(token) : null;
+            if (task.DestinationBankId.HasValue && destination is null) return false;
+            var json = Attribution.Enroll(destination?.Json ?? empty!, task.FingerprintModel, task.DisplayName, task.Family, outputs,
+                accumulate: destination is not null);
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+
+            // Bank contents and completion must commit together so cancellation rolls back the entire collection.
+            await using var transaction = await db.Database.BeginTransactionAsync(token);
+            int bankId;
+            if (destination is null)
+            {
+                var bank = new FingerprintBank { Name = $"{task.DisplayName} · 采集 #{task.Id}", Json = json, Sha256 = hash, Active = true };
+                db.Banks.Add(bank);
+                await db.SaveChangesAsync(token);
+                bankId = bank.Id;
+            }
+            else
+            {
+                bankId = destination.Id;
+                // Reapply this batch to the latest version if another write changed the bank during scoring.
+                var saved = await destinations.Where(b => b.Sha256 == destination.Sha256)
+                    .ExecuteUpdateAsync(s => s.SetProperty(b => b.Json, json).SetProperty(b => b.Sha256, hash), token);
+                if (saved == 0) continue;
+            }
+            var updated = await running.ExecuteUpdateAsync(s => s.SetProperty(t => t.Status, "Completed")
+                .SetProperty(t => t.ResultBankId, bankId).SetProperty(t => t.CompletedAt, DateTime.UtcNow), token);
+            if (updated == 1) await transaction.CommitAsync(token);
+            return true;
+        }
     }
 }

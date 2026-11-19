@@ -165,6 +165,7 @@ public sealed class FingerprintTask
     public string KeyName { get; set; } = "";
     public string TemplateName { get; set; } = "";
     public string TemplateSha256 { get; set; } = "";
+    public int? DestinationBankId { get; set; }
     public string FingerprintModel { get; set; } = "";
     public string DisplayName { get; set; } = "";
     public string Family { get; set; } = "";

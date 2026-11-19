@@ -258,15 +258,17 @@
                 <h2><i data-lucide="sparkles"></i>采集模型指纹</h2>
               </div>
               <form id="fingerprintForm" class="card-body">
-                <p class="notice">请选择身份可信的来源模型。采集成功后自动启用生成的自定义库，采用基础库的特征参数。</p>
+                <p id="fingerprintSaveHint" class="notice">请选择身份可信的来源模型。采集成功后自动启用生成的自定义库。</p>
                 <label>来源模型<select name="source" required></select></label>
                 <div class="form-grid">
-                  <label>基础指纹库<select name="bank" required></select></label>
+                  <label>保存方式<select name="saveMode"><option value="new">新建自定义库</option><option value="accumulate">累加到已有自定义库</option></select></label>
+                  <label><span id="fingerprintBankLabel">基础指纹库</span><select name="bank" required></select></label>
                   <label>采集题数<input name="count" type="number" min="3" step="1" value="10" required /></label>
-                  <label>指纹模型标识<input name="model" maxlength="200" required /></label>
+                  <label>指纹模型标识<input name="model" list="fingerprintModelOptions" maxlength="200" required /></label>
                   <label>显示名称<input name="displayName" maxlength="200" required /></label>
+                  <label>家族（如 gpt、claude）<input name="family" maxlength="100" value="custom" required /></label>
                 </div>
-                <label>家族（如 gpt、claude）<input name="family" maxlength="100" value="custom" required /></label>
+                <datalist id="fingerprintModelOptions"></datalist>
                 <p id="fingerprintStatus" class="status-line" role="status" aria-live="polite"></p>
                 <div class="actions">
                   <button id="submitFingerprint" type="submit" class="primary"><i data-lucide="play"></i>提交采集任务</button>

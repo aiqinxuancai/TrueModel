@@ -107,6 +107,37 @@ public class FingerprintWorkflowTests
         var nextCandidates = await Candidates(next);
         Assert.Equal(defaultDisplayName, nextCandidates["gpt-6-sol"]);
         Assert.DoesNotContain("second-fingerprint", nextCandidates.Keys);
+
+        var stoppedAppend = await Enroll(slow, collectedBank, "gpt-6-sol", accumulate: true);
+        await handler.AppendBlocked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var firstAppend = await Enroll(usable, collectedBank, "gpt-6-sol", accumulate: true);
+        var secondAppend = await Enroll(usable, collectedBank, "gpt-6-sol", count: 4, accumulate: true);
+        Assert.Equal("Queued", (await GetTask(secondAppend)).GetProperty("status").GetString());
+        var beforeAppend = await client.GetFromJsonAsync<JsonElement>($"/api/banks/{collectedBank}");
+        Assert.Equal(detail.GetProperty("sha256").GetString(), beforeAppend.GetProperty("sha256").GetString());
+        await Cancel(stoppedAppend);
+        foreach (var appendId in new[] { firstAppend, secondAppend })
+        {
+            var appended = await WaitFor(() => GetTask(appendId), t => t.GetProperty("status").GetString() == "Completed");
+            Assert.Equal(collectedBank, appended.GetProperty("destinationBankId").GetInt32());
+            Assert.Equal(collectedBank, appended.GetProperty("resultBankId").GetInt32());
+        }
+        var afterAppend = await client.GetFromJsonAsync<JsonElement>($"/api/banks/{collectedBank}");
+        var updated = Assert.Single(afterAppend.GetProperty("models").EnumerateArray());
+        Assert.Equal(17, updated.GetProperty("responseCount").GetInt32());
+        Assert.Equal(17 * 310, updated.GetProperty("validNumberCount").GetInt32());
+        Assert.Equal("Local GPT", updated.GetProperty("displayName").GetString());
+        Assert.False(afterAppend.GetProperty("active").GetBoolean());
+        Assert.NotEqual(beforeAppend.GetProperty("sha256").GetString(), afterAppend.GetProperty("sha256").GetString());
+
+        var added = await Enroll(usable, collectedBank, "new-fingerprint", accumulate: true);
+        Assert.Equal(collectedBank, (await WaitFor(() => GetTask(added), t => t.GetProperty("status").GetString() == "Completed"))
+            .GetProperty("resultBankId").GetInt32());
+        var withNewModel = await client.GetFromJsonAsync<JsonElement>($"/api/banks/{collectedBank}");
+        Assert.Equal(new[] { "gpt-6-sol", "new-fingerprint" }, withNewModel.GetProperty("models").EnumerateArray().Select(m => m.GetProperty("id").GetString()));
+        Assert.Equal(2, (await client.GetFromJsonAsync<JsonElement>("/api/banks")).GetArrayLength());
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync($"/api/models/{usable}/fingerprint",
+            new { bankId = defaultId, model = "gpt-6-sol", displayName = "Local GPT", family = "custom", accumulate = true })).StatusCode);
         Assert.Equal(defaultExport, await client.GetStringAsync($"/api/banks/{defaultId}/export"));
 
         async Task Token()
@@ -121,8 +152,8 @@ public class FingerprintWorkflowTests
             Assert.Equal(expected, response.StatusCode);
             return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
         }
-        Task<int> Enroll(int model, int bankId, string name, int count = 3) => Post($"/api/models/{model}/fingerprint",
-            new { bankId, model = name, displayName = name, family = "custom", challengeCount = count }, HttpStatusCode.Accepted);
+        Task<int> Enroll(int model, int bankId, string name, int count = 3, bool accumulate = false) => Post($"/api/models/{model}/fingerprint",
+            new { bankId, model = name, displayName = name, family = "custom", challengeCount = count, accumulate }, HttpStatusCode.Accepted);
         Task<JsonElement> GetTask(int id) => client.GetFromJsonAsync<JsonElement>($"/api/fingerprint-tasks/{id}");
         async Task Cancel(int id)
         {
@@ -158,17 +189,22 @@ public class FingerprintWorkflowTests
         private int slowRequests;
         public TaskCompletionSource EnrollmentBlocked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource EnrollmentCancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AppendBlocked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource DetectionBlocked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
             var model = body.GetProperty("model").GetString();
-            if (model == "slow" && Interlocked.Increment(ref slowRequests) == 2)
+            if (model == "slow")
             {
-                EnrollmentBlocked.TrySetResult();
-                try { await Task.Delay(Timeout.Infinite, token); }
-                catch (OperationCanceledException) { EnrollmentCancelled.TrySetResult(); throw; }
+                var count = Interlocked.Increment(ref slowRequests);
+                if (count is 2 or 4)
+                {
+                    (count == 2 ? EnrollmentBlocked : AppendBlocked).TrySetResult();
+                    try { await Task.Delay(Timeout.Infinite, token); }
+                    catch (OperationCanceledException) { EnrollmentCancelled.TrySetResult(); throw; }
+                }
             }
             if (model == "hold-detection")
             {
