@@ -56,7 +56,7 @@ public static class HlwyFingerprint
         var mode = Math.Max(0, 1 - Math.Abs(modeA - modeB) / 50d);
         return (Math.Clamp(.5 * mode + .5 * cosine * Math.Exp(-js), 0, 1), cosine, js, mode);
     }
-    public static object Analyze(IReadOnlyList<int> numbers, JsonElement[] baselines, string model, int requested, bool antiTarget)
+    public static object Analyze(IReadOnlyList<int> numbers, JsonElement[] baselines, string model, int requested, bool antiTarget, string apiType = "openai")
     {
         if (numbers.Count < 40) throw new InvalidOperationException($"HLWY 仅获得 {numbers.Count} 个有效样本，至少需要 40 个。");
         var distribution = new double[355];
@@ -72,6 +72,6 @@ public static class HlwyFingerprint
         }).OrderByDescending(c => c.Score).ToArray();
         return new { Method = "hlwy", UsedOutputs = numbers.Count, Requested = requested, AntiTarget = antiTarget, Candidates = candidates,
             BaselinesSha256 = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(baselines))),
-            Baseline = new { name = model, model, apiType = "openai", timestamp = DateTime.UtcNow, iterations = numbers.Count, distribution, stats, rawData = numbers } };
+            Baseline = new { name = model, model, apiType = apiType == ApiProtocols.Auto ? ApiProtocols.OpenAi : apiType, timestamp = DateTime.UtcNow, iterations = numbers.Count, distribution, stats, rawData = numbers } };
     }
 }

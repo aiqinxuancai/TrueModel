@@ -6,6 +6,8 @@ namespace TrueModel;
 public sealed record ModelSelectionInput(int[]? Ids);
 public sealed record ModelReplacementInput(int[]? Ids, string? Find, string? Replacement, bool MatchWholeId = false);
 public sealed record ModelFavoriteInput(bool IsFavorite);
+public sealed record ModelProtocolInput(string? Protocol);
+public sealed record ModelBatchProtocolInput(int[]? Ids, string? Protocol);
 
 public static class ModelManagement
 {
@@ -18,6 +20,24 @@ public static class ModelManagement
             var updated = await db.Models.Where(m => m.Id == id)
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.IsFavorite, input.IsFavorite), token);
             return updated == 0 ? Results.NotFound(new { error = "模型不存在" }) : Results.NoContent();
+        });
+        api.MapPut("/models/{id:int}/protocol", async (int id, ModelProtocolInput input, AppDb db, CancellationToken token) =>
+        {
+            if (!ApiProtocols.IsValidModelOverride(input.Protocol)) return Results.BadRequest(new { error = "不支持的接口协议" });
+            var protocol = ApiProtocols.NormalizeModelOverride(input.Protocol);
+            var updated = await db.Models.Where(m => m.Id == id)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.Protocol, protocol), token);
+            return updated == 0 ? Results.NotFound(new { error = "模型不存在" }) : Results.NoContent();
+        });
+        api.MapPost("/models/batch-protocol", async (ModelBatchProtocolInput input, AppDb db, CancellationToken token) =>
+        {
+            if (!ValidIds(input.Ids)) return Results.BadRequest(new { error = "请选择 1–500 个模型" });
+            if (!ApiProtocols.IsValidModelOverride(input.Protocol)) return Results.BadRequest(new { error = "不支持的接口协议" });
+            var ids = input.Ids!.Distinct().ToArray();
+            var protocol = ApiProtocols.NormalizeModelOverride(input.Protocol);
+            var updated = await db.Models.Where(m => ids.Contains(m.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.Protocol, protocol), token);
+            return Results.Ok(new { updated, skipped = ids.Length - updated });
         });
         api.MapPost("/models/batch-delete", async (ModelSelectionInput input, AppDb db, DetectionControl control) =>
         {

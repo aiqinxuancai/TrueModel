@@ -119,13 +119,13 @@ public sealed record EnrollmentInput(int BankId, string Model, string DisplayNam
 public static class FingerprintEnrollment
 {
     public static async Task<ProbeOutput[]> Collect(ModelTraceClient client, string url, string key, string model, int count, CancellationToken token, string language = "zh",
-        Func<int, CancellationToken, Task>? progress = null)
+        Func<int, CancellationToken, Task>? progress = null, string protocol = ApiProtocols.Auto)
     {
         var outputs = new List<ProbeOutput>();
         foreach (var challenge in Challenges.GenerateSequence(count, language))
         {
             token.ThrowIfCancellationRequested();
-            var text = await client.Completion(url, key, model, challenge.Prompt, token);
+            var text = await client.Completion(url, key, model, challenge.Prompt, token, protocol: protocol);
             if (Attribution.ParseNumbers(text).Length < Math.Max(80, Math.Ceiling(challenge.ExpectedCount * .55)))
                 throw new InvalidOperationException("模型回答未达到有效数字阈值；未保存指纹");
             outputs.Add(new(text, challenge.ExpectedCount));

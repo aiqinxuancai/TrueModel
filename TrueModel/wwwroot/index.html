@@ -266,7 +266,7 @@
                   <label>采集题数<input name="count" type="number" min="3" step="1" value="10" required /></label>
                   <label>指纹模型标识<input name="model" list="fingerprintModelOptions" maxlength="200" required /></label>
                   <label>显示名称<input name="displayName" maxlength="200" required /></label>
-                  <label>家族（如 gpt、claude）<input name="family" maxlength="100" value="custom" required /></label>
+                  <label>家族（如 gpt、claude、gemini）<input name="family" maxlength="100" value="custom" required /></label>
                 </div>
                 <datalist id="fingerprintModelOptions"></datalist>
                 <p id="fingerprintStatus" class="status-line" role="status" aria-live="polite"></p>
@@ -428,7 +428,7 @@
                         <option value="high">high · 高</option>
                         <option value="xhigh">xhigh · 更高</option>
                       </select>
-                      <span class="input-hint">显式等级需要模型接口支持；仅支持 Anthropic 协议的接口请选择“接口默认”。</span>
+                      <span class="input-hint">显式等级需要模型接口支持；OpenAI 发送 reasoning_effort，Claude 映射为 thinking / effort，Gemini 映射为 thinkingConfig；不支持思考等级的模型请选择“接口默认”。</span>
                     </div>
                   </div>
                   <div class="setting-group">
@@ -578,7 +578,7 @@
                         <option value="high">high · 高</option>
                         <option value="xhigh">xhigh · 更高</option>
                       </select>
-                      <span class="input-hint">显式等级需要模型接口支持；仅支持 Anthropic 协议的接口建议选择“接口默认”</span>
+                      <span class="input-hint">显式等级需要模型接口支持；OpenAI 发送 reasoning_effort，Claude 映射为 thinking / effort，Gemini 映射为 thinkingConfig；不支持思考等级的模型建议选择“接口默认”</span>
                     </div>
                   </div>
                   <div class="setting-group">
@@ -696,6 +696,7 @@
           <button id="discoverMode" role="tab" aria-selected="true" aria-controls="discoveredPanel"><i data-lucide="cloud-download"></i>从站点获取</button>
           <button id="manualMode" role="tab" aria-selected="false" aria-controls="manualPanel" tabindex="-1"><i data-lucide="pencil-line"></i>手动输入</button>
         </div>
+        <label class="picker-protocol">模型协议（可选覆盖）<select id="modelPickerProtocol"></select></label>
         <div id="discoveredPanel" role="tabpanel" aria-labelledby="discoverMode">
           <div class="picker-search">
             <div class="search-field"><i data-lucide="search"></i><input id="modelPickerSearch" type="search" placeholder="搜索模型 ID" aria-label="搜索可用模型" /></div>
@@ -735,6 +736,16 @@
           <label>匹配方式<select id="batchModelMatch"><option value="partial">替换部分文本</option><option value="whole">精确匹配模型 ID</option></select></label>
           <label>查找内容<input id="batchModelFind" autocomplete="off" placeholder="如：旧前缀或模型 ID" /></label>
           <label>替换为<input id="batchModelReplacement" autocomplete="off" placeholder="留空可移除匹配文本" /></label>
+        </div>
+        <div class="batch-protocol-row">
+          <label>批量设置协议<select id="batchModelProtocol">
+            <option value="inherit">跟随站点</option>
+            <option value="auto">自动探测（OpenAI / Claude / Gemini）</option>
+            <option value="openai">OpenAI 兼容</option>
+            <option value="anthropic">Claude / Anthropic</option>
+            <option value="gemini">Google Gemini</option>
+          </select></label>
+          <button id="applyBatchProtocol" type="button" disabled><i data-lucide="sliders-horizontal"></i>应用协议</button>
         </div>
         <p class="muted batch-model-hint">区分大小写；部分文本模式会替换所有匹配处。仅处理勾选项，每次最多 500 个；下方预览替换结果。</p>
         <div class="picker-selection">

@@ -678,6 +678,14 @@ td code { font-size: 12px; }
 .configured-model code { font-size: 12.5px; color: var(--text); overflow-wrap: anywhere; min-width: 0; }
 .configured-model .actions { flex-shrink: 0; flex-wrap: nowrap; gap: 2px !important; }
 .configured-model [data-detect-model] { color: var(--primary-text); }
+.protocol-pill { font-weight: 500; }
+.protocol-pill.protocol-openai { background: var(--teal-soft); color: var(--teal); }
+.protocol-pill.protocol-anthropic { background: var(--warning-soft); color: var(--warning); }
+.protocol-pill.protocol-gemini { background: var(--blue-soft); color: var(--blue); }
+.picker-protocol { margin-bottom: 14px; }
+.batch-protocol-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 10px; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); }
+.batch-protocol-row label { flex: 1; margin: 0; }
+.batch-protocol-row button { min-height: 38px; flex-shrink: 0; }
 
 /* ==========================================================================
    Settings

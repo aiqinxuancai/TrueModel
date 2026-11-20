@@ -51,7 +51,7 @@ public sealed class CraneRidingWorker(IServiceScopeFactory scopes, IDataProtecti
         {
             var target = await (from m in db.Models.AsNoTracking() join k in db.Keys on m.SiteKeyId equals k.Id
                 join s in db.Sites on k.SiteId equals s.Id where m.Id == run.ModelId
-                select new { m.Name, k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
+                select new { m.Name, k.ProtectedValue, s.BaseUrl, SiteProtocol = s.Protocol, ModelProtocol = m.Protocol }).SingleOrDefaultAsync(token);
             if (target is null) { run.Status = "Failed"; run.Error = "模型已删除"; }
             else
             {
@@ -65,7 +65,8 @@ public sealed class CraneRidingWorker(IServiceScopeFactory scopes, IDataProtecti
                 {
                     run.Response = await scope.ServiceProvider.GetRequiredService<ModelTraceClient>().Completion(target.BaseUrl, key, target.Name, run.Prompt, token,
                         reasoningEffort: run.ReasoningEffort == "default" ? null : run.ReasoningEffort,
-                        observeReasoningTokens: value => run.ReasoningTokens = value, timeout: RequestTimeout, maxTokens: 32_000, maxAttempts: 2, stream: true, conversation: conversation);
+                        observeReasoningTokens: value => run.ReasoningTokens = value, timeout: RequestTimeout, maxTokens: 32_000, maxAttempts: 2, stream: true, conversation: conversation,
+                        protocol: ApiProtocols.Effective(target.SiteProtocol, target.ModelProtocol));
                 }
                 finally { run.LatencyMs = watch.ElapsedMilliseconds; }
                 run.Svg = CraneRidingProbe.ExtractSvg(run.Response);

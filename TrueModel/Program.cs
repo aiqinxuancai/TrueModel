@@ -20,7 +20,8 @@ if (args.Contains("--probe-stdin"))
     var bank = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Assets", "unified_bank.json"));
     var result = await engine.Test(request.GetProperty("base_url").GetString()!, request.GetProperty("api_key").GetString()!, request.GetProperty("model").GetString()!, bank, request.TryGetProperty("challenge_count", out var count) ? count.GetInt32() : 3, CancellationToken.None,
         request.TryGetProperty("candy_reasoning_effort", out var effort) ? effort.GetString() ?? "default" : "default",
-        request.TryGetProperty("juice_reasoning_effort", out var juiceEffort) ? juiceEffort.GetString() ?? "default" : "default");
+        request.TryGetProperty("juice_reasoning_effort", out var juiceEffort) ? juiceEffort.GetString() ?? "default" : "default",
+        protocol: request.TryGetProperty("protocol", out var proto) ? ApiProtocols.Normalize(proto.GetString()) : ApiProtocols.Auto);
     Console.WriteLine(result.GetRawText());
     return;
 }
@@ -187,6 +188,15 @@ using (var scope = app.Services.CreateScope())
         if (!columns.Contains("Candy3RequestedLanguage")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Candy3RequestedLanguage TEXT NULL");
         if (!columns.Contains("CandyCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN CandyCheckedAt TEXT NULL");
         if (!columns.Contains("JuiceCheckedAt")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN JuiceCheckedAt TEXT NULL");
+        if (!columns.Contains("Protocol")) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Models ADD COLUMN Protocol TEXT NULL");
+    }
+    using (var command = db.Database.GetDbConnection().CreateCommand())
+    {
+        command.CommandText = "PRAGMA table_info(Sites)";
+        var hasProtocol = false;
+        using (var reader = await command.ExecuteReaderAsync())
+            while (await reader.ReadAsync()) hasProtocol |= reader.GetString(1) == "Protocol";
+        if (!hasProtocol) await db.Database.ExecuteSqlRawAsync("ALTER TABLE Sites ADD COLUMN Protocol TEXT NOT NULL DEFAULT 'auto'");
     }
     await db.Database.CloseConnectionAsync();
     await db.Database.ExecuteSqlRawAsync("""
@@ -349,13 +359,14 @@ api.MapPost("/notifications/test", async (AppDb db, NotificationService sender, 
 });
 api.MapGet("/sites", async (AppDb db) => await db.Sites.AsNoTracking().Select(s => new
 {
-    s.Id, s.Name, s.BaseUrl, s.Enabled,
-    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Enabled, m.IsFavorite, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceResponse, m.JuiceError, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyLatencyMs, m.Candy2Status, m.Candy2Prompt, m.Candy2Response, m.Candy2Error, m.Candy2ReasoningTokens, m.Candy2LatencyMs, m.Candy3Status, m.Candy3Prompt, m.Candy3Response, m.Candy3Error, m.Candy3ReasoningTokens, m.Candy3LatencyMs, m.CandyCheckedAt, m.CandyRefreshStatus, m.CandyRequestedEffort }) })
+    s.Id, s.Name, s.BaseUrl, s.Protocol, s.Enabled,
+    Keys = s.Keys.Select(k => new { k.Id, k.Name, k.Enabled, Mask = "********", Models = k.Models.Select(m => new { m.Id, m.Name, m.Protocol, m.Enabled, m.IsFavorite, m.JuiceValue, m.JuiceStatus, m.JuicePrompt, m.JuiceResponse, m.JuiceError, m.JuiceCheckedAt, m.CandyStatus, m.CandyPrompt, m.CandyResponse, m.CandyError, m.CandyReasoningEffort, m.CandyReasoningTokens, m.CandyLatencyMs, m.Candy2Status, m.Candy2Prompt, m.Candy2Response, m.Candy2Error, m.Candy2ReasoningTokens, m.Candy2LatencyMs, m.Candy3Status, m.Candy3Prompt, m.Candy3Response, m.Candy3Error, m.Candy3ReasoningTokens, m.Candy3LatencyMs, m.CandyCheckedAt, m.CandyRefreshStatus, m.CandyRequestedEffort }) })
 }).ToListAsync());
 api.MapPost("/sites", async (SiteInput input, AppDb db) =>
 {
     if (string.IsNullOrWhiteSpace(input.Name) || !Uri.TryCreate(input.BaseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query)) return Results.BadRequest(new { error = "Invalid site name or HTTP URL" });
-    var site = new Site { Name = input.Name.Trim(), BaseUrl = input.BaseUrl.TrimEnd('/'), Enabled = input.Enabled };
+    if (input.Protocol is not null && !ApiProtocols.IsValid(input.Protocol)) return Results.BadRequest(new { error = "不支持的接口协议" });
+    var site = new Site { Name = input.Name.Trim(), BaseUrl = input.BaseUrl.TrimEnd('/'), Protocol = ApiProtocols.Normalize(input.Protocol), Enabled = input.Enabled };
     db.Sites.Add(site); await db.SaveChangesAsync(); return Results.Ok(new { site.Id });
 });
 api.MapPut("/sites/{id:int}", async (int id, SiteUpdateInput input, AppDb db, CancellationToken token) =>
@@ -366,8 +377,13 @@ api.MapPut("/sites/{id:int}", async (int id, SiteUpdateInput input, AppDb db, Ca
     if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")
         || !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
         return Results.BadRequest(new { error = "请输入有效的 HTTP/HTTPS Base URL，不能包含用户名、密码、查询参数或片段" });
-    var updated = await db.Sites.Where(s => s.Id == id).ExecuteUpdateAsync(s => s
-        .SetProperty(site => site.Name, name).SetProperty(site => site.BaseUrl, baseUrl!), token);
+    if (input.Protocol is not null && !ApiProtocols.IsValid(input.Protocol))
+        return Results.BadRequest(new { error = "不支持的接口协议" });
+    var updated = input.Protocol is null
+        ? await db.Sites.Where(s => s.Id == id).ExecuteUpdateAsync(s => s
+            .SetProperty(site => site.Name, name).SetProperty(site => site.BaseUrl, baseUrl!), token)
+        : await db.Sites.Where(s => s.Id == id).ExecuteUpdateAsync(s => s
+            .SetProperty(site => site.Name, name).SetProperty(site => site.BaseUrl, baseUrl!).SetProperty(site => site.Protocol, input.Protocol), token);
     return updated == 0 ? Results.NotFound(new { error = "站点不存在" }) : Results.NoContent();
 });
 api.MapDelete("/sites/{id:int}", async (int id, AppDb db, DetectionControl control) => { await control.Delete(db, siteId: id); return Results.NoContent(); });
@@ -382,8 +398,9 @@ api.MapPost("/keys/{id:int}/models", async (int id, ModelInput input, AppDb db) 
 {
     if (!await db.Keys.AnyAsync(k => k.Id == id)) return Results.NotFound();
     if (string.IsNullOrWhiteSpace(input.Name)) return Results.BadRequest();
+    if (!ApiProtocols.IsValidModelOverride(input.Protocol)) return Results.BadRequest(new { error = "不支持的接口协议" });
     if (await db.Models.AnyAsync(m => m.SiteKeyId == id && m.Name == input.Name.Trim())) return Results.Conflict();
-    var model = new MonitoredModel { SiteKeyId = id, Name = input.Name.Trim() }; db.Models.Add(model); await db.SaveChangesAsync(); return Results.Ok(new { model.Id });
+    var model = new MonitoredModel { SiteKeyId = id, Name = input.Name.Trim(), Protocol = ApiProtocols.NormalizeModelOverride(input.Protocol) }; db.Models.Add(model); await db.SaveChangesAsync(); return Results.Ok(new { model.Id });
 });
 api.MapPut("/keys/{id:int}", async (int id, KeyRenameInput input, AppDb db, CancellationToken token) =>
 {
@@ -403,7 +420,7 @@ api.MapPost("/keys/{id:int}/discover-models", async (int id, AppDb db, IDataProt
     try
     {
         var value = protection.CreateProtector("ApiKeys.v1").Unprotect(key.ProtectedValue);
-        return Results.Ok(new { models = await discovery.Fetch(site.BaseUrl, value, token) });
+        return Results.Ok(new { models = await discovery.Fetch(site.BaseUrl, value, token, site.Protocol) });
     }
     catch (ModelDiscoveryException e) { return Results.Json(new { error = e.Message }, statusCode: 502); }
     catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
@@ -412,11 +429,14 @@ api.MapPost("/keys/{id:int}/models/batch", async (int id, ModelBatchInput input,
 {
     if (input.Names is null || input.Names.Length is < 1 or > 500 || input.Names.Any(string.IsNullOrWhiteSpace))
         return Results.BadRequest(new { error = "请选择 1–500 个模型" });
+    if (!ApiProtocols.IsValidModelOverride(input.Protocol))
+        return Results.BadRequest(new { error = "不支持的接口协议" });
+    var protocol = ApiProtocols.NormalizeModelOverride(input.Protocol);
     await using var transaction = await db.Database.BeginTransactionAsync(token);
     if (!await db.Keys.AnyAsync(k => k.Id == id, token)) return Results.NotFound(new { error = "Key 不存在" });
     var names = input.Names.Select(n => n.Trim()).Distinct(StringComparer.Ordinal).ToArray();
     var existing = await db.Models.Where(m => m.SiteKeyId == id).Select(m => m.Name).ToArrayAsync(token);
-    var additions = names.Except(existing, StringComparer.Ordinal).Select(name => new MonitoredModel { SiteKeyId = id, Name = name }).ToArray();
+    var additions = names.Except(existing, StringComparer.Ordinal).Select(name => new MonitoredModel { SiteKeyId = id, Name = name, Protocol = protocol }).ToArray();
     db.Models.AddRange(additions);
     await db.SaveChangesAsync(token);
     await transaction.CommitAsync(token);
@@ -430,14 +450,14 @@ api.MapPost("/models/{id:int}/juice", async (int id, string? methodId, AppDb db,
     if (methodId is not null && !JuiceProbe.Methods.Any(m => m.Id == methodId))
         return Results.BadRequest(new { error = "未知的 Juice 检测方法" });
     var target = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
-        where m.Id == id select new { Model = m, k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
+        where m.Id == id select new { Model = m, k.ProtectedValue, s.BaseUrl, SiteProtocol = s.Protocol, ModelProtocol = m.Protocol }).SingleOrDefaultAsync(token);
     if (target is null) return Results.NotFound();
     if (!JuiceProbe.Supports(target.Model.Name)) return Results.BadRequest(new { error = "仅 GPT 模型支持 Juice 检测" });
     string key;
     try { key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue); }
     catch (CryptographicException) { return Results.BadRequest(new { error = "无法解密 Key，请重新配置" }); }
     var effort = await db.Settings.Select(s => s.JuiceReasoningEffort).SingleAsync(token);
-    var result = await client.ProbeJuice(target.BaseUrl, key, target.Model.Name, token, methodId, effort);
+    var result = await client.ProbeJuice(target.BaseUrl, key, target.Model.Name, token, methodId, effort, ApiProtocols.Effective(target.SiteProtocol, target.ModelProtocol));
     var value = result.GetValueOrDefault("juice_value") as int?;
     var status = result.GetValueOrDefault("juice_status") as string;
     var prompt = result.GetValueOrDefault("juice_prompt") as string;
@@ -723,12 +743,12 @@ record BankInput(string Name, string Json);
 record EmptyBankInput(string Name);
 record ManualFingerprintInput(string Model, string DisplayName, string Family, int[]? Counts);
 record LoginRequest(string Username, string Password);
-record SiteInput(string Name, string BaseUrl, bool Enabled = true);
-record SiteUpdateInput(string? Name, string? BaseUrl);
+record SiteInput(string Name, string BaseUrl, bool Enabled = true, string? Protocol = null);
+record SiteUpdateInput(string? Name, string? BaseUrl, string? Protocol = null);
 record KeyInput(string Name, string Value);
 record KeyRenameInput(string? Name);
-record ModelInput(string Name);
-record ModelBatchInput(string[]? Names);
+record ModelInput(string Name, string? Protocol = null);
+record ModelBatchInput(string[]? Names, string? Protocol = null);
 public partial class Program { }
 
 

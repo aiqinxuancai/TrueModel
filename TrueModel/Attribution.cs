@@ -238,7 +238,7 @@ public static partial class Attribution
             foreach (var n in numbers) counts[n - 1]++;
         var familyNames = models.GroupBy(Family).ToDictionary(g => g.Key, g => g
             .Select(m => m.TryGetProperty("family_name", out var n) ? n.GetString() : null).FirstOrDefault(n => !string.IsNullOrEmpty(n))
-            ?? (g.Key == "gpt" ? "GPT" : g.Key == "claude" ? "Claude" : g.Key));
+            ?? (g.Key == "gpt" ? "GPT" : g.Key == "claude" ? "Claude" : g.Key == "gemini" ? "Gemini" : g.Key));
         var results = report.Candidates.Select(c =>
         {
             var profile = profiles[c.Model];

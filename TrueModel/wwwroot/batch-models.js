@@ -50,7 +50,7 @@ function renderBatchModelOptions() {
   $("batchModelOptions").innerHTML = visible.map(({ s, k, m }) => {
     const name = replacementModelName(m.name);
     return `<label class="model-option batch-model-option"><input type="checkbox" value="${m.id}" ${batchModelSelection.has(m.id) ? "checked" : ""} ${savingBatchModels ? "disabled" : ""} />
-      <span class="batch-model-info"><small>${esc(s.name)} / ${esc(k.name)}</small><code>${esc(m.name)}</code>${name !== m.name ? `<span class="batch-model-preview ${name ? "" : "invalid"}">→ <code>${name ? esc(name) : "（空 ID）"}</code></span>` : ""}</span></label>`;
+      <span class="batch-model-info"><small>${esc(s.name)} / ${esc(k.name)}${m.protocol ? ` · ${esc(protocolLabel(m.protocol))}` : ""}</small><code>${esc(m.name)}</code>${name !== m.name ? `<span class="batch-model-preview ${name ? "" : "invalid"}">→ <code>${name ? esc(name) : "（空 ID）"}</code></span>` : ""}</span></label>`;
   }).join("") || '<p class="empty">没有匹配的模型</p>';
   const selectedVisible = visible.filter(({ m }) => batchModelSelection.has(m.id)).length;
   $("selectBatchModels").checked = visible.length > 0 && selectedVisible === visible.length;
@@ -61,7 +61,8 @@ function renderBatchModelOptions() {
   $("batchModelMessage").textContent = batchModelError || validationError;
   $("deleteBatchModels").disabled = savingBatchModels || !selected.length;
   $("replaceBatchModels").disabled = savingBatchModels || !changed.length || Boolean(validationError);
-  for (const id of ["closeBatchModelEditor", "batchModelSite", "batchModelKey", "batchModelSearch", "batchModelMatch", "batchModelFind", "batchModelReplacement"])
+  $("applyBatchProtocol").disabled = savingBatchModels || !selected.length;
+  for (const id of ["closeBatchModelEditor", "batchModelSite", "batchModelKey", "batchModelSearch", "batchModelMatch", "batchModelFind", "batchModelReplacement", "batchModelProtocol"])
     $(id).disabled = savingBatchModels;
   $("batchModelOptions").setAttribute("aria-busy", String(savingBatchModels));
   if (focusedId) [...$("batchModelOptions").querySelectorAll("input")].find(input => input.value === focusedId)?.focus({ preventScroll: true });
@@ -73,6 +74,7 @@ function openBatchModelEditor(siteId, keyId) {
   batchModelError = "";
   for (const id of ["batchModelSearch", "batchModelFind", "batchModelReplacement"]) $(id).value = "";
   $("batchModelMatch").value = "partial";
+  $("batchModelProtocol").value = "inherit";
   $("batchModelSite").value = "";
   $("batchModelKey").value = "";
   syncBatchModelFilters();
@@ -157,6 +159,27 @@ async function saveBatchModels(kind) {
 }
 $("deleteBatchModels").onclick = () => saveBatchModels("delete");
 $("replaceBatchModels").onclick = () => saveBatchModels("replace");
+$("applyBatchProtocol").onclick = async () => {
+  if (savingBatchModels || $("applyBatchProtocol").disabled) return;
+  const selected = scopedBatchModels().filter(({ m }) => batchModelSelection.has(m.id));
+  if (!selected.length) return;
+  const protocol = $("batchModelProtocol").value;
+  savingBatchModels = true;
+  batchModelError = "";
+  renderBatchModelOptions();
+  try {
+    const result = await api("/models/batch-protocol", "POST", { ids: selected.map(({ m }) => m.id), protocol });
+    batchModelEditor.close();
+    message(`已更新 ${result.updated} 个模型的协议${result.skipped ? `，${result.skipped} 个已不存在` : ""}`);
+    await refresh();
+  } catch (error) {
+    if (batchModelEditor.open) batchModelError = error.message;
+    else message(error.message);
+  } finally {
+    savingBatchModels = false;
+    renderBatchModelOptions();
+  }
+};
 
 const renderBeforeBatchModels = render;
 render = function () {

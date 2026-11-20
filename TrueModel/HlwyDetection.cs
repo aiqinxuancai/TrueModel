@@ -5,7 +5,7 @@ namespace TrueModel;
 
 public sealed partial class ModelTraceClient
 {
-    public async Task<JsonElement> TestHlwy(string url, string key, string model, AppSettings settings, CancellationToken token, bool includeSupplemental = true)
+    public async Task<JsonElement> TestHlwy(string url, string key, string model, AppSettings settings, CancellationToken token, bool includeSupplemental = true, string protocol = ApiProtocols.Auto)
     {
         var baselines = HlwyFingerprint.Baselines(settings.HlwyBaselinesJson);
         var samples = new List<(int Index, int? Number, object Response)>();
@@ -31,7 +31,7 @@ public sealed partial class ModelTraceClient
                 int? number = null;
                 try
                 {
-                    text = await Completion(url, key, model, prompt, token, code => Interlocked.Exchange(ref statusCode, code), statistical: true);
+                    text = await Completion(url, key, model, prompt, token, code => Interlocked.Exchange(ref statusCode, code), statistical: true, protocol: protocol);
                     number = HlwyFingerprint.Parse(text);
                     if (number is null) error = "返回内容无法解析为 1–355 的数字。";
                 }
@@ -51,12 +51,12 @@ public sealed partial class ModelTraceClient
         var numbers = ordered.Where(s => s.Number.HasValue).Select(s => s.Number!.Value).ToArray();
         var responses = ordered.Select(s => s.Response).ToArray();
         var envelope = new Dictionary<string, object?> { ["responses"] = responses, ["status_code"] = statusCode };
-        try { envelope["result"] = HlwyFingerprint.Analyze(numbers, baselines, model, settings.HlwySampleCount, settings.HlwyAntiTarget); }
+        try { envelope["result"] = HlwyFingerprint.Analyze(numbers, baselines, model, settings.HlwySampleCount, settings.HlwyAntiTarget, ApiProtocols.Normalize(protocol)); }
         catch (InvalidOperationException e) { envelope["error"] = e.Message; }
         if (includeSupplemental)
         {
-            foreach (var entry in await ProbeJuice(url, key, model, token, reasoningEffort: settings.JuiceReasoningEffort)) envelope[entry.Key] = entry.Value;
-            envelope["candy"] = await ProbeCandy(url, key, model, token, settings.CandyReasoningEffort, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language);
+            foreach (var entry in await ProbeJuice(url, key, model, token, reasoningEffort: settings.JuiceReasoningEffort, protocol: protocol)) envelope[entry.Key] = entry.Value;
+            envelope["candy"] = await ProbeCandy(url, key, model, token, settings.CandyReasoningEffort, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language, protocol: protocol);
         }
         var json = JsonSerializer.Serialize(envelope);
         if (!string.IsNullOrEmpty(key)) json = json.Replace(key, "[REDACTED]", StringComparison.Ordinal);

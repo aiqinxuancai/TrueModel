@@ -6,16 +6,17 @@ using Microsoft.EntityFrameworkCore;
 namespace TrueModel;
 
 public sealed record DetectionScope(int? SiteId, int? KeyId, int? ModelId);
-public sealed record Target(int ModelId, string ModelName, string KeyName, string SiteName, string BaseUrl, string ProtectedKey);
+public sealed record Target(int ModelId, string ModelName, string KeyName, string SiteName, string BaseUrl, string ProtectedKey, string Protocol = ApiProtocols.Auto);
 public static class DetectionJobs
 {
     public static async Task<DetectionRun> Enqueue(AppDb db, DetectionScope scope, string source, HlwyBaselineUpdater? baselines = null)
     {
         var settings = await db.Settings.AsNoTracking().SingleOrDefaultAsync() ?? new AppSettings();
         if (settings.DetectionMethod == "hlwy") settings.HlwyBaselinesJson = JsonSerializer.Serialize(baselines?.Baselines(settings.HlwyBaselinesJson) ?? HlwyFingerprint.Baselines(settings.HlwyBaselinesJson));
-        var targets = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
+        var rows = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
             where m.Enabled && k.Enabled && s.Enabled && (scope.SiteId == null || s.Id == scope.SiteId) && (scope.KeyId == null || k.Id == scope.KeyId) && (scope.ModelId == null || m.Id == scope.ModelId)
-            select new Target(m.Id, m.Name, k.Name, s.Name, s.BaseUrl, k.ProtectedValue)).ToArrayAsync();
+            select new { m.Id, m.Name, KeyName = k.Name, SiteName = s.Name, s.BaseUrl, k.ProtectedValue, SiteProtocol = s.Protocol, ModelProtocol = m.Protocol }).ToArrayAsync();
+        var targets = rows.Select(r => new Target(r.Id, r.Name, r.KeyName, r.SiteName, r.BaseUrl, r.ProtectedValue, ApiProtocols.Effective(r.SiteProtocol, r.ModelProtocol))).ToArray();
         if (targets.Length == 0) throw new InvalidOperationException("No enabled models in this scope.");
         // Callers hold DetectionControl.Gate through this check and the insert.
         var pendingRuns = await db.Runs.AsNoTracking().Where(r => r.Status == "Queued" || r.Status == "Running").ToArrayAsync();
@@ -190,13 +191,14 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
         try
         {
             var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedKey);
-            var juice = await client.ProbeJuice(target.BaseUrl, key, target.ModelName, token, reasoningEffort: settings.JuiceReasoningEffort);
+            var protocol = ApiProtocols.Normalize(target.Protocol);
+            var juice = await client.ProbeJuice(target.BaseUrl, key, target.ModelName, token, reasoningEffort: settings.JuiceReasoningEffort, protocol: protocol);
             result.JuiceValue = juice.TryGetValue("juice_value", out var value) ? value as int? : null;
             result.JuiceStatus = juice.TryGetValue("juice_status", out var status) ? status as string : null;
             result.JuicePrompt = juice.TryGetValue("juice_prompt", out var prompt) ? prompt as string : null;
             result.JuiceResponse = juice.GetValueOrDefault("juice_response") as string;
             result.JuiceError = juice.GetValueOrDefault("juice_error") as string;
-            var candy = await client.ProbeCandy(target.BaseUrl, key, target.ModelName, token, settings.CandyReasoningEffort, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language);
+            var candy = await client.ProbeCandy(target.BaseUrl, key, target.ModelName, token, settings.CandyReasoningEffort, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language, protocol: protocol);
             result.CandyStatus = candy.CandyStatus;
             result.CandyPrompt = candy.CandyPrompt;
             result.CandyResponse = candy.CandyResponse;
@@ -275,10 +277,11 @@ public sealed class DetectionWorker(IServiceScopeFactory scopes, ModelTraceClien
         try
         {
             var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedKey);
+            var protocol = ApiProtocols.Normalize(target.Protocol);
             var response = settings.DetectionMethod == "hlwy"
-                ? await client.TestHlwy(target.BaseUrl, key, target.ModelName, settings, token, includeSupplemental: false)
+                ? await client.TestHlwy(target.BaseUrl, key, target.ModelName, settings, token, includeSupplemental: false, protocol: protocol)
                 : await client.Test(target.BaseUrl, key, target.ModelName, banks.Json, settings.ChallengeCount, token, settings.CandyReasoningEffort, settings.JuiceReasoningEffort,
-                    settings.AttributionLanguage, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language, banks.CalibrationBankIndex);
+                    settings.AttributionLanguage, settings.CandyLanguage, settings.Candy2Language, settings.Candy3Language, banks.CalibrationBankIndex, protocol: protocol);
             result.ResponsesJson = response.GetProperty("responses").GetRawText();
             result.JuiceValue = response.TryGetProperty("juice_value", out var juice) && juice.ValueKind == JsonValueKind.Number ? juice.GetInt32() : null;
             result.JuiceStatus = response.TryGetProperty("juice_status", out var juiceStatus) ? juiceStatus.GetString() : null;

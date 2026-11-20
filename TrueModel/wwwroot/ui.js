@@ -136,17 +136,19 @@ $("refreshButton").onclick = async () => {
 const knownKeys = new Set();
 let expandedKeys = new Set();
 
-function configuredModelCard(model) {
+function configuredModelCard(model, siteProtocol) {
+  const effectiveLabel = model.protocol ? protocolLabel(model.protocol) : `跟随站点 · ${protocolLabel(siteProtocol)}`;
   return `<div class="configured-model">
-    <span class="configured-model-name">${icon("box")}<code title="${esc(model.name)}">${esc(model.name)}</code></span>
+    <span class="configured-model-name">${icon("box")}<code title="${esc(model.name)}">${esc(model.name)}</code>${model.protocol ? `<span class="pill protocol-pill protocol-${esc(model.protocol)}" title="模型覆盖协议：${esc(protocolLabel(model.protocol))}">${esc(protocolLabel(model.protocol))}</span>` : ""}</span>
     <div class="actions">
+      <button data-model-protocol="${model.id}" class="icon-button ghost sm" aria-label="设置模型 ${esc(model.name)} 的协议" title="设置协议（当前：${esc(effectiveLabel)}）">${icon("sliders-horizontal")}</button>
       <button data-detect-model="${model.id}" class="icon-button ghost sm" aria-label="检测模型 ${esc(model.name)}" title="检测模型">${icon("play")}</button>
       <button data-delete="models/${model.id}" class="icon-button ghost sm" aria-label="删除模型 ${esc(model.name)}" title="删除模型">${icon("trash-2")}</button>
     </div>
   </div>`;
 }
 
-function configuredKeyGroup(key) {
+function configuredKeyGroup(key, siteProtocol) {
   const open = expandedKeys.has(String(key.id)) || !knownKeys.has(key.id);
   return `<details class="key-group" data-key-id="${key.id}" ${open ? "open" : ""}>
     <summary>
@@ -165,18 +167,19 @@ function configuredKeyGroup(key) {
         <button class="icon-button" data-delete="keys/${key.id}" aria-label="删除 Key ${esc(key.name)}" title="删除 Key">${icon("trash-2")}</button>
       </span>
     </summary>
-    <div class="configured-models">${key.models.map(configuredModelCard).join("") || '<div class="inline-empty">暂无模型，点击“添加模型”开始配置</div>'}</div>
+    <div class="configured-models">${key.models.map((m) => configuredModelCard(m, siteProtocol)).join("") || '<div class="inline-empty">暂无模型，点击“添加模型”开始配置</div>'}</div>
   </details>`;
 }
 
 function configuredSiteCard(site) {
   const modelCount = site.keys.reduce((count, key) => count + key.models.length, 0);
+  const protocol = site.protocol || "auto";
   return `<section class="site-group card" aria-labelledby="site-title-${site.id}">
     <div class="site-heading">
       <div class="site-identity">
         <span class="site-icon" aria-hidden="true">${icon("globe")}</span>
         <div class="site-info">
-          <div class="site-title"><h2 id="site-title-${site.id}">${esc(site.name)}</h2><span class="pill">${site.keys.length} 个 Key · ${modelCount} 个模型</span></div>
+          <div class="site-title"><h2 id="site-title-${site.id}">${esc(site.name)}</h2><span class="pill protocol-pill protocol-${esc(protocol)}" title="站点默认接口协议">${esc(protocolLabel(protocol))}</span><span class="pill">${site.keys.length} 个 Key · ${modelCount} 个模型</span></div>
           <small>${esc(site.baseUrl)}</small>
         </div>
       </div>
@@ -188,7 +191,7 @@ function configuredSiteCard(site) {
         <button class="icon-button" data-delete="sites/${site.id}" aria-label="删除站点 ${esc(site.name)}" title="删除站点">${icon("trash-2")}</button>
       </div>
     </div>
-    <div class="site-keys">${site.keys.map(configuredKeyGroup).join("") || `<div class="inline-empty">暂无 API Key<button data-key="${site.id}">${icon("plus")}添加 Key</button></div>`}</div>
+    <div class="site-keys">${site.keys.map((k) => configuredKeyGroup(k, protocol)).join("") || `<div class="inline-empty">暂无 API Key<button data-key="${site.id}">${icon("plus")}添加 Key</button></div>`}</div>
   </section>`;
 }
 document.addEventListener("click", (e) => {
@@ -200,11 +203,26 @@ document.addEventListener("click", (e) => {
   edit("编辑站点", [
     ["name", "名称", "text", site.name],
     ["baseUrl", "Base URL", "url", site.baseUrl],
+    ["protocol", "接口协议", "select", site.protocol || "auto", protocolOptions],
   ], async (v) => {
     await api(`/sites/${id}`, "PUT", v);
     return "站点信息已更新";
   });
   $("editorForm").elements.name.select();
+});
+document.addEventListener("click", (e) => {
+  const button = e.target.closest("button[data-model-protocol]");
+  if (!button) return;
+  const id = Number(button.dataset.modelProtocol);
+  const site = sites.find((s) => s.keys.some((k) => k.models.some((m) => m.id === id)));
+  const model = site?.keys.flatMap((k) => k.models).find((m) => m.id === id);
+  if (!model) return;
+  edit("设置模型协议", [
+    ["protocol", `${model.name} · 接口协议`, "select", model.protocol || "inherit", modelProtocolOptions(site.protocol)],
+  ], async (v) => {
+    await api(`/models/${id}/protocol`, "PUT", { protocol: v.protocol });
+    return "模型协议已更新";
+  });
 });
 
 document.addEventListener(
@@ -319,7 +337,7 @@ edit = function (title, fields, action) {
     apiKey.setAttribute("data-lpignore", "true");
     apiKey.setAttribute("data-1p-ignore", "true");
   }
-  const input = $("editorFields").querySelector("input");
+  const input = $("editorFields").querySelector("input, select");
   if (input?.type === "file") {
     input.accept = ".json,application/json";
   }

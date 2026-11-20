@@ -115,7 +115,7 @@ public sealed class WorldMapWorker(IServiceScopeFactory scopes, IDataProtectionP
     {
         var target = await (from m in db.Models.AsNoTracking() join k in db.Keys on m.SiteKeyId equals k.Id
             join s in db.Sites on k.SiteId equals s.Id where m.Id == run.ModelId
-            select new { m.Name, k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
+            select new { m.Name, k.ProtectedValue, s.BaseUrl, SiteProtocol = s.Protocol, ModelProtocol = m.Protocol }).SingleOrDefaultAsync(token);
         if (target is null) { run.Status = "Failed"; run.Error = "模型已删除"; return; }
         // Check the interpreter first so a missing runtime never costs a long model request.
         var interpreter = await python.Find(token);
@@ -134,7 +134,8 @@ public sealed class WorldMapWorker(IServiceScopeFactory scopes, IDataProtectionP
         try
         {
             run.Response = await scope.ServiceProvider.GetRequiredService<ModelTraceClient>().Completion(target.BaseUrl, key, target.Name, run.Prompt, token,
-                observeReasoningTokens: value => reasoningTokens = value, timeout: RequestTimeout, maxTokens: 32_000, maxAttempts: 2, stream: true);
+                observeReasoningTokens: value => reasoningTokens = value, timeout: RequestTimeout, maxTokens: 32_000, maxAttempts: 2, stream: true,
+                protocol: ApiProtocols.Effective(target.SiteProtocol, target.ModelProtocol));
         }
         catch (Exception e) when (e is UpstreamException or HttpRequestException or System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException or IndexOutOfRangeException)
         {

@@ -146,7 +146,7 @@ public sealed class FingerprintEnrollmentWorker(IServiceScopeFactory scopes, IDa
         try
         {
             var target = await (from m in db.Models join k in db.Keys on m.SiteKeyId equals k.Id join s in db.Sites on k.SiteId equals s.Id
-                where m.Id == task.ModelId && m.Name == task.ModelName select new { k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
+                where m.Id == task.ModelId && m.Name == task.ModelName select new { k.ProtectedValue, s.BaseUrl, SiteProtocol = s.Protocol, ModelProtocol = m.Protocol }).SingleOrDefaultAsync(token);
             if (target is null) error = "来源模型已删除或更名";
             else if (task.DestinationBankId is int bankId && !await db.Banks.AnyAsync(b => b.Id == bankId && !b.IsDefault, token))
                 error = "目标自定义库已删除";
@@ -156,7 +156,8 @@ public sealed class FingerprintEnrollmentWorker(IServiceScopeFactory scopes, IDa
                 var empty = task.DestinationBankId is null ? Attribution.CreateEmptyBank(await db.FingerprintBankSnapshots
                     .Where(b => b.Sha256 == task.TemplateSha256).Select(b => b.Json).SingleAsync(token)) : null;
                 var outputs = await FingerprintEnrollment.Collect(client, target.BaseUrl, key, task.ModelName, task.Total, token, task.Language,
-                    (count, ct) => running.ExecuteUpdateAsync(s => s.SetProperty(t => t.Collected, count), ct));
+                    (count, ct) => running.ExecuteUpdateAsync(s => s.SetProperty(t => t.Collected, count), ct),
+                    protocol: ApiProtocols.Effective(target.SiteProtocol, target.ModelProtocol));
                 if (await SaveResult(db, task, running, empty, outputs, token)) return;
                 error = "目标自定义库已删除";
             }

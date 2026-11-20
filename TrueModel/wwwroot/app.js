@@ -6,6 +6,17 @@ let token = '', sites = [], results = [], runs = [], banks = [], fingerprintTask
 let recentModelResults = [];
 let worldMaps = []; // Retained for the internal world-map UI.
 let craneRides = [];
+const protocolLabels = {auto:'自动探测', openai:'OpenAI', anthropic:'Claude', gemini:'Gemini'};
+const protocolOptions = [
+    ['auto', '自动探测（OpenAI / Claude / Gemini）'],
+    ['openai', 'OpenAI 兼容（/v1/chat/completions）'],
+    ['anthropic', 'Claude / Anthropic（/v1/messages）'],
+    ['gemini', 'Google Gemini（/v1beta/models/...:generateContent）']
+];
+function protocolLabel(protocol) { return protocolLabels[protocol || 'auto'] || protocol || '自动探测'; }
+function modelProtocolOptions(siteProtocol) {
+    return [['inherit', `跟随站点（${protocolLabel(siteProtocol)}）`], ...protocolOptions];
+}
 function juiceLabel(r) {
     if (r?.juiceValue != null) return String(r.juiceValue);
     return {Unavailable:'未获取', Failed:'错误', Running:'检测中', Interrupted:'已中断', Success:'未获取'}[r?.juiceStatus] || '—';
@@ -316,10 +327,10 @@ $('runRows').innerHTML=runs.slice(0,12).map(r=>`<div class="run-entry"><div clas
 $('resultRows').innerHTML=results.map(r=>`<tr><td>${time(r.startedAt)}</td><td>#${r.runId}</td><td>${esc(r.siteName)} / ${esc(r.keyName)}</td><td>${esc(r.modelName)}</td><td>${badge(r.status)}</td><td>${r.statusCode||'—'}</td><td>${(r.latencyMs/1000).toFixed(1)}s</td><td class="history-reason">${['Failed','Timeout','Cancelled','Interrupted'].includes(r.status)?reasonContent(failureReason(r),`result-${r.id}`):'—'}</td><td><button data-detail="${r.id}">详情</button><button data-detect-model="${r.modelId}">重测</button></td></tr>`).join('')||'<tr><td colspan="9" class="empty">暂无记录</td></tr>';
 renderFingerprints();}
 $('search').oninput=render;
-function edit(title,fields,action){$('editorTitle').textContent=title;$('editorFields').innerHTML=fields.map(([name,label,type='text',value])=>`<label>${label}<input name="${name}" type="${type}" required ${value!=null?`value="${esc(value)}"`:''} ${type==='password'?'autocomplete="new-password"':''}></label>`).join('');editAction=action;$('editor').showModal();window.lucide?.createIcons();}
+function edit(title,fields,action){$('editorTitle').textContent=title;$('editorFields').innerHTML=fields.map(([name,label,type='text',value,options])=>type==='select'?`<label>${label}<select name="${name}">${(options||[]).map(([optValue,optLabel])=>`<option value="${esc(optValue)}" ${String(optValue)===String(value??'')?'selected':''}>${esc(optLabel)}</option>`).join('')}</select></label>`:`<label>${label}<input name="${name}" type="${type}" required ${value!=null?`value="${esc(value)}"`:''} ${type==='password'?'autocomplete="new-password"':''}></label>`).join('');editAction=action;$('editor').showModal();window.lucide?.createIcons();}
 $('editorForm').onsubmit=async e=>{e.preventDefault();try{const values=Object.fromEntries(new FormData(e.target));const note=await editAction(values);$('editor').close();await refresh();if(typeof note==='string')message(note);}catch(e){message(e.message);}};
 $('closeEditor').onclick=()=>$('editor').close();$('closeDetail').onclick=()=>$('detail').close();
-$('addSite').onclick=()=>edit('添加站点',[['name','名称'],['baseUrl','Base URL','url']],v=>api('/sites','POST',v));
+$('addSite').onclick=()=>edit('添加站点',[['name','名称'],['baseUrl','Base URL','url'],['protocol','接口协议','select','auto',protocolOptions]],v=>api('/sites','POST',v));
 function updateDetectionSettings() {
   const form = $('settingsForm');
   // Hidden the old hlwySettings fieldset if it exists

@@ -112,7 +112,11 @@ function openModelPicker(keyId) {
   $("modelPickerSearch").value = "";
   $("manualModelName").value = "";
   $("modelPickerMessage").textContent = "";
-  $("modelPickerContext").textContent = `${site.name} / ${key.name}`;
+  $("modelPickerContext").textContent = `${site.name} / ${key.name} · ${protocolLabel(site.protocol)}`;
+  $("modelPickerProtocol").innerHTML = modelProtocolOptions(site.protocol)
+    .map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`)
+    .join("");
+  $("modelPickerProtocol").value = "inherit";
   setPickerMode(false);
   picker.showModal();
   icons();
@@ -179,11 +183,13 @@ async function saveModels(names) {
   savingModels = true;
   $("modelPickerMessage").textContent = "";
   $("closeModelPicker").disabled = true;
+  $("modelPickerProtocol").disabled = true;
   $("manualModelForm").querySelector("button").disabled = true;
   renderModelOptions();
   try {
     const result = await api(`/keys/${pickerKeyId}/models/batch`, "POST", {
       names,
+      protocol: $("modelPickerProtocol").value,
     });
     picker.close();
     message(
@@ -196,6 +202,7 @@ async function saveModels(names) {
   } finally {
     savingModels = false;
     $("closeModelPicker").disabled = false;
+    $("modelPickerProtocol").disabled = false;
     $("manualModelForm").querySelector("button").disabled = false;
     renderModelOptions();
   }

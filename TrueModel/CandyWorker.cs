@@ -46,11 +46,12 @@ public sealed class CandyWorker(IServiceScopeFactory scopes, IDataProtectionProv
         {
             var target = await (from m in db.Models.AsNoTracking() join k in db.Keys on m.SiteKeyId equals k.Id
                 join s in db.Sites on k.SiteId equals s.Id where m.Id == id
-                select new { m.Name, m.CandyRequestedEffort, m.CandyRequestedLanguage, m.Candy2RequestedLanguage, m.Candy3RequestedLanguage, k.ProtectedValue, s.BaseUrl }).SingleOrDefaultAsync(token);
+                select new { m.Name, m.CandyRequestedEffort, m.CandyRequestedLanguage, m.Candy2RequestedLanguage, m.Candy3RequestedLanguage, k.ProtectedValue, s.BaseUrl, SiteProtocol = s.Protocol, ModelProtocol = m.Protocol }).SingleOrDefaultAsync(token);
             if (target is null) return;
             var key = protection.CreateProtector("ApiKeys.v1").Unprotect(target.ProtectedValue);
             var result = await scope.ServiceProvider.GetRequiredService<ModelTraceClient>()
-                .ProbeCandy(target.BaseUrl, key, target.Name, token, target.CandyRequestedEffort ?? "default", target.CandyRequestedLanguage ?? "zh", target.Candy2RequestedLanguage ?? "zh", target.Candy3RequestedLanguage ?? "zh");
+                .ProbeCandy(target.BaseUrl, key, target.Name, token, target.CandyRequestedEffort ?? "default", target.CandyRequestedLanguage ?? "zh", target.Candy2RequestedLanguage ?? "zh", target.Candy3RequestedLanguage ?? "zh",
+                    protocol: ApiProtocols.Effective(target.SiteProtocol, target.ModelProtocol));
             await db.Models.Where(m => m.Id == id).ExecuteUpdateAsync(s => s
                 .SetProperty(m => m.CandyStatus, result.CandyStatus)
                 .SetProperty(m => m.CandyPrompt, result.CandyPrompt)

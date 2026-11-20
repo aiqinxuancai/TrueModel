@@ -213,6 +213,7 @@ public sealed class Site
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public string BaseUrl { get; set; } = "";
+    public string Protocol { get; set; } = ApiProtocols.Auto;
     public bool Enabled { get; set; } = true;
     public List<SiteKey> Keys { get; set; } = [];
 }
@@ -261,6 +262,7 @@ public sealed class MonitoredModel
     public int Id { get; set; }
     public int SiteKeyId { get; set; }
     public string Name { get; set; } = "";
+    public string? Protocol { get; set; }
     public bool Enabled { get; set; } = true;
     public bool IsFavorite { get; set; }
 }
