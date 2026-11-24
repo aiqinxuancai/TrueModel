@@ -186,7 +186,6 @@ public sealed class AppSettings
     public string Candy3Language { get; set; } = "zh";
     public string WorldMapLanguage { get; set; } = "zh";
     public string CraneRidingLanguage { get; set; } = "zh";
-    public bool CraneRidingSimulatedContext { get; set; }
     public string CraneRidingReasoningEffort { get; set; } = "medium";
     public string DetectionMethod { get; set; } = "modeltrace";
     public int HlwyConcurrency { get; set; } = 5;

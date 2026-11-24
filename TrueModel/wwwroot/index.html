@@ -400,7 +400,7 @@
               <div id="cranePanel" class="settings-panel card" role="tabpanel" aria-labelledby="craneTab" hidden>
                 <div class="settings-section">
                   <h2>丹顶鹤骑行特殊设置</h2>
-                  <p class="section-hint">仅用于手动丹顶鹤骑行检测；已排队任务保留提交时的设置。</p>
+                  <p class="section-hint">仅用于手动丹顶鹤骑行检测；已排队任务保留提交时的设置。上下文类型（普通 / 10k+ 模拟上下文）在首页触发检测时选择。</p>
                   <div class="setting-group">
                     <label for="craneRidingLanguage"><span class="label-text">丹顶鹤骑行题目语言</span><span class="label-hint">绘图题目使用的语言</span></label>
                     <div class="input-wrapper">
@@ -429,16 +429,6 @@
                         <option value="xhigh">xhigh · 更高</option>
                       </select>
                       <span class="input-hint">显式等级需要模型接口支持；OpenAI 发送 reasoning_effort，Claude 映射为 thinking / effort，Gemini 映射为 thinkingConfig；不支持思考等级的模型请选择“接口默认”。</span>
-                    </div>
-                  </div>
-                  <div class="setting-group">
-                    <span class="setting-label">
-                      <span class="label-text">10k+ 模拟上下文</span>
-                      <span class="label-hint">默认关闭</span>
-                    </span>
-                    <div class="input-wrapper">
-                      <label class="switch"><input name="craneRidingSimulatedContext" type="checkbox" role="switch" /><span class="switch-track" aria-hidden="true"></span><span>先模拟多轮 U/A 对话再提问</span></label>
-                      <span class="input-hint">开启后先加入至少 64 轮用户/助手历史对话，再发送丹顶鹤骑行题目。对话在本地生成，随题目一次发送；10k+ token 为长度估算，实际用量随模型而异，会增加输入用量和请求耗时。</span>
                     </div>
                   </div>
                 </div>

@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace TrueModel;
 
+public sealed record CraneRidingStartInput(bool SimulatedContext = false);
+
 public sealed record CraneRidingSummary(int Id, int ModelId, string ModelName, string Status, string Language, bool SimulatedContext, string ReasoningEffort,
     DateTime CreatedAt, DateTime? CompletedAt, long? LatencyMs, long? ReasoningTokens, string? Error);
 
@@ -14,20 +16,21 @@ public static class CraneRidingEndpoints
 
     public static void MapCraneRides(this RouteGroupBuilder api)
     {
-        api.MapPost("/models/{id:int}/crane-riding", async (int id, AppDb db, CancellationToken token) =>
+        api.MapPost("/models/{id:int}/crane-riding", async (int id, CraneRidingStartInput? input, AppDb db, CancellationToken token) =>
         {
-            var settings = await db.Settings.Select(s => new { s.CraneRidingLanguage, s.CraneRidingSimulatedContext, s.CraneRidingReasoningEffort }).SingleAsync(token);
+            var simulatedContext = input?.SimulatedContext ?? false;
+            var settings = await db.Settings.Select(s => new { s.CraneRidingLanguage, s.CraneRidingReasoningEffort }).SingleAsync(token);
             // Snapshot probe settings and de-duplicate concurrent submissions in one SQLite statement.
             var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO CraneRidingRuns (ModelId, ModelName, Status, Language, SimulatedContext, ReasoningEffort, CreatedAt)
-                SELECT Id, Name, 'Queued', {settings.CraneRidingLanguage}, {settings.CraneRidingSimulatedContext}, {settings.CraneRidingReasoningEffort}, {DateTime.UtcNow} FROM Models WHERE Id = {id}
+                SELECT Id, Name, 'Queued', {settings.CraneRidingLanguage}, {simulatedContext}, {settings.CraneRidingReasoningEffort}, {DateTime.UtcNow} FROM Models WHERE Id = {id}
                 AND NOT EXISTS (SELECT 1 FROM CraneRidingRuns WHERE ModelId = {id} AND Status IN ('Queued', 'Running'))
                 """, token);
             if (inserted == 0)
                 return await db.Models.AnyAsync(m => m.Id == id, token)
                     ? Results.Conflict(new { error = "丹顶鹤骑行检测已在队列中或运行中，请勿重复提交" }) : Results.NotFound(new { error = "模型不存在" });
             await CraneRidingProbe.Prune(db, token);
-            return Results.Accepted("/api/crane-rides/latest", new { status = "Queued" });
+            return Results.Accepted("/api/crane-rides/latest", new { status = "Queued", simulatedContext });
         });
         api.MapGet("/crane-rides/latest", async (AppDb db, CancellationToken token) =>
         {

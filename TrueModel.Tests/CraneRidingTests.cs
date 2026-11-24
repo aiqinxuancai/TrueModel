@@ -178,7 +178,6 @@ public class CraneRidingTests
         {
             await legacy.Database.EnsureCreatedAsync();
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CraneRidingLanguage");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CraneRidingSimulatedContext");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CraneRidingReasoningEffort");
             await legacy.Database.ExecuteSqlRawAsync("DROP TABLE CraneRidingRuns");
             legacy.WorldMaps.Add(new WorldMapRun { ModelId = 999, ModelName = "old map", Status = "Queued" });
@@ -190,20 +189,24 @@ public class CraneRidingTests
         {
             using var browser = app.CreateClient();
             await Login(browser);
-            Assert.Equal("zh", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingLanguage").GetString());
-            Assert.False((await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingSimulatedContext").GetBoolean());
-            Assert.Equal("medium", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingReasoningEffort").GetString());
+            var initialSettings = await browser.GetFromJsonAsync<JsonElement>("/api/settings");
+            Assert.Equal("zh", initialSettings.GetProperty("craneRidingLanguage").GetString());
+            Assert.False(initialSettings.TryGetProperty("craneRidingSimulatedContext", out _));
+            Assert.Equal("medium", initialSettings.GetProperty("craneRidingReasoningEffort").GetString());
             foreach (var language in new[] { "zh", "en", "ja", "ko", "fr", "es", "de", "pt" })
                 Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingLanguage = language })).StatusCode);
             foreach (var invalid in new string?[] { null, "", "xx" })
                 Assert.Equal(HttpStatusCode.BadRequest, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingLanguage = invalid })).StatusCode);
             modelId = await SeedModel(app, "ja");
-            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingSimulatedContext = true, craneRidingReasoningEffort = "high" })).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingReasoningEffort = "high" })).StatusCode);
             Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { challengeCount = 4 })).StatusCode);
-            Assert.True((await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingSimulatedContext").GetBoolean());
-            Assert.Equal(HttpStatusCode.Accepted, (await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { })).StatusCode);
-            Assert.Equal(HttpStatusCode.Conflict, (await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { })).StatusCode);
-            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingLanguage = "de", craneRidingSimulatedContext = false, craneRidingReasoningEffort = "low" })).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { simulatedContext = "true" })).StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, (await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { simulatedContext = (bool?)null })).StatusCode);
+            var accepted = await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { simulatedContext = true });
+            Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+            Assert.True((await accepted.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("simulatedContext").GetBoolean());
+            Assert.Equal(HttpStatusCode.Conflict, (await browser.PostAsJsonAsync($"/api/models/{modelId}/crane-riding", new { simulatedContext = false })).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingLanguage = "de", craneRidingReasoningEffort = "low" })).StatusCode);
             Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { challengeCount = 4 })).StatusCode);
             using var scope = app.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDb>();
@@ -242,9 +245,10 @@ public class CraneRidingTests
             Assert.True(handler.StreamRequested);
             Assert.Equal(1, handler.Calls);
             Assert.Contains("タンチョウ", CandyTestPrompts.WithoutWhitespace(handler.Prompt));
-            Assert.Equal("de", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingLanguage").GetString());
-            Assert.False((await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingSimulatedContext").GetBoolean());
-            Assert.Equal("low", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingReasoningEffort").GetString());
+            var settings = await browser.GetFromJsonAsync<JsonElement>("/api/settings");
+            Assert.Equal("de", settings.GetProperty("craneRidingLanguage").GetString());
+            Assert.False(settings.TryGetProperty("craneRidingSimulatedContext", out _));
+            Assert.Equal("low", settings.GetProperty("craneRidingReasoningEffort").GetString());
             Assert.Equal("Interrupted", (await browser.GetFromJsonAsync<JsonElement>($"/api/crane-rides/{interruptedId}")).GetProperty("status").GetString());
         }
     }
@@ -263,7 +267,8 @@ public class CraneRidingTests
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE CraneRidingRuns DROP COLUMN SimulatedContext");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE CraneRidingRuns DROP COLUMN ConversationJson");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE CraneRidingRuns DROP COLUMN ReasoningEffort");
-            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CraneRidingSimulatedContext");
+            // Simulate a database upgraded from a version where Settings had CraneRidingSimulatedContext enabled.
+            await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings ADD COLUMN CraneRidingSimulatedContext INTEGER NOT NULL DEFAULT 1");
             await legacy.Database.ExecuteSqlRawAsync("ALTER TABLE Settings DROP COLUMN CraneRidingReasoningEffort");
         }
         using var handler = new SvgHandler(Svg);
@@ -277,14 +282,19 @@ public class CraneRidingTests
         Assert.False(detail.GetProperty("simulatedContext").GetBoolean());
         Assert.Equal("default", detail.GetProperty("reasoningEffort").GetString());
         Assert.Equal(JsonValueKind.Null, detail.GetProperty("conversationJson").ValueKind);
-        Assert.False((await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingSimulatedContext").GetBoolean());
-        Assert.Equal("medium", (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingReasoningEffort").GetString());
-        foreach (var enabled in new[] { true, false })
-        {
-            Assert.Equal(HttpStatusCode.NoContent, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingSimulatedContext = enabled })).StatusCode);
-            Assert.Equal(enabled, (await browser.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("craneRidingSimulatedContext").GetBoolean());
-        }
-        Assert.Equal(HttpStatusCode.BadRequest, (await browser.PutAsJsonAsync("/api/settings", new { craneRidingSimulatedContext = "true" })).StatusCode);
+        var settings = await browser.GetFromJsonAsync<JsonElement>("/api/settings");
+        Assert.False(settings.TryGetProperty("craneRidingSimulatedContext", out _));
+        Assert.Equal("medium", settings.GetProperty("craneRidingReasoningEffort").GetString());
+        var modelId = await SeedModel(app, "zh");
+        // Empty body defaults to standard context even if a legacy Settings column was 1.
+        using var emptyRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/models/{modelId}/crane-riding");
+        var emptyAccepted = await browser.SendAsync(emptyRequest);
+        Assert.Equal(HttpStatusCode.Accepted, emptyAccepted.StatusCode);
+        Assert.False((await emptyAccepted.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("simulatedContext").GetBoolean());
+        var indexHtml = await browser.GetStringAsync("/");
+        Assert.DoesNotContain("craneRidingSimulatedContext", indexHtml);
+        var craneJs = await browser.GetStringAsync("/crane-riding.js");
+        Assert.Contains("craneStartPicker", craneJs);
         Assert.Equal(0, handler.Calls);
     }
 

@@ -107,7 +107,7 @@ using (var scope = app.Services.CreateScope())
         using (var reader = await command.ExecuteReaderAsync())
             while (await reader.ReadAsync()) columns.Add(reader.GetString(1));
         var additions = table == "Settings"
-            ? new Dictionary<string, string> { ["AttributionLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CandyLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy2Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy3Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["WorldMapLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CraneRidingLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CraneRidingSimulatedContext"] = "INTEGER NOT NULL DEFAULT 0", ["CraneRidingReasoningEffort"] = "TEXT NOT NULL DEFAULT 'medium'", ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''", ["JuiceReasoningEffort"] = "TEXT NOT NULL DEFAULT 'default'" }
+            ? new Dictionary<string, string> { ["AttributionLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CandyLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy2Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["Candy3Language"] = "TEXT NOT NULL DEFAULT 'zh'", ["WorldMapLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CraneRidingLanguage"] = "TEXT NOT NULL DEFAULT 'zh'", ["CraneRidingReasoningEffort"] = "TEXT NOT NULL DEFAULT 'medium'", ["DetectionMethod"] = "TEXT NOT NULL DEFAULT 'modeltrace'", ["HlwySampleCount"] = "INTEGER NOT NULL DEFAULT 100", ["HlwyConcurrency"] = "INTEGER NOT NULL DEFAULT 5", ["HlwyAntiTarget"] = "INTEGER NOT NULL DEFAULT 0", ["HlwyBaselinesJson"] = "TEXT NOT NULL DEFAULT ''", ["JuiceReasoningEffort"] = "TEXT NOT NULL DEFAULT 'default'" }
             : new Dictionary<string, string> { ["DetectionSettingsJson"] = "TEXT NULL", ["BankSelectionJson"] = "TEXT NULL" };
         foreach (var column in additions)
             if (!columns.Contains(column.Key))
@@ -724,7 +724,6 @@ api.MapPut("/settings", async (JsonElement payload, AppDb db) =>
     if (payload.EnumerateObject().Any(p => p.Name.Equals("candy3Language", StringComparison.OrdinalIgnoreCase))) settings.Candy3Language = input.Candy3Language;
     if (payload.EnumerateObject().Any(p => p.Name.Equals("worldMapLanguage", StringComparison.OrdinalIgnoreCase))) settings.WorldMapLanguage = input.WorldMapLanguage;
     if (payload.EnumerateObject().Any(p => p.Name.Equals("craneRidingLanguage", StringComparison.OrdinalIgnoreCase))) settings.CraneRidingLanguage = input.CraneRidingLanguage;
-    if (payload.EnumerateObject().Any(p => p.Name.Equals("craneRidingSimulatedContext", StringComparison.OrdinalIgnoreCase))) settings.CraneRidingSimulatedContext = input.CraneRidingSimulatedContext;
     if (payload.EnumerateObject().Any(p => p.Name.Equals("craneRidingReasoningEffort", StringComparison.OrdinalIgnoreCase))) settings.CraneRidingReasoningEffort = input.CraneRidingReasoningEffort;
     settings.IntervalMinutes = input.IntervalMinutes; settings.MaxConcurrency = input.MaxConcurrency; settings.TimeoutSeconds = 240; settings.ChallengeCount = input.ChallengeCount;
     settings.NextRunAt = input.IntervalMinutes > 0 ? DateTime.UtcNow.AddMinutes(input.IntervalMinutes) : null;
