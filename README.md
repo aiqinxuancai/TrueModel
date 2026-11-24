@@ -18,6 +18,28 @@
 
 参考版本：[60949ef](https://github.com/xqy2006/ModelTrace/tree/60949ef522a84f66b1236b459308b48028d36949)。TrueModel 将检测流程移植为 C#，**运行和发布均不依赖 Python**。移植部分与指纹库保留上游 MIT 许可，详见 [来源与许可](THIRD-PARTY-NOTICES.md)。
 
+## 页面截图
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/overview.png" />
+  <img alt="检测总览" src="docs/screenshots/overview.png" />
+</picture>
+
+<p align="center"><sub>检测总览工作台，支持浅色 / 深色主题切换（<a href="docs/screenshots/overview.png">浅色模式</a> · <a href="docs/screenshots/overview-dark.png">深色模式</a>）</sub></p>
+
+| 检测详情（归因 / Juice / 糖果） | 丹顶鹤骑行 · 上下文类型选择 |
+| :---: | :---: |
+| ![检测详情](docs/screenshots/detection-detail.png) | ![丹顶鹤骑行上下文类型选择](docs/screenshots/crane-riding-picker.png) |
+
+| 丹顶鹤骑行 · SVG 历史与大图预览 | 站点配置（多协议分层管理） |
+| :---: | :---: |
+| ![丹顶鹤骑行历史预览](docs/screenshots/crane-riding.png) | ![站点配置](docs/screenshots/configuration.png) |
+
+| 指纹库与 HLWY 基准 | 检测设置 |
+| :---: | :---: |
+| ![指纹库与 HLWY 基准](docs/screenshots/banks.png) | ![检测设置](docs/screenshots/settings.png) |
+
 ## 功能
 
 内置默认指纹库为 ModelTrace 提交 `55a2e4a55170423b484d701e9a82ab62b268c811`，包含 16 个模型。已有默认库可在指纹库页面点击“从上游更新默认库”，下载校验成功后保留 ID 原位更新。启动时若数据库缺少默认库，会添加内置版本。
