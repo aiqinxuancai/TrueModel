@@ -48,8 +48,20 @@ try {
             for ($attempt = 0; $attempt -lt 100; $attempt++) {
                 $process.Refresh()
                 if ($process.HasExited) { throw 'Application exited during startup' }
-                $text = Get-Content -LiteralPath $log -Raw -ErrorAction SilentlyContinue
-                if ($text -match 'Now listening on: (http://127\.0\.0\.1:\d+)') { $url = $Matches[1]; break }
+                # Read via a single shared FileStream pass: Get-Content -Raw can yield an array on a growing log,
+                # in which case PowerShell -match filters without populating $Matches.
+                $text = ''
+                if (Test-Path -LiteralPath $log) {
+                    try {
+                        $stream = [System.IO.File]::Open($log, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                        try {
+                            $reader = [System.IO.StreamReader]::new($stream)
+                            try { $text = $reader.ReadToEnd() } finally { $reader.Dispose() }
+                        } finally { $stream.Dispose() }
+                    } catch [System.IO.IOException] { }
+                }
+                $match = [regex]::Match($text, 'Now listening on: (http://127\.0\.0\.1:\d+)')
+                if ($match.Success) { $url = $match.Groups[1].Value; break }
                 Start-Sleep -Milliseconds 300
             }
             if (!$url) { throw 'No loopback listener found' }
