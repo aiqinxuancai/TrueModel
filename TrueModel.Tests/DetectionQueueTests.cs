@@ -168,10 +168,10 @@ public class DetectionQueueTests
             catch (OperationCanceledException) { Cancelled.TrySetResult(); throw; }
             if (CandyTestPrompts.IsCandy(TestConversation.Prompt(body)))
             {
-                Assert.Equal("high", body.GetProperty("reasoning_effort").GetString());
-                return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "21" }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = 512 } } }) };
+                Assert.Equal("high", TestConversation.Effort(body));
+                return TestConversation.ResponsesOk("21", 512);
             }
-            Assert.False(body.TryGetProperty("reasoning_effort", out _));
+            Assert.Null(TestConversation.Effort(body));
             return new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = new { message = "fixture" } }) };
         }
     }

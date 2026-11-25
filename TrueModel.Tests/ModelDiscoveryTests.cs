@@ -16,6 +16,7 @@ public class ModelDiscoveryTests
     [InlineData("https://models.test/v1/", "https://models.test/v1/models")]
     [InlineData("https://models.test/proxy/v1", "https://models.test/proxy/v1/models")]
     [InlineData("https://models.test/v1/chat/completions", "https://models.test/v1/models")]
+    [InlineData("https://models.test/v1/responses", "https://models.test/v1/models")]
     [InlineData("https://models.test/v1/models/", "https://models.test/v1/models")]
     public void BuildsModelsEndpoint(string input, string expected) => Assert.Equal(expected, ModelDiscovery.ModelsUrl(input));
 
@@ -28,6 +29,8 @@ public class ModelDiscoveryTests
             Assert.Equal("https://models.test/v1/models", request.RequestUri!.AbsoluteUri);
             Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
             Assert.Equal("test-secret", request.Headers.Authorization.Parameter);
+            Assert.Equal(ModelTraceClient.CodexUserAgent, request.Headers.UserAgent.ToString());
+            Assert.Equal(ModelTraceClient.CodexOriginator, request.Headers.GetValues("originator").Single());
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{"data":[{"id":"z-model"},{"id":"a-model"},{"id":" a-model "},{"id":""},{"id":7},{},null]}""") });
         });
         using var client = new HttpClient(handler);

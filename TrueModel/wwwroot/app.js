@@ -6,11 +6,11 @@ let token = '', sites = [], results = [], runs = [], banks = [], fingerprintTask
 let recentModelResults = [];
 let worldMaps = []; // Retained for the internal world-map UI.
 let craneRides = [], craneLanguage = 'zh', craneEffort = 'medium';
-const protocolLabels = {auto:'自动探测', openai:'OpenAI', anthropic:'Claude', gemini:'Gemini'};
+const protocolLabels = {auto:'自动探测', openai:'OpenAI / Codex', anthropic:'Claude Code', gemini:'Gemini'};
 const protocolOptions = [
     ['auto', '自动探测（OpenAI / Claude / Gemini）'],
-    ['openai', 'OpenAI 兼容（/v1/chat/completions）'],
-    ['anthropic', 'Claude / Anthropic（/v1/messages）'],
+    ['openai', 'OpenAI / Codex（优先 /v1/responses，自动回退 /v1/chat/completions）'],
+    ['anthropic', 'Claude / Claude Code（/v1/messages?beta=true）'],
     ['gemini', 'Google Gemini（/v1beta/models/...:generateContent）']
 ];
 function protocolLabel(protocol) { return protocolLabels[protocol || 'auto'] || protocol || '自动探测'; }

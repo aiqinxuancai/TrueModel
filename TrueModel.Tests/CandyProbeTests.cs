@@ -125,6 +125,7 @@ public class CandyProbeTests
     [Theory]
     [InlineData("{\"usage\":{\"completion_tokens_details\":{\"reasoning_tokens\":\"123\"}}}", 123L)]
     [InlineData("{\"usage\":{\"output_tokens_details\":{\"reasoning_tokens\":456}}}", 456L)]
+    [InlineData("{\"response\":{\"usage\":{\"output_tokens_details\":{\"reasoning_tokens\":654}}}}", 654L)]
     [InlineData("{\"usage\":{\"reasoning_tokens\":789}}", 789L)]
     [InlineData("{\"usage\":{\"reasoning_output_tokens\":512}}", 512L)]
     [InlineData("{\"reasoning_tokens\":\"42\"}", 42L)]
@@ -136,7 +137,8 @@ public class CandyProbeTests
         using var usage = JsonDocument.Parse(usageJson);
         Assert.Equal(expected, ModelTraceClient.ExtractReasoningTokens(usage.RootElement));
         var payload = System.Text.Json.Nodes.JsonNode.Parse(usageJson)!;
-        payload["choices"] = System.Text.Json.Nodes.JsonNode.Parse("""[{"message":{"content":"21"},"finish_reason":"stop"}]""");
+        payload["status"] = "completed";
+        payload["output"] = System.Text.Json.Nodes.JsonNode.Parse("""[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"21"}]}]""");
         var client = new ModelTraceClient(new HttpClient(new PayloadHandler(payload.ToJsonString())));
         var result = await client.ProbeCandy("https://example.test", "secret", "model", CancellationToken.None, "high");
         Assert.Equal("Success", result.CandyStatus);
@@ -164,11 +166,11 @@ public class CandyProbeTests
             Assert.True(CandyTestPrompts.IsCandy(prompt));
             Assert.NotEqual(CandyProbe.Prompt, prompt);
             Assert.False(body.TryGetProperty("tools", out _));
-            if (effort == "default") Assert.False(body.TryGetProperty("reasoning_effort", out _));
-            else Assert.Equal(effort, body.GetProperty("reasoning_effort").GetString());
+            if (effort == "default") Assert.Null(TestConversation.Effort(body));
+            else Assert.Equal(effort, TestConversation.Effort(body));
             return error
                 ? new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = answer }) }
-                : new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = answer }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = tokens } } }) };
+                : TestConversation.ResponsesOk(answer, tokens);
         }
     }
 }

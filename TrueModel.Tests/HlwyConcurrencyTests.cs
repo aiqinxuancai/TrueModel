@@ -77,7 +77,7 @@ public class HlwyConcurrencyTests
             {
                 await Release.Task.WaitAsync(token);
                 await Task.Delay(5, token);
-                return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = Text }, finish_reason = "stop" } } }) };
+                return TestConversation.ResponsesOk(Text);
             }
             finally { Interlocked.Decrement(ref Active); }
         }

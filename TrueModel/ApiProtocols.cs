@@ -32,16 +32,27 @@ public static class ApiProtocols
     public static string Effective(string? siteProtocol, string? modelProtocol) =>
         NormalizeModelOverride(modelProtocol) ?? Normalize(siteProtocol);
 
+    public static string StripQueryAndFragment(string url)
+    {
+        var trimmed = url.Trim();
+        var cut = trimmed.IndexOfAny(['?', '#']);
+        return cut >= 0 ? trimmed[..cut] : trimmed;
+    }
+
     public static string? InferFromUrl(string baseUrl)
     {
-        var normalized = baseUrl.Trim().TrimEnd('/');
+        var normalized = StripQueryAndFragment(baseUrl).TrimEnd('/');
         if (normalized.EndsWith("/messages", StringComparison.OrdinalIgnoreCase)) return Anthropic;
-        if (normalized.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)) return OpenAi;
+        if (normalized.EndsWith("/responses", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)) return OpenAi;
         if (normalized.EndsWith(":generateContent", StringComparison.OrdinalIgnoreCase) ||
             normalized.EndsWith(":streamGenerateContent", StringComparison.OrdinalIgnoreCase)) return Gemini;
         if (Uri.TryCreate(normalized, UriKind.Absolute, out var uri))
         {
             if (uri.Host.Equals("api.anthropic.com", StringComparison.OrdinalIgnoreCase)) return Anthropic;
+            if (uri.Host.Equals("api.openai.com", StringComparison.OrdinalIgnoreCase)) return OpenAi;
+            if (uri.Host.Equals("chatgpt.com", StringComparison.OrdinalIgnoreCase) &&
+                uri.AbsolutePath.Contains("/codex", StringComparison.OrdinalIgnoreCase)) return OpenAi;
             if (uri.Host.Equals("generativelanguage.googleapis.com", StringComparison.OrdinalIgnoreCase))
                 return uri.AbsolutePath.Contains("/openai", StringComparison.OrdinalIgnoreCase) ? OpenAi : Gemini;
             if (uri.AbsolutePath.Contains("/openai", StringComparison.OrdinalIgnoreCase)) return OpenAi;

@@ -96,7 +96,7 @@ public class PromptLanguageTests
             var prompt = TestConversation.Prompt(body);
             Prompts.Add(prompt);
             var answer = body.TryGetProperty("temperature", out _) ? "42" : CandyTestPrompts.IsCandy(prompt) ? "21" : string.Join(',', Enumerable.Range(1, 310));
-            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = answer }, finish_reason = "stop" } } }) };
+            return TestConversation.ResponsesOk(answer);
         }
     }
 }

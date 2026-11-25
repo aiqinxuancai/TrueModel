@@ -27,6 +27,7 @@ public class NativeDetectionTests
             }
         }
     }
+
     [Theory]
     [InlineData(3)]
     [InlineData(6)]
@@ -51,10 +52,14 @@ public class NativeDetectionTests
         {
             TestConversation.Prompt(body);
             Assert.False(body.TryGetProperty("max_tokens", out _));
+            Assert.False(body.TryGetProperty("max_output_tokens", out _));
             Assert.False(body.TryGetProperty("temperature", out _));
-            Assert.False(body.TryGetProperty("stream", out _));
+            Assert.False(body.GetProperty("store").GetBoolean());
+            Assert.True(body.GetProperty("stream").GetBoolean());
+            Assert.Equal(ModelTraceClient.CodexInstructions, body.GetProperty("instructions").GetString());
         }
     }
+
     [Fact]
     public async Task RejectsTruncationAndFallsBackToAnthropic()
     {
@@ -66,6 +71,7 @@ public class NativeDetectionTests
         Assert.All(handler.Requests, body => Assert.Equal("prompt", TestConversation.Prompt(body)));
         Assert.Equal(4096, handler.Requests[1].GetProperty("max_tokens").GetInt32());
     }
+
     private sealed class RecordingHandler : HttpMessageHandler
     {
         public List<JsonElement> Requests { get; } = [];
@@ -73,16 +79,18 @@ public class NativeDetectionTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             Requests.Add(JsonSerializer.Deserialize<JsonElement>(await request.Content!.ReadAsStringAsync(token)));
-            Assert.Equal(ModelTraceClient.DefaultUserAgent, request.Headers.UserAgent.ToString());
             var text = string.Join(',', Enumerable.Range(1, 310));
-            object response;
             if (request.RequestUri!.AbsolutePath.EndsWith("/messages"))
             {
+                Assert.Equal(ModelTraceClient.ClaudeCodeUserAgent, request.Headers.UserAgent.ToString());
                 Assert.Equal("test-secret", request.Headers.GetValues("x-api-key").Single());
-                response = new { content = new[] { new { type = "text", text } }, stop_reason = "end_turn" };
+                Assert.Equal("cli", request.Headers.GetValues("x-app").Single());
+                Assert.Equal("?beta=true", request.RequestUri.Query);
+                return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { content = new[] { new { type = "text", text } }, stop_reason = "end_turn" }) };
             }
-            else response = new { choices = new[] { new { message = new { content = text }, finish_reason = TruncateOpenAi ? "length" : "stop" } } };
-            return new(HttpStatusCode.OK) { Content = JsonContent.Create(response) };
+            Assert.Equal(ModelTraceClient.CodexUserAgent, request.Headers.UserAgent.ToString());
+            Assert.Equal(ModelTraceClient.CodexOriginator, request.Headers.GetValues("originator").Single());
+            return TestConversation.ResponsesOk(text, status: TruncateOpenAi ? "incomplete" : "completed", incompleteReason: TruncateOpenAi ? "max_output_tokens" : null);
         }
     }
 }

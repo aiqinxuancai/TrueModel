@@ -428,7 +428,7 @@
                         <option value="high">high · 高</option>
                         <option value="xhigh">xhigh · 更高</option>
                       </select>
-                      <span class="input-hint">显式等级需要模型接口支持；OpenAI 发送 reasoning_effort，Claude 映射为 thinking / effort，Gemini 映射为 thinkingConfig；不支持思考等级的模型请选择“接口默认”。</span>
+                      <span class="input-hint">显式等级需要模型接口支持；OpenAI（Codex）发送 reasoning.effort（回退接口发送 reasoning_effort），Claude（Claude Code）映射为 thinking / effort，Gemini 映射为 thinkingConfig；不支持思考等级的模型请选择“接口默认”。</span>
                     </div>
                   </div>
                 </div>
@@ -568,7 +568,7 @@
                         <option value="high">high · 高</option>
                         <option value="xhigh">xhigh · 更高</option>
                       </select>
-                      <span class="input-hint">显式等级需要模型接口支持；OpenAI 发送 reasoning_effort，Claude 映射为 thinking / effort，Gemini 映射为 thinkingConfig；不支持思考等级的模型建议选择“接口默认”</span>
+                      <span class="input-hint">显式等级需要模型接口支持；OpenAI（Codex）发送 reasoning.effort（回退接口发送 reasoning_effort），Claude（Claude Code）映射为 thinking / effort，Gemini 映射为 thinkingConfig；不支持思考等级的模型建议选择“接口默认”</span>
                     </div>
                   </div>
                   <div class="setting-group">
@@ -731,8 +731,8 @@
           <label>批量设置协议<select id="batchModelProtocol">
             <option value="inherit">跟随站点</option>
             <option value="auto">自动探测（OpenAI / Claude / Gemini）</option>
-            <option value="openai">OpenAI 兼容</option>
-            <option value="anthropic">Claude / Anthropic</option>
+            <option value="openai">OpenAI / Codex</option>
+            <option value="anthropic">Claude / Claude Code</option>
             <option value="gemini">Google Gemini</option>
           </select></label>
           <button id="applyBatchProtocol" type="button" disabled><i data-lucide="sliders-horizontal"></i>应用协议</button>

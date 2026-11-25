@@ -11,7 +11,7 @@ public sealed class ModelDiscovery(HttpClient client)
 
     public static string ModelsUrl(string baseUrl, string protocol)
     {
-        var url = baseUrl.TrimEnd('/');
+        var url = ApiProtocols.StripQueryAndFragment(baseUrl).TrimEnd('/');
         if (protocol == ApiProtocols.Gemini)
         {
             if (url.EndsWith(":generateContent", StringComparison.OrdinalIgnoreCase) ||
@@ -23,6 +23,8 @@ public sealed class ModelDiscovery(HttpClient client)
             if (url.EndsWith("/models", StringComparison.OrdinalIgnoreCase)) return url;
             if (url.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
                 url = url[..^"/chat/completions".Length];
+            else if (url.EndsWith("/responses", StringComparison.OrdinalIgnoreCase))
+                url = url[..^"/responses".Length];
             else if (url.EndsWith("/messages", StringComparison.OrdinalIgnoreCase))
                 url = url[..^"/messages".Length];
             if (url.EndsWith("/v1beta", StringComparison.OrdinalIgnoreCase) ||
@@ -35,10 +37,11 @@ public sealed class ModelDiscovery(HttpClient client)
         if (protocol == ApiProtocols.Anthropic)
         {
             const string suffix = "/messages";
-            return ModelTraceClient.CompletionUrl(url, ApiProtocols.Anthropic)[..^suffix.Length] + "/models";
+            var completionPath = ApiProtocols.StripQueryAndFragment(ModelTraceClient.CompletionUrl(url, ApiProtocols.Anthropic));
+            return completionPath[..^suffix.Length] + "/models";
         }
         const string openAiSuffix = "/chat/completions";
-        return ModelTraceClient.CompletionUrl(url, ApiProtocols.OpenAi)[..^openAiSuffix.Length] + "/models";
+        return ModelTraceClient.ChatCompletionsUrl(url)[..^openAiSuffix.Length] + "/models";
     }
 
     public async Task<string[]> Fetch(string baseUrl, string key, CancellationToken token, string protocol = ApiProtocols.Auto)
@@ -77,21 +80,7 @@ public sealed class ModelDiscovery(HttpClient client)
                     : $"{endpoint}?after_id={Uri.EscapeDataString(pageCursor)}";
             using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            if (protocol == ApiProtocols.Anthropic)
-            {
-                if (useBearerAuth) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-                else request.Headers.Add("x-api-key", key);
-                request.Headers.Add("anthropic-version", "2023-06-01");
-            }
-            else if (protocol == ApiProtocols.Gemini)
-            {
-                if (useBearerAuth) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-                else request.Headers.Add("x-goog-api-key", key);
-            }
-            else
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-            }
+            ModelTraceClient.ApplyClientHeaders(request, protocol, key, useBearerAuth, sessionId: null, retries: 0, timeoutSeconds: 30, includeResponsesBeta: false);
 
             try
             {

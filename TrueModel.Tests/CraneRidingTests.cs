@@ -95,7 +95,7 @@ public class CraneRidingTests
         Assert.True(handler.StreamRequested);
         Assert.Equal("medium", handler.ReasoningEffort);
         Assert.Equal("medium", run.GetProperty("reasoningEffort").GetString());
-        Assert.Equal(3, handler.Messages.GetArrayLength());
+        Assert.Equal(3, handler.Messages.Length);
         Assert.False(run.GetProperty("simulatedContext").GetBoolean());
         Assert.Contains("タンチョウ", CandyTestPrompts.WithoutWhitespace(handler.Prompt));
         Assert.Equal(123, run.GetProperty("reasoningTokens").GetInt64());
@@ -236,10 +236,10 @@ public class CraneRidingTests
             Assert.True(run.GetProperty("simulatedContext").GetBoolean());
             Assert.Equal("high", run.GetProperty("reasoningEffort").GetString());
             Assert.Equal("high", handler.ReasoningEffort);
-            Assert.True((handler.Messages.GetArrayLength() - 1) / 2 >= 64);
-            Assert.True(handler.Messages.EnumerateArray().SkipLast(1).Sum(m => m.GetProperty("content").GetString()!.Length) >= 60_000);
+            Assert.True((handler.Messages.Length - 1) / 2 >= 64);
+            Assert.True(handler.Messages.SkipLast(1).Sum(m => m.Content.Length) >= 60_000);
             var detail = await browser.GetFromJsonAsync<JsonElement>($"/api/crane-rides/{run.GetProperty("id").GetInt32()}");
-            Assert.Equal(handler.Messages.GetRawText(), detail.GetProperty("conversationJson").GetString());
+            Assert.Equal(JsonSerializer.Serialize(handler.Messages), detail.GetProperty("conversationJson").GetString());
             Assert.Equal(handler.Prompt, detail.GetProperty("prompt").GetString());
             Assert.Equal("high", detail.GetProperty("reasoningEffort").GetString());
             Assert.True(handler.StreamRequested);
@@ -379,7 +379,7 @@ public class CraneRidingTests
     {
         public string Reply = reply;
         public string Prompt = "";
-        public JsonElement Messages;
+        public ConversationMessage[] Messages = [];
         public int Calls;
         public bool StreamRequested;
         public string? ReasoningEffort;
@@ -390,18 +390,19 @@ public class CraneRidingTests
         {
             Interlocked.Increment(ref Calls);
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            Messages = body.GetProperty("messages").Clone();
-            Prompt = Messages[Messages.GetArrayLength() - 1].GetProperty("content").GetString()!;
+            Messages = TestConversation.Messages(body);
+            Prompt = Messages[^1].Content;
             StreamRequested = body.GetProperty("stream").GetBoolean();
-            ReasoningEffort = body.TryGetProperty("reasoning_effort", out var effort) ? effort.GetString() : null;
+            ReasoningEffort = TestConversation.Effort(body);
             Started.TrySetResult();
             if (hold) await Release.Task.WaitAsync(token);
             if (RejectExplicitEffort && ReasoningEffort is not null)
                 return new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = "unsupported reasoning_effort" }) };
-            var payload = stream
-                ? "data: " + JsonSerializer.Serialize(new { choices = new[] { new { delta = new { content = Reply }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = 123 } } }) + "\n\ndata: [DONE]\n\n"
-                : JsonSerializer.Serialize(new { choices = new[] { new { message = new { content = Reply }, finish_reason = "stop" } } });
-            return new(HttpStatusCode.OK) { Content = new StringContent(payload, Encoding.UTF8, stream ? "text/event-stream" : "application/json") };
+            if (!stream) return TestConversation.ResponsesOk(Reply);
+            var payload =
+                "data: " + JsonSerializer.Serialize(new { type = "response.output_text.delta", delta = Reply }) + "\n\n" +
+                "data: " + JsonSerializer.Serialize(new { type = "response.completed", response = new { status = "completed", usage = new { output_tokens_details = new { reasoning_tokens = 123 } } } }) + "\n\n";
+            return new(HttpStatusCode.OK) { Content = new StringContent(payload, Encoding.UTF8, "text/event-stream") };
         }
     }
 }

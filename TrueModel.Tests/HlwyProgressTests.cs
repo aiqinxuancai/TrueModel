@@ -91,7 +91,7 @@ public class HlwyProgressTests
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
             var candy = CandyTestPrompts.IsCandy(TestConversation.Prompt(body));
             if (candy) { Started.TrySetResult(); await Release.Task.WaitAsync(token); }
-            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = candy ? "21" : "42" }, finish_reason = "stop" } } }) };
+            return TestConversation.ResponsesOk(candy ? "21" : "42");
         }
     }
 }

@@ -69,8 +69,8 @@ public class DualCandyTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             var body = await request.Content!.ReadFromJsonAsync<JsonElement>(token);
-            Assert.Equal(3, body.GetProperty("messages").GetArrayLength());
-            Assert.Equal("high", body.GetProperty("reasoning_effort").GetString());
+            Assert.Equal(3, TestConversation.Messages(body).Length);
+            Assert.Equal("high", TestConversation.Effort(body));
             Prompts.Add(TestConversation.Prompt(body)!);
             var initial = Prompts.Count == 1;
             var error = initial ? firstError : secondError;
@@ -78,7 +78,7 @@ public class DualCandyTests
             if (initial) AfterFirst?.Invoke();
             return error
                 ? new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = answer }) }
-                : new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = answer }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = initial ? 0 : 4321 } } }) };
+                : TestConversation.ResponsesOk(answer, initial ? 0 : 4321);
         }
     }
 }

@@ -17,6 +17,11 @@ public class ProtocolSupportTests
     [InlineData("https://api.anthropic.com", "anthropic")]
     [InlineData("https://api.anthropic.com/v1", "anthropic")]
     [InlineData("https://relay.test/v1/messages", "anthropic")]
+    [InlineData("https://relay.test/v1/messages?beta=true", "anthropic")]
+    [InlineData("https://api.openai.com", "openai")]
+    [InlineData("https://api.openai.com/v1", "openai")]
+    [InlineData("https://chatgpt.com/backend-api/codex", "openai")]
+    [InlineData("https://relay.test/v1/responses", "openai")]
     [InlineData("https://generativelanguage.googleapis.com", "gemini")]
     [InlineData("https://generativelanguage.googleapis.com/v1beta", "gemini")]
     [InlineData("https://relay.test/v1beta/models/gemini-2.5-pro:generateContent", "gemini")]
@@ -27,21 +32,31 @@ public class ProtocolSupportTests
         Assert.Equal(expected, ApiProtocols.InferFromUrl(url));
 
     [Theory]
-    [InlineData("https://api.anthropic.com", "anthropic", "claude-sonnet-4-6", false, "https://api.anthropic.com/v1/messages")]
-    [InlineData("https://api.anthropic.com/v1/", "anthropic", "claude-sonnet-4-6", true, "https://api.anthropic.com/v1/messages")]
-    [InlineData("https://relay.test/v1/chat/completions", "anthropic", "claude-sonnet-4-6", false, "https://relay.test/v1/messages")]
+    [InlineData("https://api.openai.com", "openai", "gpt-5.4", false, "https://api.openai.com/v1/responses")]
+    [InlineData("https://api.openai.com/v1/", "openai", "gpt-5.4", true, "https://api.openai.com/v1/responses")]
+    [InlineData("https://chatgpt.com/backend-api/codex", "openai", "gpt-5.4", true, "https://chatgpt.com/backend-api/codex/responses")]
+    [InlineData("https://relay.test/v1/responses", "openai", "gpt-5.4", false, "https://relay.test/v1/responses")]
+    [InlineData("https://relay.test/v1/chat/completions", "openai", "gpt-5.4", false, "https://relay.test/v1/chat/completions")]
+    [InlineData("https://api.anthropic.com", "anthropic", "claude-sonnet-4-6", false, "https://api.anthropic.com/v1/messages?beta=true")]
+    [InlineData("https://api.anthropic.com/v1/", "anthropic", "claude-sonnet-4-6", true, "https://api.anthropic.com/v1/messages?beta=true")]
+    [InlineData("https://api.anthropic.com/v1/messages?beta=true", "anthropic", "claude-sonnet-4-6", true, "https://api.anthropic.com/v1/messages?beta=true")]
+    [InlineData("https://relay.test/v1/chat/completions", "anthropic", "claude-sonnet-4-6", false, "https://relay.test/v1/messages?beta=true")]
+    [InlineData("https://relay.test/v1/responses", "anthropic", "claude-sonnet-4-6", false, "https://relay.test/v1/messages?beta=true")]
     [InlineData("https://generativelanguage.googleapis.com", "gemini", "gemini-2.5-pro", false, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent")]
     [InlineData("https://generativelanguage.googleapis.com", "gemini", "models/gemini-2.5-pro", true, "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse")]
     [InlineData("https://generativelanguage.googleapis.com/v1/", "gemini", "gemini-3-pro", false, "https://generativelanguage.googleapis.com/v1/models/gemini-3-pro:generateContent")]
     [InlineData("https://relay.test/v1beta/models", "gemini", "gemini-2.5-flash", false, "https://relay.test/v1beta/models/gemini-2.5-flash:generateContent")]
     [InlineData("https://relay.test/v1beta/models/gemini-2.5-pro:generateContent", "gemini", "gemini-2.5-pro", true, "https://relay.test/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse")]
-    [InlineData("https://generativelanguage.googleapis.com/v1beta/openai", "openai", "gemini-2.5-pro", false, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")]
+    [InlineData("https://generativelanguage.googleapis.com/v1beta/openai", "openai", "gemini-2.5-pro", false, "https://generativelanguage.googleapis.com/v1beta/openai/responses")]
     public void BuildsCompletionUrlsForEachProtocol(string baseUrl, string protocol, string model, bool stream, string expected) =>
         Assert.Equal(expected, ModelTraceClient.CompletionUrl(baseUrl, protocol, model, stream));
 
     [Theory]
     [InlineData("https://api.anthropic.com", "anthropic", "https://api.anthropic.com/v1/models")]
     [InlineData("https://api.anthropic.com/v1/messages", "anthropic", "https://api.anthropic.com/v1/models")]
+    [InlineData("https://api.anthropic.com/v1/messages?beta=true", "anthropic", "https://api.anthropic.com/v1/models")]
+    [InlineData("https://api.openai.com/v1/responses", "openai", "https://api.openai.com/v1/models")]
+    [InlineData("https://chatgpt.com/backend-api/codex/responses", "openai", "https://chatgpt.com/backend-api/codex/models")]
     [InlineData("https://generativelanguage.googleapis.com", "gemini", "https://generativelanguage.googleapis.com/v1beta/models")]
     [InlineData("https://generativelanguage.googleapis.com/v1/", "gemini", "https://generativelanguage.googleapis.com/v1/models")]
     [InlineData("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent", "gemini", "https://generativelanguage.googleapis.com/v1beta/models")]
@@ -50,15 +65,34 @@ public class ProtocolSupportTests
         Assert.Equal(expected, ModelDiscovery.ModelsUrl(baseUrl, protocol));
 
     [Fact]
-    public async Task AnthropicNativeUsesXApiKeyWithoutBearerAndFiltersThinkingBlocks()
+    public async Task AnthropicNativeSimulatesClaudeCodeAndFiltersThinkingBlocks()
     {
         var handler = new DelegateHandler((request, body) =>
         {
-            Assert.Equal("https://api.anthropic.com/v1/messages", request.RequestUri!.AbsoluteUri);
+            Assert.Equal("https://api.anthropic.com/v1/messages?beta=true", request.RequestUri!.AbsoluteUri);
             Assert.Null(request.Headers.Authorization);
             Assert.Equal("sk-ant-test", request.Headers.GetValues("x-api-key").Single());
             Assert.Equal("2023-06-01", request.Headers.GetValues("anthropic-version").Single());
+            Assert.Equal(ModelTraceClient.ClaudeCodeUserAgent, request.Headers.UserAgent.ToString());
+            Assert.Equal("cli", request.Headers.GetValues("x-app").Single());
+            Assert.Equal("true", request.Headers.GetValues("anthropic-dangerous-direct-browser-access").Single());
+            Assert.Equal(ModelTraceClient.ClaudeCodeBeta, request.Headers.GetValues("anthropic-beta").Single());
+            Assert.Equal("js", request.Headers.GetValues("x-stainless-lang").Single());
+            Assert.Equal("node", request.Headers.GetValues("x-stainless-runtime").Single());
+            Assert.Equal(ModelTraceClient.ClaudeCodeStainlessPackageVersion, request.Headers.GetValues("x-stainless-package-version").Single());
+            Assert.Contains(request.Headers.Accept, h => h.MediaType == "text/event-stream");
             Assert.Equal("claude-sonnet-4-6", body.GetProperty("model").GetString());
+            Assert.True(body.GetProperty("stream").GetBoolean());
+            var system = Assert.Single(body.GetProperty("system").EnumerateArray());
+            Assert.Equal("text", system.GetProperty("type").GetString());
+            Assert.Equal(ModelTraceClient.ClaudeCodeSystemPrompt, system.GetProperty("text").GetString());
+            Assert.Equal("ephemeral", system.GetProperty("cache_control").GetProperty("type").GetString());
+            var userId = body.GetProperty("metadata").GetProperty("user_id").GetString()!;
+            Assert.Matches(@"^user_[a-f0-9]{64}_account__session_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", userId);
+            var messages = body.GetProperty("messages");
+            Assert.Equal(3, messages.GetArrayLength());
+            Assert.Equal("text", messages[2].GetProperty("content")[0].GetProperty("type").GetString());
+            Assert.Equal("question", messages[2].GetProperty("content")[0].GetProperty("text").GetString());
             Assert.Equal("adaptive", body.GetProperty("thinking").GetProperty("type").GetString());
             Assert.Equal("high", body.GetProperty("output_config").GetProperty("effort").GetString());
             Assert.True(body.GetProperty("max_tokens").GetInt32() >= 8192);
@@ -279,7 +313,7 @@ public class ProtocolSupportTests
             reasoningEffort: "medium", observeReasoningTokens: v => tokens = v, stream: true, protocol: ApiProtocols.Auto);
         Assert.Equal("ok", text);
         Assert.Equal(77, tokens);
-        Assert.Equal(["/v1/chat/completions", "/v1/messages", "/v1beta/models/gemini-3-pro:streamGenerateContent?alt=sse"], paths);
+        Assert.Equal(["/v1/responses", "/v1/chat/completions", "/v1/messages?beta=true", "/v1beta/models/gemini-3-pro:streamGenerateContent?alt=sse"], paths);
     }
 
     [Fact]
@@ -413,10 +447,10 @@ public class ProtocolSupportTests
         {
             var path = request.RequestUri!.PathAndQuery;
             lock (sync) recordedPaths.Add(path);
-            if (path.EndsWith("/messages"))
+            if (path.Contains("/messages"))
             {
                 var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult()).RootElement;
-                var prompt = body.GetProperty("messages").EnumerateArray().Last().GetProperty("content").GetString()!;
+                var prompt = TestConversation.Prompt(body);
                 var reply = CandyTestPrompts.IsCandy(prompt) ? "21" : string.Join(',', Enumerable.Range(1, 310));
                 return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { content = new[] { new { type = "text", text = reply } }, stop_reason = "end_turn" }) };
             }
@@ -514,9 +548,233 @@ public class ProtocolSupportTests
             Assert.Equal("gemini", models[geminiModelId]);
         }
 
-        Assert.Contains("/v1/messages", recordedPaths);
+        Assert.Contains("/v1/messages?beta=true", recordedPaths);
         Assert.Contains("/v1beta/models/gemini-2.5-pro:generateContent", recordedPaths);
         Assert.Contains("/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse", recordedPaths);
+    }
+
+    [Fact]
+    public async Task CodexResponsesSendsFullCliHeadersAndBodyAndStreamsOutput()
+    {
+        var handler = new DelegateHandler((request, body) =>
+        {
+            Assert.Equal("https://api.openai.com/v1/responses", request.RequestUri!.AbsoluteUri);
+            Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+            Assert.Equal("sk-codex-test", request.Headers.Authorization.Parameter);
+            Assert.Equal(ModelTraceClient.CodexUserAgent, request.Headers.UserAgent.ToString());
+            Assert.Equal(ModelTraceClient.CodexOriginator, request.Headers.GetValues("originator").Single());
+            Assert.Equal(ModelTraceClient.CodexOpenAiBeta, request.Headers.GetValues("OpenAI-Beta").Single());
+            var sessionId = request.Headers.GetValues("session_id").Single();
+            Assert.True(Guid.TryParse(sessionId, out _));
+            Assert.Equal(sessionId, request.Headers.GetValues("conversation_id").Single());
+            Assert.Contains(request.Headers.Accept, h => h.MediaType == "text/event-stream");
+
+            Assert.Equal("gpt-5.4", body.GetProperty("model").GetString());
+            Assert.Equal(ModelTraceClient.CodexInstructions, body.GetProperty("instructions").GetString());
+            Assert.False(body.GetProperty("store").GetBoolean());
+            Assert.True(body.GetProperty("stream").GetBoolean());
+            Assert.Equal("high", body.GetProperty("reasoning").GetProperty("effort").GetString());
+            var input = body.GetProperty("input");
+            Assert.Equal(3, input.GetArrayLength());
+            Assert.Equal("message", input[0].GetProperty("type").GetString());
+            Assert.Equal("user", input[0].GetProperty("role").GetString());
+            Assert.Equal("input_text", input[0].GetProperty("content")[0].GetProperty("type").GetString());
+            Assert.Equal("assistant", input[1].GetProperty("role").GetString());
+            Assert.Equal("output_text", input[1].GetProperty("content")[0].GetProperty("type").GetString());
+            Assert.Equal("user", input[2].GetProperty("role").GetString());
+            Assert.Equal("input_text", input[2].GetProperty("content")[0].GetProperty("type").GetString());
+            Assert.Equal("question", input[2].GetProperty("content")[0].GetProperty("text").GetString());
+
+            return Sse(
+                """{"type":"response.created","response":{"id":"resp_1","status":"in_progress","error":null}}""",
+                """{"type":"response.reasoning_summary_text.delta","delta":"internal reasoning"}""",
+                """{"type":"response.output_text.delta","delta":"2"}""",
+                """{"type":"response.output_text.delta","delta":"1"}""",
+                """{"type":"response.completed","response":{"id":"resp_1","status":"completed","error":null,"usage":{"input_tokens":15,"output_tokens":80,"output_tokens_details":{"reasoning_tokens":64}}}}""");
+        });
+        long? reasoningTokens = null;
+        var text = await new ModelTraceClient(new HttpClient(handler)).Completion(
+            "https://api.openai.com", "sk-codex-test", "gpt-5.4", "question", CancellationToken.None,
+            reasoningEffort: "high", observeReasoningTokens: v => reasoningTokens = v);
+        Assert.Equal("21", text);
+        Assert.Equal(64, reasoningTokens);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound, "not found")]
+    [InlineData(HttpStatusCode.MethodNotAllowed, "method not allowed")]
+    [InlineData(HttpStatusCode.NotImplemented, "not implemented")]
+    [InlineData(HttpStatusCode.BadRequest, """{"error":{"message":"Invalid URL (POST /v1/responses)"}}""")]
+    public async Task CodexFallsBackToChatCompletionsOnUnsupportedResponsesEndpoint(HttpStatusCode status, string errorBody)
+    {
+        var paths = new List<string>();
+        string? firstSession = null;
+        var handler = new DelegateHandler((request, body) =>
+        {
+            paths.Add(request.RequestUri!.AbsolutePath);
+            Assert.Equal(ModelTraceClient.CodexUserAgent, request.Headers.UserAgent.ToString());
+            Assert.Equal(ModelTraceClient.CodexOriginator, request.Headers.GetValues("originator").Single());
+            var session = request.Headers.GetValues("session_id").Single();
+            firstSession ??= session;
+            Assert.Equal(firstSession, session);
+            if (request.RequestUri.AbsolutePath == "/v1/responses")
+            {
+                Assert.Equal("high", body.GetProperty("reasoning").GetProperty("effort").GetString());
+                return new(status) { Content = new StringContent(errorBody, Encoding.UTF8, "application/json") };
+            }
+            Assert.Equal("/v1/chat/completions", request.RequestUri.AbsolutePath);
+            Assert.False(request.Headers.Contains("OpenAI-Beta"));
+            Assert.Equal("high", body.GetProperty("reasoning_effort").GetString());
+            Assert.Equal("question", TestConversation.Prompt(body));
+            return new(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    choices = new[] { new { message = new { content = "21" }, finish_reason = "stop" } },
+                    usage = new { completion_tokens_details = new { reasoning_tokens = 48 } }
+                })
+            };
+        });
+        long? tokens = null;
+        var text = await new ModelTraceClient(new HttpClient(handler)).Completion(
+            "https://legacy-openai.test", "secret", "gpt-5.4", "question", CancellationToken.None,
+            reasoningEffort: "high", observeReasoningTokens: v => tokens = v, protocol: ApiProtocols.OpenAi);
+        Assert.Equal("21", text);
+        Assert.Equal(48, tokens);
+        Assert.Equal(["/v1/responses", "/v1/chat/completions"], paths);
+    }
+
+    [Fact]
+    public async Task CodexRespectsExplicitChatCompletionsOrResponsesEndpointsWithoutCrossFallback()
+    {
+        var chatPaths = new List<string>();
+        var chatHandler = new DelegateHandler((request, body) =>
+        {
+            chatPaths.Add(request.RequestUri!.AbsolutePath);
+            Assert.Equal(ModelTraceClient.CodexUserAgent, request.Headers.UserAgent.ToString());
+            Assert.Equal("medium", body.GetProperty("reasoning_effort").GetString());
+            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "ok" }, finish_reason = "stop" } } }) };
+        });
+        Assert.Equal("ok", await new ModelTraceClient(new HttpClient(chatHandler)).Completion(
+            "https://relay.test/v1/chat/completions", "secret", "gpt-5.4", "q", CancellationToken.None, reasoningEffort: "medium"));
+        Assert.Equal(["/v1/chat/completions"], chatPaths);
+
+        var responsesPaths = new List<string>();
+        var responsesHandler = new DelegateHandler((request, _) =>
+        {
+            responsesPaths.Add(request.RequestUri!.AbsolutePath);
+            return new(HttpStatusCode.NotFound) { Content = new StringContent("missing") };
+        });
+        await Assert.ThrowsAsync<UpstreamException>(() => new ModelTraceClient(new HttpClient(responsesHandler)).Completion(
+            "https://relay.test/v1/responses", "secret", "gpt-5.4", "q", CancellationToken.None, protocol: ApiProtocols.OpenAi));
+        Assert.Equal(["/v1/responses"], responsesPaths);
+    }
+
+    [Fact]
+    public async Task CodexDoesNotFallBackWhenExplicitEffortIsRejectedOnResponses()
+    {
+        var handler = new DelegateHandler((request, body) =>
+        {
+            Assert.Equal("/v1/responses", request.RequestUri!.AbsolutePath);
+            Assert.Equal("xhigh", body.GetProperty("reasoning").GetProperty("effort").GetString());
+            return new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = new { message = "Unsupported parameter: reasoning.effort" } }) };
+        });
+        var error = await Assert.ThrowsAsync<UpstreamException>(() => new ModelTraceClient(new HttpClient(handler)).Completion(
+            "https://codex.test", "secret", "gpt-5.4", "q", CancellationToken.None, reasoningEffort: "xhigh", protocol: ApiProtocols.OpenAi));
+        Assert.Contains("reasoning.effort", error.Message);
+        Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task CodexStatisticalRetriesWithoutSamplingParamsWhenStrictBackendRejectsThem()
+    {
+        var seenTemperature = new List<bool>();
+        var handler = new DelegateHandler((request, body) =>
+        {
+            Assert.Equal("/v1/responses", request.RequestUri!.AbsolutePath);
+            var hasTemp = body.TryGetProperty("temperature", out _);
+            seenTemperature.Add(hasTemp);
+            if (hasTemp)
+                return new(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = new { message = "Unsupported parameter: 'temperature' is not supported with this model." } }) };
+            Assert.False(body.TryGetProperty("max_output_tokens", out _));
+            return Sse(
+                """{"type":"response.output_text.delta","delta":"42"}""",
+                """{"type":"response.completed","response":{"status":"completed"}}""");
+        });
+        var text = await new ModelTraceClient(new HttpClient(handler)).Completion(
+            "https://codex.test", "secret", "gpt-5.4", "pick", CancellationToken.None, statistical: true, protocol: ApiProtocols.OpenAi);
+        Assert.Equal("42", text);
+        Assert.Equal([true, false], seenTemperature);
+    }
+
+    [Fact]
+    public async Task CodexJuiceSupportsResponsesSseAndRemembersChatCompletionsFallback()
+    {
+        var sseHandler = new DelegateHandler((request, _) =>
+        {
+            Assert.Equal("/v1/responses", request.RequestUri!.AbsolutePath);
+            return Sse(
+                """{"type":"response.output_text.delta","delta":"96"}""",
+                """{"type":"response.completed","response":{"status":"completed"}}""");
+        });
+        var sseResult = await new ModelTraceClient(new HttpClient(sseHandler)).ProbeJuice(
+            "https://codex.test", "secret", "gpt-5.4", CancellationToken.None, "direct", protocol: ApiProtocols.OpenAi);
+        Assert.Equal("Success", sseResult["juice_status"]);
+        Assert.Equal(96, sseResult["juice_value"]);
+        Assert.Equal(1, sseHandler.Calls);
+
+        var paths = new List<string>();
+        var fallbackHandler = new DelegateHandler((request, body) =>
+        {
+            paths.Add(request.RequestUri!.AbsolutePath);
+            if (request.RequestUri.AbsolutePath == "/v1/responses")
+                return new(HttpStatusCode.NotFound) { Content = new StringContent("no responses") };
+            var prompt = TestConversation.Prompt(body);
+            var reply = prompt == JuiceProbe.Prompt ? "64" : "I cannot share that.";
+            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = reply }, finish_reason = "stop" } } }) };
+        });
+        var fallbackResult = await new ModelTraceClient(new HttpClient(fallbackHandler)).ProbeJuice(
+            "https://legacy-openai.test", "secret", "gpt-5.4", CancellationToken.None, protocol: ApiProtocols.OpenAi);
+        Assert.Equal("Success", fallbackResult["juice_status"]);
+        Assert.Equal(64, fallbackResult["juice_value"]);
+        // First method tries /v1/responses -> 404 -> /v1/chat/completions; second method goes directly to /v1/chat/completions.
+        Assert.Equal(["/v1/responses", "/v1/chat/completions", "/v1/chat/completions"], paths);
+    }
+
+    [Fact]
+    public async Task ClaudeCodeUsesOAuthBetaForOAuthTokensAndSendsCliHeadersOnModelDiscovery()
+    {
+        var completionHandler = new DelegateHandler((request, body) =>
+        {
+            Assert.Equal("https://api.anthropic.com/v1/messages?beta=true", request.RequestUri!.AbsoluteUri);
+            Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+            Assert.Equal("sk-ant-oat01-secret", request.Headers.Authorization.Parameter);
+            Assert.False(request.Headers.Contains("x-api-key"));
+            Assert.Equal(ModelTraceClient.ClaudeCodeOAuthBeta, request.Headers.GetValues("anthropic-beta").Single());
+            Assert.Equal(ModelTraceClient.ClaudeCodeUserAgent, request.Headers.UserAgent.ToString());
+            Assert.Equal("cli", request.Headers.GetValues("x-app").Single());
+            Assert.True(body.GetProperty("stream").GetBoolean());
+            return Sse(
+                """{"type":"message_start","message":{"usage":{"input_tokens":10}}}""",
+                """{"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}""",
+                """{"type":"message_delta","delta":{"stop_reason":"end_turn"}}""",
+                """{"type":"message_stop"}""");
+        });
+        Assert.Equal("ok", await new ModelTraceClient(new HttpClient(completionHandler)).Completion(
+            "https://api.anthropic.com", "sk-ant-oat01-secret", "claude-sonnet-4-6", "q", CancellationToken.None));
+
+        var discoveryHandler = new RawHandler(request =>
+        {
+            Assert.Equal(ModelTraceClient.ClaudeCodeUserAgent, request.Headers.UserAgent.ToString());
+            Assert.Equal("cli", request.Headers.GetValues("x-app").Single());
+            Assert.Equal(ModelTraceClient.ClaudeCodeOAuthBeta, request.Headers.GetValues("anthropic-beta").Single());
+            Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { data = new[] { new { id = "claude-sonnet-4-6" } }, has_more = false }) };
+        });
+        var models = await new ModelDiscovery(new HttpClient(discoveryHandler)).Fetch(
+            "https://api.anthropic.com", "sk-ant-oat01-secret", CancellationToken.None, ApiProtocols.Anthropic);
+        Assert.Equal(["claude-sonnet-4-6"], models);
     }
 
     private static HttpResponseMessage Sse(params string[] events) => new(HttpStatusCode.OK)

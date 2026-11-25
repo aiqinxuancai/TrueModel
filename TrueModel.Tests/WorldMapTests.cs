@@ -211,7 +211,7 @@ public class WorldMapTests
         {
             Interlocked.Increment(ref Calls);
             Prompt = TestConversation.Prompt(await request.Content!.ReadFromJsonAsync<JsonElement>(token));
-            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = reply }, finish_reason = "stop" } } }) };
+            return TestConversation.ResponsesOk(reply);
         }
     }
 }

@@ -125,11 +125,11 @@ public class CandyWorkerTests
             var prompt = TestConversation.Prompt(body);
             Assert.True(CandyTestPrompts.IsCandy(prompt));
             Assert.NotEqual(CandyProbe.Prompt, prompt);
-            Assert.Equal("high", body.GetProperty("reasoning_effort").GetString());
+            Assert.Equal("high", TestConversation.Effort(body));
             Started.TrySetResult();
             try { await Release.Task.WaitAsync(token); }
             catch (OperationCanceledException) { Cancelled = true; throw; }
-            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "21" }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = 512 } } }) };
+            return TestConversation.ResponsesOk("21", 512);
         }
     }
 }

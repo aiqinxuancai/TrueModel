@@ -31,11 +31,21 @@ public class JuiceDiagnosticsTests
         {
             if (mode == "http") return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = JsonContent.Create(new { error = "Invalid test-secret" }) });
             if (mode == "json") return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new
+            if (mode == "refusal")
             {
-                message = new { content = mode == "empty" ? null : mode == "invalid" ? "I cannot share test-secret" : "128", refusal = mode == "refusal" ? "Refused test-secret" : null },
-                finish_reason = mode is "length" or "content_filter" ? mode : "stop"
-            } } }) });
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        status = "completed",
+                        output = new[] { new { type = "message", role = "assistant", content = new[] { new { type = "refusal", refusal = "Refused test-secret" } } } }
+                    })
+                });
+            }
+            return Task.FromResult(TestConversation.ResponsesOk(
+                mode == "empty" ? "" : mode == "invalid" ? "I cannot share test-secret" : "128",
+                status: mode is "length" or "content_filter" ? "incomplete" : "completed",
+                incompleteReason: mode == "length" ? "max_output_tokens" : mode == "content_filter" ? "content_filter" : null));
         }
     }
 }

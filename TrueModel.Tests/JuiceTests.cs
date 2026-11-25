@@ -342,22 +342,35 @@ public class JuiceTests
             var prompt = TestConversation.Prompt(body);
             if (CandyTestPrompts.IsCandy(prompt))
             {
-                if (ExpectedCandyEffort == "default") Assert.False(body.TryGetProperty("reasoning_effort", out _));
-                else Assert.Equal(ExpectedCandyEffort, body.GetProperty("reasoning_effort").GetString());
-                return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "最少取出 21 个糖果。" }, finish_reason = "stop" } }, usage = new { completion_tokens_details = new { reasoning_tokens = 1234 } } }) };
+                if (ExpectedCandyEffort == "default") Assert.Null(TestConversation.Effort(body));
+                else Assert.Equal(ExpectedCandyEffort, TestConversation.Effort(body));
+                return TestConversation.ResponsesOk("最少取出 21 个糖果。", 1234);
             }
-            if (!JuiceProbe.Methods.Any(m => m.Prompt == prompt) || ExpectedJuiceEffort == "default") Assert.False(body.TryGetProperty("reasoning_effort", out _));
-            else Assert.Equal(ExpectedJuiceEffort, body.GetProperty("reasoning_effort").GetString());
+            if (!JuiceProbe.Methods.Any(m => m.Prompt == prompt) || ExpectedJuiceEffort == "default") Assert.Null(TestConversation.Effort(body));
+            else Assert.Equal(ExpectedJuiceEffort, TestConversation.Effort(body));
             if (Calls > count)
             {
                 Assert.Equal(ExpectedFirst is null ? JuiceProbe.Methods[Calls - count - 1].Prompt : JuiceProbe.Methods.Single(m => m.Id == ExpectedFirst).Prompt, prompt);
                 if (RefuseFirst && Calls == count + 1)
-                    return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = StructuredRefusal ? null : "I cannot provide that.", refusal = StructuredRefusal ? "I cannot provide that." : null }, finish_reason = "stop" } } }) };
+                {
+                    if (StructuredRefusal)
+                    {
+                        return new(HttpStatusCode.OK)
+                        {
+                            Content = JsonContent.Create(new
+                            {
+                                status = "completed",
+                                output = new[] { new { type = "message", role = "assistant", content = new[] { new { type = "refusal", refusal = "I cannot provide that." } } } }
+                            })
+                        };
+                    }
+                    return TestConversation.ResponsesOk("I cannot provide that.");
+                }
                 if (failure || ForceError) return new(HttpStatusCode.ServiceUnavailable) { Content = JsonContent.Create(new { error = "Unavailable" }) };
             }
             else Assert.DoesNotContain(JuiceProbe.Methods, m => m.Prompt == prompt);
             var text = Calls > count ? answer : invalidChallenges ? "invalid" : string.Join(',', Enumerable.Range(1, 310));
-            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = text }, finish_reason = "stop" } } }) };
+            return TestConversation.ResponsesOk(text);
         }
     }
 }

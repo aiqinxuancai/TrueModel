@@ -7,16 +7,64 @@ namespace TrueModel.Tests;
 
 internal static class TestConversation
 {
+    public static ConversationMessage[] Messages(JsonElement body)
+    {
+        var items = body.TryGetProperty("input", out var input) ? input : body.GetProperty("messages");
+        return items.EnumerateArray().Select(item =>
+        {
+            var role = item.GetProperty("role").GetString()!;
+            var content = item.GetProperty("content");
+            var text = content.ValueKind == JsonValueKind.String
+                ? content.GetString()!
+                : string.Concat(content.EnumerateArray().Select(part => part.GetProperty("text").GetString()));
+            return new ConversationMessage(role, text);
+        }).ToArray();
+    }
+
     public static string Prompt(JsonElement body)
     {
-        var messages = body.GetProperty("messages");
-        Assert.Equal(3, messages.GetArrayLength());
-        Assert.Equal("user", messages[0].GetProperty("role").GetString());
-        Assert.Equal("assistant", messages[1].GetProperty("role").GetString());
-        Assert.Equal("user", messages[2].GetProperty("role").GetString());
-        Assert.False(string.IsNullOrWhiteSpace(messages[0].GetProperty("content").GetString()));
-        Assert.False(string.IsNullOrWhiteSpace(messages[1].GetProperty("content").GetString()));
-        return messages[2].GetProperty("content").GetString()!;
+        var messages = Messages(body);
+        Assert.Equal(3, messages.Length);
+        Assert.Equal("user", messages[0].Role);
+        Assert.Equal("assistant", messages[1].Role);
+        Assert.Equal("user", messages[2].Role);
+        Assert.False(string.IsNullOrWhiteSpace(messages[0].Content));
+        Assert.False(string.IsNullOrWhiteSpace(messages[1].Content));
+        return messages[2].Content;
+    }
+
+    public static string? Effort(JsonElement body)
+    {
+        if (body.TryGetProperty("reasoning", out var reasoning) && reasoning.ValueKind == JsonValueKind.Object &&
+            reasoning.TryGetProperty("effort", out var nested) && nested.ValueKind == JsonValueKind.String)
+            return nested.GetString();
+        if (body.TryGetProperty("reasoning_effort", out var flat) && flat.ValueKind == JsonValueKind.String)
+            return flat.GetString();
+        return null;
+    }
+
+    public static HttpResponseMessage ResponsesOk(string text, long? reasoningTokens = null, string status = "completed", string? incompleteReason = null)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["id"] = "resp_test",
+            ["object"] = "response",
+            ["status"] = status,
+            ["error"] = null,
+            ["incomplete_details"] = incompleteReason is null ? null : new { reason = incompleteReason },
+            ["output"] = new object[]
+            {
+                new
+                {
+                    type = "message",
+                    role = "assistant",
+                    content = new object[] { new { type = "output_text", text } }
+                }
+            }
+        };
+        if (reasoningTokens is not null)
+            payload["usage"] = new { input_tokens = 10, output_tokens = 20, output_tokens_details = new { reasoning_tokens = reasoningTokens.Value } };
+        return new(HttpStatusCode.OK) { Content = JsonContent.Create(payload) };
     }
 }
 
@@ -32,8 +80,8 @@ public class ConversationEnvelopeTests
         for (var i = 0; i < 256; i++)
             await client.Completion("https://mock.test", "secret", "model", prompt, CancellationToken.None);
         Assert.All(handler.Bodies, body => Assert.Equal(prompt, TestConversation.Prompt(body)));
-        var greetings = handler.Bodies.Select(b => b.GetProperty("messages")[0].GetProperty("content").GetString()!).ToArray();
-        var replies = handler.Bodies.Select(b => b.GetProperty("messages")[1].GetProperty("content").GetString()!).ToArray();
+        var greetings = handler.Bodies.Select(b => TestConversation.Messages(b)[0].Content).ToArray();
+        var replies = handler.Bodies.Select(b => TestConversation.Messages(b)[1].Content).ToArray();
         Assert.True(greetings.Distinct().Count() > 8);
         Assert.True(replies.Distinct().Count() > 8);
         Assert.Contains(greetings, s => s.Contains("你好"));
@@ -69,10 +117,11 @@ public class ConversationEnvelopeTests
         Assert.Equal("42", await client.Completion("https://mock.test", "secret", "model", "question", CancellationToken.None, conversation: conversation));
         Assert.Equal(3, handler.Bodies.Count);
         Assert.All(handler.Bodies, body => Assert.Equal("question", simulatedContext
-            ? body.GetProperty("messages").EnumerateArray().Last().GetProperty("content").GetString()
+            ? TestConversation.Messages(body)[^1].Content
             : TestConversation.Prompt(body)));
-        if (conversation is not null) Assert.All(handler.Bodies, body => Assert.Equal(JsonSerializer.Serialize(conversation), body.GetProperty("messages").GetRawText()));
-        Assert.Single(handler.Bodies.Select(b => b.GetProperty("messages").GetRawText()).Distinct());
+        if (conversation is not null)
+            Assert.All(handler.Bodies, body => Assert.Equal(JsonSerializer.Serialize(conversation), JsonSerializer.Serialize(TestConversation.Messages(body))));
+        Assert.Single(handler.Bodies.Select(b => JsonSerializer.Serialize(TestConversation.Messages(b))).Distinct());
         Assert.Equal(4096, handler.Bodies[^1].GetProperty("max_tokens").GetInt32());
     }
 
@@ -88,7 +137,7 @@ public class ConversationEnvelopeTests
                 { Content = JsonContent.Create(new { error = "try again" }) };
             if (request.RequestUri!.AbsolutePath.EndsWith("/messages"))
                 return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { content = new[] { new { type = "text", text = "42" } }, stop_reason = "end_turn" }) };
-            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "42" }, finish_reason = "stop" } } }) };
+            return TestConversation.ResponsesOk("42");
         }
     }
 }

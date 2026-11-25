@@ -7,18 +7,157 @@ using System.Text.Json;
 
 namespace TrueModel;
 
-// Native port of ModelTrace enrollment.py's completion adapter with OpenAI, Anthropic (Claude), and Gemini protocol support.
+// Native port of ModelTrace enrollment.py's completion adapter with Codex (OpenAI Responses + Chat Completions fallback),
+// Claude Code (Anthropic Messages), and Google Gemini protocol support.
 public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? juiceHistory = null)
 {
-    public const string DefaultUserAgent = "Codex Desktop/0.147.0-alpha.1.2 (Windows 10.0.26200; x86_64) unknown (codex_exec; 0.147.0-alpha.1.2)";
+    public const string CodexUserAgent = "codex_cli_rs/0.125.0 (Windows 10.0.26200; x86_64) unknown";
+    public const string DefaultUserAgent = CodexUserAgent;
+    public const string CodexOriginator = "codex_cli_rs";
+    public const string CodexOpenAiBeta = "responses=experimental";
+    public const string CodexInstructions = "You are Codex, a coding agent running in the Codex CLI.";
+
+    public const string ClaudeCodeUserAgent = "claude-cli/2.1.74 (external, cli)";
+    public const string ClaudeCodeSystemPrompt = "You are Claude Code, Anthropic's official CLI for Claude.";
+    public const string ClaudeCodeBeta = "claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14";
+    public const string ClaudeCodeOAuthBeta = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14";
+    public const string ClaudeCodeStainlessPackageVersion = "0.55.1";
+    public const string ClaudeCodeNodeVersion = "v22.14.0";
+    public const string GeminiUserAgent = "TrueModel/1.0";
+
+    private static readonly string ClaudeCodeClientHash = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
     private static readonly int[] Retryable = [408, 429, 500, 502, 503, 504];
+
+    private enum RequestTransport
+    {
+        OpenAiResponses,
+        OpenAiChatCompletions,
+        Anthropic,
+        Gemini
+    }
+
+    internal static bool IsAnthropicOAuthKey(string key) =>
+        key.StartsWith("sk-ant-oat", StringComparison.OrdinalIgnoreCase);
+
+    internal static string ResolveUserAgent(string protocol)
+    {
+        var specific = protocol switch
+        {
+            ApiProtocols.Anthropic => Environment.GetEnvironmentVariable("MODELTRACE_CLAUDE_USER_AGENT"),
+            ApiProtocols.Gemini => Environment.GetEnvironmentVariable("MODELTRACE_GEMINI_USER_AGENT"),
+            _ => Environment.GetEnvironmentVariable("MODELTRACE_CODEX_USER_AGENT")
+        };
+        if (!string.IsNullOrWhiteSpace(specific)) return specific.Trim();
+        var shared = Environment.GetEnvironmentVariable("MODELTRACE_USER_AGENT") ?? Environment.GetEnvironmentVariable("GPT56_USER_AGENT");
+        if (!string.IsNullOrWhiteSpace(shared)) return shared.Trim();
+        return protocol switch
+        {
+            ApiProtocols.Anthropic => ClaudeCodeUserAgent,
+            ApiProtocols.Gemini => GeminiUserAgent,
+            _ => CodexUserAgent
+        };
+    }
+
+    internal static void ApplyClientHeaders(HttpRequestMessage request, string protocol, string key, bool useBearerAuth,
+        string? sessionId, int retries, int timeoutSeconds, bool includeResponsesBeta)
+    {
+        request.Headers.TryAddWithoutValidation("User-Agent", ResolveUserAgent(protocol));
+        if (protocol == ApiProtocols.Anthropic)
+        {
+            if (useBearerAuth) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+            else request.Headers.Add("x-api-key", key);
+            request.Headers.Add("anthropic-version", "2023-06-01");
+            request.Headers.TryAddWithoutValidation("anthropic-beta", IsAnthropicOAuthKey(key) ? ClaudeCodeOAuthBeta : ClaudeCodeBeta);
+            request.Headers.TryAddWithoutValidation("anthropic-dangerous-direct-browser-access", "true");
+            request.Headers.TryAddWithoutValidation("x-app", "cli");
+            request.Headers.TryAddWithoutValidation("x-stainless-lang", "js");
+            request.Headers.TryAddWithoutValidation("x-stainless-package-version", ClaudeCodeStainlessPackageVersion);
+            request.Headers.TryAddWithoutValidation("x-stainless-os", "Windows");
+            request.Headers.TryAddWithoutValidation("x-stainless-arch", "x64");
+            request.Headers.TryAddWithoutValidation("x-stainless-runtime", "node");
+            request.Headers.TryAddWithoutValidation("x-stainless-runtime-version", ClaudeCodeNodeVersion);
+            request.Headers.TryAddWithoutValidation("x-stainless-retry-count", Math.Max(0, retries).ToString(CultureInfo.InvariantCulture));
+            request.Headers.TryAddWithoutValidation("x-stainless-timeout", Math.Max(1, timeoutSeconds).ToString(CultureInfo.InvariantCulture));
+            return;
+        }
+        if (protocol == ApiProtocols.Gemini)
+        {
+            if (useBearerAuth) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+            else request.Headers.Add("x-goog-api-key", key);
+            return;
+        }
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        request.Headers.TryAddWithoutValidation("originator", CodexOriginator);
+        if (includeResponsesBeta) request.Headers.TryAddWithoutValidation("OpenAI-Beta", CodexOpenAiBeta);
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            request.Headers.TryAddWithoutValidation("session_id", sessionId);
+            request.Headers.TryAddWithoutValidation("conversation_id", sessionId);
+        }
+    }
+
+    internal static string AppendQueryParameter(string url, string name, string value)
+    {
+        var fragmentIndex = url.IndexOf('#');
+        var fragment = fragmentIndex >= 0 ? url[fragmentIndex..] : "";
+        var withoutFragment = fragmentIndex >= 0 ? url[..fragmentIndex] : url;
+        var queryIndex = withoutFragment.IndexOf('?');
+        if (queryIndex >= 0)
+        {
+            var query = withoutFragment[(queryIndex + 1)..];
+            foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var eq = part.IndexOf('=');
+                var key = eq >= 0 ? part[..eq] : part;
+                if (string.Equals(key, name, StringComparison.OrdinalIgnoreCase)) return url;
+            }
+            return $"{withoutFragment}&{name}={value}{fragment}";
+        }
+        return $"{withoutFragment}?{name}={value}{fragment}";
+    }
+
+    private static string StripKnownEndpointSuffix(string normalized)
+    {
+        if (normalized.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+            return normalized[..^"/chat/completions".Length];
+        if (normalized.EndsWith("/responses", StringComparison.OrdinalIgnoreCase))
+            return normalized[..^"/responses".Length];
+        if (normalized.EndsWith("/messages", StringComparison.OrdinalIgnoreCase))
+            return normalized[..^"/messages".Length];
+        return normalized;
+    }
+
+    public static string ResponsesUrl(string url)
+    {
+        var normalized = ApiProtocols.StripQueryAndFragment(url).TrimEnd('/');
+        if (normalized.EndsWith("/responses", StringComparison.OrdinalIgnoreCase)) return normalized;
+        normalized = StripKnownEndpointSuffix(normalized);
+        if (normalized.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith("/openai", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith("/codex", StringComparison.OrdinalIgnoreCase))
+            return normalized + "/responses";
+        return normalized + "/v1/responses";
+    }
+
+    public static string ChatCompletionsUrl(string url)
+    {
+        var normalized = ApiProtocols.StripQueryAndFragment(url).TrimEnd('/');
+        if (normalized.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)) return normalized;
+        normalized = StripKnownEndpointSuffix(normalized);
+        if (normalized.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith("/openai", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith("/codex", StringComparison.OrdinalIgnoreCase))
+            return normalized + "/chat/completions";
+        return normalized + "/v1/chat/completions";
+    }
 
     public static string CompletionUrl(string url, bool anthropic) =>
         CompletionUrl(url, anthropic ? ApiProtocols.Anthropic : ApiProtocols.OpenAi);
 
     public static string CompletionUrl(string url, string protocol, string? model = null, bool stream = false)
     {
-        var normalized = url.TrimEnd('/');
+        var raw = url.Trim();
+        var normalized = ApiProtocols.StripQueryAndFragment(raw).TrimEnd('/');
         if (protocol == ApiProtocols.Gemini)
         {
             var action = stream ? ":streamGenerateContent?alt=sse" : ":generateContent";
@@ -26,10 +165,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 return stream ? normalized[..^":generateContent".Length] + action : normalized;
             if (normalized.EndsWith(":streamGenerateContent", StringComparison.OrdinalIgnoreCase))
                 return stream ? normalized + "?alt=sse" : normalized[..^":streamGenerateContent".Length] + action;
-            if (normalized.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
-                normalized = normalized[..^"/chat/completions".Length];
-            else if (normalized.EndsWith("/messages", StringComparison.OrdinalIgnoreCase))
-                normalized = normalized[..^"/messages".Length];
+            normalized = StripKnownEndpointSuffix(normalized);
             var escapedModel = Uri.EscapeDataString(ApiProtocols.StripGeminiModelPrefix(model ?? ""));
             if (normalized.EndsWith("/models", StringComparison.OrdinalIgnoreCase))
                 return $"{normalized}/{escapedModel}{action}";
@@ -41,18 +177,14 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         }
         if (protocol == ApiProtocols.Anthropic)
         {
-            if (normalized.EndsWith("/messages", StringComparison.OrdinalIgnoreCase)) return normalized;
-            if (normalized.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
-                return normalized[..^"/chat/completions".Length] + "/messages";
-            return normalized + (normalized.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? "" : "/v1") + "/messages";
+            if (normalized.EndsWith("/messages", StringComparison.OrdinalIgnoreCase))
+                return AppendQueryParameter(raw.TrimEnd('/'), "beta", "true");
+            normalized = StripKnownEndpointSuffix(normalized);
+            var path = normalized + (normalized.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? "" : "/v1") + "/messages";
+            return AppendQueryParameter(path, "beta", "true");
         }
         if (normalized.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)) return normalized;
-        if (normalized.EndsWith("/messages", StringComparison.OrdinalIgnoreCase))
-            return normalized[..^"/messages".Length] + "/chat/completions";
-        if (normalized.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ||
-            normalized.EndsWith("/openai", StringComparison.OrdinalIgnoreCase))
-            return normalized + "/chat/completions";
-        return normalized + "/v1/chat/completions";
+        return ResponsesUrl(raw);
     }
 
     public async Task<string> Completion(string url, string key, string model, string prompt, CancellationToken token, Action<int>? observeStatus = null,
@@ -61,6 +193,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
     {
         var errors = new List<string>();
         var messages = conversation ?? ConversationEnvelope.Create(prompt);
+        var sessionId = Guid.NewGuid().ToString("D");
         var candidates = ApiProtocols.Candidates(url, protocol);
         var canFallbackToGemini = candidates.Length == 1 || model.Contains("gemini", StringComparison.OrdinalIgnoreCase);
         foreach (var candidate in candidates)
@@ -68,7 +201,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             if (candidate == ApiProtocols.Gemini && !canFallbackToGemini) continue;
             try
             {
-                return await Request(url, key, model, messages, candidate, token, observeStatus, maxAttempts,
+                return await RequestProtocol(url, key, model, messages, candidate, sessionId, token, observeStatus, maxAttempts,
                     reasoningEffort: reasoningEffort, observeReasoningTokens: observeReasoningTokens, statistical: statistical,
                     timeout: timeout, maxTokens: maxTokens, stream: stream);
             }
@@ -86,60 +219,163 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         throw new UpstreamException("接口格式自动探测失败；" + string.Join('；', errors));
     }
 
-    private async Task<string> Request(string url, string key, string model, ConversationMessage[] messages, string protocol, CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false,
-        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false, Action<string, string>? observeJuiceFailure = null, TimeSpan? timeout = null, int? maxTokens = null, bool stream = false)
+    private static RequestTransport[] TransportsFor(string url, string protocol, bool preferChatCompletions = false)
+    {
+        if (protocol == ApiProtocols.Anthropic) return [RequestTransport.Anthropic];
+        if (protocol == ApiProtocols.Gemini) return [RequestTransport.Gemini];
+        var normalized = ApiProtocols.StripQueryAndFragment(url).TrimEnd('/');
+        if (preferChatCompletions || normalized.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+            return [RequestTransport.OpenAiChatCompletions];
+        if (normalized.EndsWith("/responses", StringComparison.OrdinalIgnoreCase))
+            return [RequestTransport.OpenAiResponses];
+        return [RequestTransport.OpenAiResponses, RequestTransport.OpenAiChatCompletions];
+    }
+
+    private static bool ShouldFallbackFromResponses(UpstreamException error)
+    {
+        if (error.ProtocolAccepted) return false;
+        if (error.StatusCode is 404 or 405 or 501) return true;
+        if (error.StatusCode is not (400 or 422)) return false;
+        var message = error.Message;
+        if (message.Contains("reasoning", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("effort", StringComparison.OrdinalIgnoreCase))
+            return false;
+        return message.Contains("invalid url", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("unrecognized request url", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("unknown endpoint", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("unsupported endpoint", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("unsupported path", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("not implemented", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("cannot post", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("no route", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("route not found", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("messages", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsUnsupportedSamplingParameterError(string text)
+    {
+        var mentionsSampling = text.Contains("temperature", StringComparison.OrdinalIgnoreCase) ||
+                               text.Contains("max_output_tokens", StringComparison.OrdinalIgnoreCase);
+        if (!mentionsSampling) return false;
+        return text.Contains("unsupported", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("not supported", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("not allowed", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("unknown parameter", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("unrecognized", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("unexpected", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("extra_forbidden", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("cannot be used", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<string> RequestProtocol(string url, string key, string model, ConversationMessage[] messages, string protocol, string sessionId,
+        CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false,
+        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false,
+        Action<string, string>? observeJuiceFailure = null, TimeSpan? timeout = null, int? maxTokens = null, bool stream = false,
+        bool preferChatCompletions = false, Action? onChatCompletionsFallback = null)
+    {
+        var transports = TransportsFor(url, protocol, preferChatCompletions);
+        UpstreamException? firstError = null;
+        for (var i = 0; i < transports.Length; i++)
+        {
+            var transport = transports[i];
+            try
+            {
+                return await RequestTransportAsync(url, key, model, messages, transport, sessionId, token, observeStatus, maxAttempts, juice,
+                    reasoningEffort, observeReasoningTokens, statistical, observeJuiceFailure, timeout, maxTokens, stream);
+            }
+            catch (UpstreamException e) when (transport == RequestTransport.OpenAiResponses && i + 1 < transports.Length && ShouldFallbackFromResponses(e))
+            {
+                firstError ??= e;
+                onChatCompletionsFallback?.Invoke();
+            }
+        }
+        throw firstError ?? new UpstreamException("无法连接接口");
+    }
+
+    private async Task<string> RequestTransportAsync(string url, string key, string model, ConversationMessage[] messages, RequestTransport transport, string sessionId,
+        CancellationToken token, Action<int>? observeStatus, int maxAttempts = 3, bool juice = false,
+        string? reasoningEffort = null, Action<long?>? observeReasoningTokens = null, bool statistical = false,
+        Action<string, string>? observeJuiceFailure = null, TimeSpan? timeout = null, int? maxTokens = null, bool stream = false)
     {
         var limit = timeout ?? TimeSpan.FromSeconds(240);
-        var useBearerAuth = protocol == ApiProtocols.OpenAi ||
-            (protocol == ApiProtocols.Anthropic && key.StartsWith("sk-ant-oat", StringComparison.OrdinalIgnoreCase));
+        var useBearerAuth = transport is RequestTransport.OpenAiResponses or RequestTransport.OpenAiChatCompletions ||
+            (transport == RequestTransport.Anthropic && IsAnthropicOAuthKey(key));
+        var useStream = transport is RequestTransport.OpenAiResponses or RequestTransport.Anthropic || stream;
         var authSwitched = false;
+        var omitStatisticalSampling = false;
         var retries = 0;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
             deadline.CancelAfter(limit);
-            using var request = BuildRequest(url, key, model, messages, protocol, reasoningEffort, statistical, maxTokens, stream, useBearerAuth);
+            using var request = BuildRequest(url, key, model, messages, transport, sessionId, reasoningEffort, statistical && !omitStatisticalSampling,
+                maxTokens, useStream, useBearerAuth, retries, (int)Math.Ceiling(limit.TotalSeconds));
             try
             {
-                using var response = await client.SendAsync(request, stream ? HttpCompletionOption.ResponseHeadersRead : HttpCompletionOption.ResponseContentRead, deadline.Token);
+                using var response = await client.SendAsync(request, useStream ? HttpCompletionOption.ResponseHeadersRead : HttpCompletionOption.ResponseContentRead, deadline.Token);
                 var code = (int)response.StatusCode;
                 observeStatus?.Invoke(code);
-                if (response.IsSuccessStatusCode && response.Content.Headers.ContentType?.MediaType == "text/event-stream")
-                    return await ReadEventStream(response, protocol, observeReasoningTokens, deadline.Token);
+                if (response.IsSuccessStatusCode && IsEventStream(response))
+                {
+                    using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(deadline.Token));
+                    return await ReadEventStream(reader, transport, juice, observeReasoningTokens, observeJuiceFailure, deadline.Token);
+                }
                 var text = await response.Content.ReadAsStringAsync(deadline.Token);
                 if (!response.IsSuccessStatusCode)
                 {
                     // Support proxies that require Authorization: Bearer on Anthropic/Gemini endpoints instead of x-api-key / x-goog-api-key (and vice versa).
-                    if (code == 401 && protocol is ApiProtocols.Anthropic or ApiProtocols.Gemini && !authSwitched)
+                    if (code == 401 && transport is RequestTransport.Anthropic or RequestTransport.Gemini && !authSwitched)
                     {
                         authSwitched = true;
                         useBearerAuth = !useBearerAuth;
                         attempt--;
                         continue;
                     }
+                    // Strict Codex OAuth backends reject temperature / max_output_tokens on /responses; retry once without sampling overrides.
+                    if (code is 400 or 422 && transport == RequestTransport.OpenAiResponses && statistical && !omitStatisticalSampling && IsUnsupportedSamplingParameterError(text))
+                    {
+                        omitStatisticalSampling = true;
+                        attempt--;
+                        continue;
+                    }
                     if (attempt < maxAttempts && Retryable.Contains(code)) { retries++; await Delay(attempt, token); continue; }
                     throw new UpstreamException($"HTTP {code}: {CompactError(text)}" + (code == 524 ? "（Cloudflare 等待源站响应超时，通常为 100 秒）" : "") + (retries > 0 ? $"（已自动重试 {retries} 次）" : ""), statusCode: code);
                 }
+                // Some proxies return SSE text without setting Content-Type: text/event-stream.
+                if (LooksLikeEventStream(text))
+                {
+                    using var reader = new StringReader(text);
+                    return await ReadEventStream(reader, transport, juice, observeReasoningTokens, observeJuiceFailure, deadline.Token);
+                }
                 // Some gateways ignore "stream" and answer with a single JSON body (or a JSON chunk array for Gemini).
                 using var payload = JsonDocument.Parse(text);
-                if (juice && protocol == ApiProtocols.OpenAi)
+                if (juice)
                 {
-                    var choice = payload.RootElement.GetProperty("choices")[0];
-                    var message = choice.GetProperty("message");
-                    var reply = message.TryGetProperty("content", out var raw) && raw.ValueKind != JsonValueKind.Null ? raw.ToString() : "";
-                    if (message.TryGetProperty("refusal", out var refusal) && refusal.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(refusal.GetString()))
-                    { observeJuiceFailure?.Invoke("模型拒绝提供 Juice 数值", refusal.GetString()!); return ""; }
-                    if (choice.TryGetProperty("finish_reason", out var finish) && finish.GetString() is "length" or "content_filter")
-                    { observeJuiceFailure?.Invoke(finish.GetString() == "length" ? "回复因输出长度限制被截断（length）" : "回复被内容过滤拦截（content_filter）", reply); return ""; }
-                    if (raw.ValueKind == JsonValueKind.Null) return "";
+                    if (transport == RequestTransport.OpenAiResponses)
+                    {
+                        var reply = ExtractResponsesContent(payload.RootElement, juice: true, observeJuiceFailure, protocolAccepted: false);
+                        observeReasoningTokens?.Invoke(ExtractReasoningTokens(payload.RootElement));
+                        return reply;
+                    }
+                    if (transport == RequestTransport.OpenAiChatCompletions)
+                    {
+                        var choice = payload.RootElement.GetProperty("choices")[0];
+                        var message = choice.GetProperty("message");
+                        var reply = message.TryGetProperty("content", out var raw) && raw.ValueKind != JsonValueKind.Null ? raw.ToString() : "";
+                        if (message.TryGetProperty("refusal", out var refusal) && refusal.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(refusal.GetString()))
+                        { observeJuiceFailure?.Invoke("模型拒绝提供 Juice 数值", refusal.GetString()!); return ""; }
+                        if (choice.TryGetProperty("finish_reason", out var finish) && finish.GetString() is "length" or "content_filter")
+                        { observeJuiceFailure?.Invoke(finish.GetString() == "length" ? "回复因输出长度限制被截断（length）" : "回复被内容过滤拦截（content_filter）", reply); return ""; }
+                        if (raw.ValueKind == JsonValueKind.Null) return "";
+                    }
                 }
-                if (protocol == ApiProtocols.Gemini && payload.RootElement.ValueKind == JsonValueKind.Array)
+                if (transport == RequestTransport.Gemini && payload.RootElement.ValueKind == JsonValueKind.Array)
                 {
                     var contentFromChunks = ExtractGeminiChunks(payload.RootElement, out var chunkReasoningTokens);
                     observeReasoningTokens?.Invoke(chunkReasoningTokens);
                     return contentFromChunks;
                 }
-                var content = ExtractContent(payload.RootElement, protocol);
+                var content = ExtractContent(payload.RootElement, transport);
                 observeReasoningTokens?.Invoke(ExtractReasoningTokens(payload.RootElement));
                 return content;
             }
@@ -154,21 +390,77 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         throw new UpstreamException("无法连接接口");
     }
 
-    private static HttpRequestMessage BuildRequest(string url, string key, string model, ConversationMessage[] messages, string protocol,
-        string? reasoningEffort, bool statistical, int? maxTokens, bool stream, bool useBearerAuth)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, CompletionUrl(url, protocol, model, stream));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        if (stream) request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-        var agent = Environment.GetEnvironmentVariable("MODELTRACE_USER_AGENT") ?? Environment.GetEnvironmentVariable("GPT56_USER_AGENT");
-        request.Headers.TryAddWithoutValidation("User-Agent", string.IsNullOrWhiteSpace(agent) ? DefaultUserAgent : agent.Trim());
+    private static bool IsEventStream(HttpResponseMessage response) =>
+        string.Equals(response.Content.Headers.ContentType?.MediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase);
 
-        if (protocol == ApiProtocols.Anthropic)
+    private static bool LooksLikeEventStream(string text)
+    {
+        var span = text.AsSpan().TrimStart();
+        return span.StartsWith("data:", StringComparison.Ordinal) || span.StartsWith("event:", StringComparison.Ordinal);
+    }
+
+    private static HttpRequestMessage BuildRequest(string url, string key, string model, ConversationMessage[] messages, RequestTransport transport,
+        string sessionId, string? reasoningEffort, bool statistical, int? maxTokens, bool stream, bool useBearerAuth, int retries, int timeoutSeconds)
+    {
+        var endpoint = transport switch
         {
-            if (useBearerAuth) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-            else request.Headers.Add("x-api-key", key);
-            request.Headers.Add("anthropic-version", "2023-06-01");
-            var body = new Dictionary<string, object> { ["model"] = model, ["messages"] = messages };
+            RequestTransport.OpenAiResponses => ResponsesUrl(url),
+            RequestTransport.OpenAiChatCompletions => ChatCompletionsUrl(url),
+            RequestTransport.Anthropic => CompletionUrl(url, ApiProtocols.Anthropic, model, stream),
+            RequestTransport.Gemini => CompletionUrl(url, ApiProtocols.Gemini, model, stream),
+            _ => ResponsesUrl(url)
+        };
+        var protocol = transport switch
+        {
+            RequestTransport.Anthropic => ApiProtocols.Anthropic,
+            RequestTransport.Gemini => ApiProtocols.Gemini,
+            _ => ApiProtocols.OpenAi
+        };
+        var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        if (stream)
+        {
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        }
+        else
+        {
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        }
+        ApplyClientHeaders(request, protocol, key, useBearerAuth, sessionId, retries, timeoutSeconds,
+            includeResponsesBeta: transport == RequestTransport.OpenAiResponses);
+
+        if (transport == RequestTransport.Anthropic)
+        {
+            var claudeMessages = messages.Select(m => new Dictionary<string, object>
+            {
+                ["role"] = m.Role,
+                ["content"] = new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["type"] = "text",
+                        ["text"] = m.Content
+                    }
+                }
+            }).ToArray();
+            var body = new Dictionary<string, object>
+            {
+                ["model"] = model,
+                ["system"] = new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["type"] = "text",
+                        ["text"] = ClaudeCodeSystemPrompt,
+                        ["cache_control"] = new Dictionary<string, object> { ["type"] = "ephemeral" }
+                    }
+                },
+                ["messages"] = claudeMessages,
+                ["metadata"] = new Dictionary<string, object>
+                {
+                    ["user_id"] = $"user_{ClaudeCodeClientHash}_account__session_{sessionId}"
+                }
+            };
             var outputMaxTokens = statistical ? 256 : maxTokens ?? 4096;
             if (statistical) body["temperature"] = 1.0;
             else if (reasoningEffort is not null)
@@ -211,10 +503,8 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             return request;
         }
 
-        if (protocol == ApiProtocols.Gemini)
+        if (transport == RequestTransport.Gemini)
         {
-            if (useBearerAuth) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-            else request.Headers.Add("x-goog-api-key", key);
             var contents = messages.Select(m => new
             {
                 role = string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? "model" : "user",
@@ -270,7 +560,44 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             return request;
         }
 
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        if (transport == RequestTransport.OpenAiResponses)
+        {
+            var input = messages.Select(m =>
+            {
+                var isAssistant = string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase);
+                return new Dictionary<string, object>
+                {
+                    ["type"] = "message",
+                    ["role"] = isAssistant ? "assistant" : "user",
+                    ["content"] = new[]
+                    {
+                        new Dictionary<string, object>
+                        {
+                            ["type"] = isAssistant ? "output_text" : "input_text",
+                            ["text"] = m.Content
+                        }
+                    }
+                };
+            }).ToArray();
+            var responsesBody = new Dictionary<string, object>
+            {
+                ["model"] = model,
+                ["instructions"] = CodexInstructions,
+                ["input"] = input,
+                ["store"] = false,
+                ["stream"] = stream
+            };
+            if (reasoningEffort is not null)
+                responsesBody["reasoning"] = new Dictionary<string, object> { ["effort"] = reasoningEffort };
+            if (statistical)
+            {
+                responsesBody["temperature"] = 1.0;
+                responsesBody["max_output_tokens"] = 256;
+            }
+            request.Content = JsonContent.Create(responsesBody);
+            return request;
+        }
+
         var openAiBody = new Dictionary<string, object> { ["model"] = model, ["messages"] = messages };
         if (reasoningEffort is not null) openAiBody["reasoning_effort"] = reasoningEffort;
         if (statistical) { openAiBody["temperature"] = 1.0; openAiBody["max_tokens"] = 256; }
@@ -280,15 +607,18 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
     }
 
     // Server-sent events keep long reasoning requests alive behind proxies such as Cloudflare (HTTP 524 after ~100 s idle).
-    private static async Task<string> ReadEventStream(HttpResponseMessage response, string protocol, Action<long?>? observeReasoningTokens, CancellationToken token)
+    private static async Task<string> ReadEventStream(TextReader reader, RequestTransport transport, bool juice,
+        Action<long?>? observeReasoningTokens, Action<string, string>? observeJuiceFailure, CancellationToken token)
     {
         var text = new StringBuilder();
+        var refusal = new StringBuilder();
         string? finish = null;
         long? reasoningTokens = null;
+        var sawTextDelta = false;
+        var sawRefusalDelta = false;
         var events = 0;
         try
         {
-            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(token));
             while (await reader.ReadLineAsync(token) is { } line)
             {
                 if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
@@ -298,11 +628,17 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 using var chunk = JsonDocument.Parse(data);
                 var root = chunk.RootElement;
                 events++;
-                if (root.TryGetProperty("error", out _)) throw new UpstreamException("流式响应返回错误：" + CompactError(data), protocolAccepted: true);
-                if (protocol == ApiProtocols.Anthropic)
+                if (root.TryGetProperty("error", out var rootError) && rootError.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+                    throw new UpstreamException("流式响应返回错误：" + CompactError(data), protocolAccepted: true);
+
+                if (transport == RequestTransport.Anthropic)
                 {
                     var type = root.TryGetProperty("type", out var kind) ? kind.GetString() : null;
-                    if (type == "content_block_delta" && root.TryGetProperty("delta", out var delta) &&
+                    if (type == "content_block_start" && root.TryGetProperty("content_block", out var block) && block.ValueKind == JsonValueKind.Object &&
+                        block.TryGetProperty("type", out var blockType) && blockType.GetString() == "text" &&
+                        block.TryGetProperty("text", out var initial) && initial.ValueKind == JsonValueKind.String)
+                        text.Append(initial.GetString());
+                    else if (type == "content_block_delta" && root.TryGetProperty("delta", out var delta) &&
                         (!delta.TryGetProperty("type", out var deltaType) || deltaType.GetString() == "text_delta") &&
                         delta.TryGetProperty("text", out var piece) && piece.ValueKind == JsonValueKind.String)
                         text.Append(piece.GetString());
@@ -311,19 +647,66 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                     reasoningTokens = ExtractReasoningTokens(root) ?? reasoningTokens;
                     continue;
                 }
-                if (protocol == ApiProtocols.Gemini)
+
+                if (transport == RequestTransport.Gemini)
                 {
                     AppendGeminiChunk(root, text, ref finish);
                     reasoningTokens = ExtractReasoningTokens(root) ?? reasoningTokens;
                     continue;
                 }
-                if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array)
-                    foreach (var choice in choices.EnumerateArray())
+
+                if (transport == RequestTransport.OpenAiResponses)
+                {
+                    var type = root.TryGetProperty("type", out var kind) && kind.ValueKind == JsonValueKind.String ? kind.GetString() : null;
+                    if (type == "error" || type == "response.failed")
+                        throw new UpstreamException("流式响应返回错误：" + CompactError(data), protocolAccepted: true);
+                    if (type == "response.output_text.delta" && root.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.String)
                     {
-                        if (choice.TryGetProperty("delta", out var delta) && delta.TryGetProperty("content", out var piece) && piece.ValueKind == JsonValueKind.String)
-                            text.Append(piece.GetString());
-                        if (choice.TryGetProperty("finish_reason", out var reason) && reason.ValueKind == JsonValueKind.String) finish = reason.GetString();
+                        sawTextDelta = true;
+                        text.Append(delta.GetString());
                     }
+                    else if (type == "response.output_text.done" && !sawTextDelta && root.TryGetProperty("text", out var doneText) && doneText.ValueKind == JsonValueKind.String)
+                    {
+                        text.Append(doneText.GetString());
+                    }
+                    else if (type == "response.refusal.delta" && root.TryGetProperty("delta", out var refusalDelta) && refusalDelta.ValueKind == JsonValueKind.String)
+                    {
+                        sawRefusalDelta = true;
+                        refusal.Append(refusalDelta.GetString());
+                    }
+                    else if (type == "response.refusal.done" && !sawRefusalDelta && root.TryGetProperty("refusal", out var refusalDone) && refusalDone.ValueKind == JsonValueKind.String)
+                    {
+                        refusal.Append(refusalDone.GetString());
+                    }
+                    else if (type is "response.completed" or "response.incomplete" or "response.done" &&
+                             root.TryGetProperty("response", out var resp) && resp.ValueKind == JsonValueKind.Object)
+                    {
+                        if (resp.TryGetProperty("error", out var respError) && respError.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+                            throw new UpstreamException("流式响应返回错误：" + CompactError(data), protocolAccepted: true);
+                        var status = resp.TryGetProperty("status", out var statusEl) && statusEl.ValueKind == JsonValueKind.String ? statusEl.GetString() : null;
+                        if (status == "failed")
+                            throw new UpstreamException("流式响应返回错误：" + CompactError(data), protocolAccepted: true);
+                        if (status == "incomplete" || type == "response.incomplete")
+                            finish = ExtractIncompleteReason(resp) ?? "incomplete";
+                        else if (status == "cancelled")
+                            finish = "cancelled";
+                        if (text.Length == 0 && refusal.Length == 0)
+                        {
+                            var (extractedText, extractedRefusal, _) = ReadResponsesOutput(resp);
+                            if (extractedText.Length > 0) text.Append(extractedText);
+                            if (extractedRefusal.Length > 0) refusal.Append(extractedRefusal);
+                        }
+                    }
+                    else if (root.TryGetProperty("choices", out var compatChoices) && compatChoices.ValueKind == JsonValueKind.Array)
+                    {
+                        AppendChatCompletionsChoices(compatChoices, text, refusal, ref finish);
+                    }
+                    reasoningTokens = ExtractReasoningTokens(root) ?? reasoningTokens;
+                    continue;
+                }
+
+                if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array)
+                    AppendChatCompletionsChoices(choices, text, refusal, ref finish);
                 reasoningTokens = ExtractReasoningTokens(root) ?? reasoningTokens;
             }
         }
@@ -331,18 +714,134 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         { throw new UpstreamException($"流式响应中断（已接收 {text.Length} 个字符）：{e.Message}", protocolAccepted: true); }
         catch (JsonException)
         { throw new UpstreamException("流式响应格式异常，无法解析", protocolAccepted: true); }
-        if (protocol == ApiProtocols.Gemini)
-        {
-            if (!string.IsNullOrWhiteSpace(finish) && finish is not ("STOP" or "FINISH_REASON_UNSPECIFIED"))
-                throw new UpstreamException($"回答未正常完成（{finish}），本次回答不计入", protocolAccepted: true);
-        }
-        else if (finish is "length" or "max_tokens" or "content_filter" or "refusal" or "model_context_window_exceeded")
-        {
-            throw new UpstreamException($"回答未正常完成（{finish}），本次回答不计入", protocolAccepted: true);
-        }
+
         if (events == 0) throw new UpstreamException("流式响应为空，未收到任何数据", protocolAccepted: true);
+
+        if (juice)
+        {
+            if (refusal.Length > 0)
+            {
+                observeJuiceFailure?.Invoke("模型拒绝提供 Juice 数值", refusal.ToString());
+                return "";
+            }
+            if (finish is "length" or "max_output_tokens" or "max_tokens" or "content_filter")
+            {
+                observeJuiceFailure?.Invoke(finish == "content_filter" ? "回复被内容过滤拦截（content_filter）" : "回复因输出长度限制被截断（length）", text.ToString());
+                return "";
+            }
+            if (finish == "refusal")
+            {
+                observeJuiceFailure?.Invoke("模型拒绝提供 Juice 数值", text.ToString());
+                return "";
+            }
+        }
+        else
+        {
+            if (refusal.Length > 0)
+                throw new UpstreamException("模型拒绝生成，本次回答不计入", protocolAccepted: true);
+            if (transport == RequestTransport.Gemini)
+            {
+                if (!string.IsNullOrWhiteSpace(finish) && finish is not ("STOP" or "FINISH_REASON_UNSPECIFIED"))
+                    throw new UpstreamException($"回答未正常完成（{finish}），本次回答不计入", protocolAccepted: true);
+            }
+            else if (finish is "length" or "max_output_tokens" or "max_tokens" or "content_filter" or "refusal" or "model_context_window_exceeded" or "incomplete" or "cancelled")
+            {
+                throw new UpstreamException($"回答未正常完成（{finish}），本次回答不计入", protocolAccepted: true);
+            }
+        }
         observeReasoningTokens?.Invoke(reasoningTokens);
         return text.ToString();
+    }
+
+    private static void AppendChatCompletionsChoices(JsonElement choices, StringBuilder text, StringBuilder refusal, ref string? finish)
+    {
+        foreach (var choice in choices.EnumerateArray())
+        {
+            if (choice.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.Object)
+            {
+                if (delta.TryGetProperty("content", out var piece) && piece.ValueKind == JsonValueKind.String)
+                    text.Append(piece.GetString());
+                if (delta.TryGetProperty("refusal", out var refusalPiece) && refusalPiece.ValueKind == JsonValueKind.String)
+                    refusal.Append(refusalPiece.GetString());
+            }
+            if (choice.TryGetProperty("finish_reason", out var reason) && reason.ValueKind == JsonValueKind.String)
+                finish = reason.GetString();
+        }
+    }
+
+    private static string? ExtractIncompleteReason(JsonElement response) =>
+        response.TryGetProperty("incomplete_details", out var details) && details.ValueKind == JsonValueKind.Object &&
+        details.TryGetProperty("reason", out var reason) && reason.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(reason.GetString())
+            ? reason.GetString()
+            : null;
+
+    private static (string Text, string Refusal, bool HasOutput) ReadResponsesOutput(JsonElement payload)
+    {
+        var text = new StringBuilder();
+        var refusal = new StringBuilder();
+        if (payload.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in output.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                if (item.TryGetProperty("type", out var itemType) && itemType.ValueKind == JsonValueKind.String &&
+                    !string.Equals(itemType.GetString(), "message", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!item.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array) continue;
+                foreach (var part in content.EnumerateArray())
+                {
+                    if (part.ValueKind != JsonValueKind.Object) continue;
+                    var partType = part.TryGetProperty("type", out var pt) && pt.ValueKind == JsonValueKind.String ? pt.GetString() : null;
+                    if (string.Equals(partType, "refusal", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (part.TryGetProperty("refusal", out var r) && r.ValueKind == JsonValueKind.String) refusal.Append(r.GetString());
+                        else if (part.TryGetProperty("text", out var rt) && rt.ValueKind == JsonValueKind.String) refusal.Append(rt.GetString());
+                    }
+                    else if (partType is null or "output_text" or "text")
+                    {
+                        if (part.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String) text.Append(t.GetString());
+                    }
+                }
+            }
+            return (text.ToString(), refusal.ToString(), true);
+        }
+        if (payload.TryGetProperty("output_text", out var outputText) && outputText.ValueKind == JsonValueKind.String)
+            return (outputText.GetString()!, "", true);
+        return ("", "", false);
+    }
+
+    private static string ExtractResponsesContent(JsonElement payload, bool juice = false, Action<string, string>? observeJuiceFailure = null, bool protocolAccepted = false)
+    {
+        if (payload.TryGetProperty("error", out var err) && err.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+            throw new UpstreamException("响应返回错误：" + CompactError(payload.GetRawText()), protocolAccepted: protocolAccepted);
+        var status = payload.TryGetProperty("status", out var statusEl) && statusEl.ValueKind == JsonValueKind.String ? statusEl.GetString() : null;
+        if (status == "failed")
+            throw new UpstreamException("响应返回错误：" + CompactError(payload.GetRawText()), protocolAccepted: protocolAccepted);
+        var (text, refusal, hasOutput) = ReadResponsesOutput(payload);
+        if (!hasOutput) throw new KeyNotFoundException("响应缺少 output 数组");
+        if (!string.IsNullOrWhiteSpace(refusal))
+        {
+            if (juice) { observeJuiceFailure?.Invoke("模型拒绝提供 Juice 数值", refusal); return ""; }
+            throw new UpstreamException("模型拒绝生成，本次回答不计入", protocolAccepted: protocolAccepted);
+        }
+        if (status == "incomplete")
+        {
+            var reason = ExtractIncompleteReason(payload) ?? "incomplete";
+            if (juice)
+            {
+                if (reason is "max_output_tokens" or "length")
+                    observeJuiceFailure?.Invoke("回复因输出长度限制被截断（length）", text);
+                else if (reason == "content_filter")
+                    observeJuiceFailure?.Invoke("回复被内容过滤拦截（content_filter）", text);
+                else
+                    observeJuiceFailure?.Invoke($"回答未正常完成（{reason}）", text);
+                return "";
+            }
+            throw new UpstreamException($"回答未正常完成（{reason}），本次回答不计入", protocolAccepted: protocolAccepted);
+        }
+        if (status == "cancelled")
+            throw new UpstreamException("回答未正常完成（cancelled），本次回答不计入", protocolAccepted: protocolAccepted);
+        return text;
     }
 
     private static void AppendGeminiChunk(JsonElement root, StringBuilder text, ref string? finish)
@@ -379,7 +878,8 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
         {
             if (root.ValueKind != JsonValueKind.Object) continue;
             count++;
-            if (root.TryGetProperty("error", out _)) throw new UpstreamException("流式响应返回错误：" + CompactError(root.GetRawText()), protocolAccepted: true);
+            if (root.TryGetProperty("error", out var err) && err.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+                throw new UpstreamException("流式响应返回错误：" + CompactError(root.GetRawText()), protocolAccepted: true);
             AppendGeminiChunk(root, text, ref finish);
             reasoningTokens = ExtractReasoningTokens(root) ?? reasoningTokens;
         }
@@ -402,6 +902,10 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             ["usage", "reasoning_tokens"],
             ["usage", "reasoning_output_tokens"],
             ["usage", "thinking_tokens"],
+            ["response", "usage", "output_tokens_details", "reasoning_tokens"],
+            ["response", "usage", "completion_tokens_details", "reasoning_tokens"],
+            ["response", "usage", "reasoning_tokens"],
+            ["response", "usage", "reasoning_output_tokens"],
             ["message", "usage", "reasoning_tokens"],
             ["message", "usage", "thinking_tokens"],
             ["usageMetadata", "thoughtsTokenCount"],
@@ -429,7 +933,17 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
 
     public static string ExtractContent(JsonElement payload, string protocol)
     {
-        if (protocol == ApiProtocols.Anthropic)
+        if (protocol == ApiProtocols.Anthropic) return ExtractContent(payload, RequestTransport.Anthropic);
+        if (protocol == ApiProtocols.Gemini) return ExtractContent(payload, RequestTransport.Gemini);
+        if (payload.ValueKind == JsonValueKind.Object &&
+            (payload.TryGetProperty("output", out _) || payload.TryGetProperty("output_text", out _)))
+            return ExtractContent(payload, RequestTransport.OpenAiResponses);
+        return ExtractContent(payload, RequestTransport.OpenAiChatCompletions);
+    }
+
+    private static string ExtractContent(JsonElement payload, RequestTransport transport)
+    {
+        if (transport == RequestTransport.Anthropic)
         {
             var reason = payload.TryGetProperty("stop_reason", out var stop) ? stop.GetString() : null;
             if (reason == "refusal") throw new UpstreamException("模型拒绝生成，本次回答不计入");
@@ -441,7 +955,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 .Where(b => b.ValueKind == JsonValueKind.Object && b.TryGetProperty("type", out var type) && type.GetString() == "text")
                 .Select(b => b.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : ""));
         }
-        if (protocol == ApiProtocols.Gemini)
+        if (transport == RequestTransport.Gemini)
         {
             if (payload.TryGetProperty("promptFeedback", out var feedback) && feedback.ValueKind == JsonValueKind.Object &&
                 feedback.TryGetProperty("blockReason", out var block) && block.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(block.GetString()))
@@ -459,6 +973,8 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 .Where(p => p.ValueKind == JsonValueKind.Object && !(p.TryGetProperty("thought", out var th) && th.ValueKind == JsonValueKind.True))
                 .Select(p => p.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : ""));
         }
+        if (transport == RequestTransport.OpenAiResponses)
+            return ExtractResponsesContent(payload);
         var choice = payload.GetProperty("choices")[0];
         var finish = choice.TryGetProperty("finish_reason", out var f) ? f.GetString() : null;
         if (finish is "length" or "content_filter") throw new UpstreamException($"回答未正常完成（{finish}），本次回答不计入");
@@ -475,7 +991,10 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             var root = doc.RootElement;
             if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0 && root[0].ValueKind == JsonValueKind.Object)
                 root = root[0];
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out var error))
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("response", out var resp) && resp.ValueKind == JsonValueKind.Object &&
+                resp.TryGetProperty("error", out var respError) && respError.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+                text = respError.ValueKind == JsonValueKind.Object && respError.TryGetProperty("message", out var respMessage) ? respMessage.ToString() : respError.ToString();
+            else if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out var error) && error.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
                 text = error.ValueKind == JsonValueKind.Object && error.TryGetProperty("message", out var message) ? message.ToString() : error.ToString();
         }
         catch (JsonException) { }
@@ -491,6 +1010,7 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
             token.ThrowIfCancellationRequested();
             var effective = ApiProtocols.Candidates(baseUrl, protocol)[0];
             var endpoint = CompletionUrl(baseUrl, effective, model);
+            var preferChatCompletions = false;
             var methods = methodId is not null
                 ? new[] { JuiceProbe.Methods.Single(m => m.Id == methodId) }
                 : juiceHistory is null ? JuiceProbe.Methods.ToArray() : await juiceHistory.Ranked(endpoint, model, token);
@@ -504,9 +1024,12 @@ public sealed partial class ModelTraceClient(HttpClient client, JuiceHistory? ju
                 string? responseError = null, failedReply = null;
                 try
                 {
-                    var text = await Request(baseUrl, key, model, ConversationEnvelope.Create(method.Prompt), effective, token, null, maxAttempts: 1, juice: true,
+                    var text = await RequestProtocol(baseUrl, key, model, ConversationEnvelope.Create(method.Prompt), effective, Guid.NewGuid().ToString("D"),
+                        token, null, maxAttempts: 1, juice: true,
                         reasoningEffort: reasoningEffort == "default" ? null : reasoningEffort,
-                        observeJuiceFailure: (error, reply) => { responseError = error; failedReply = reply; });
+                        observeJuiceFailure: (error, reply) => { responseError = error; failedReply = reply; },
+                        preferChatCompletions: preferChatCompletions,
+                        onChatCompletionsFallback: () => preferChatCompletions = true);
                     var value = JuiceProbe.Parse(text);
                     if (juiceHistory is not null) await juiceHistory.Record(endpoint, model, method.Id, value.HasValue, token);
                     envelope["juice_value"] = value;

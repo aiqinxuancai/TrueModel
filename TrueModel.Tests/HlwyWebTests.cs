@@ -104,6 +104,6 @@ public class HlwyWebTests
     private sealed class Handler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(
-            new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = "42" }, finish_reason = "stop" } } }) });
+            TestConversation.ResponsesOk("42"));
     }
 }

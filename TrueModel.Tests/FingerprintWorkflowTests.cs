@@ -212,7 +212,7 @@ public class FingerprintWorkflowTests
                 await Task.Delay(Timeout.Infinite, token);
             }
             var text = CandyTestPrompts.IsCandy(TestConversation.Prompt(body)) ? "21" : string.Join(',', Enumerable.Range(1, 310));
-            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new { choices = new[] { new { message = new { content = text }, finish_reason = "stop" } } }) };
+            return TestConversation.ResponsesOk(text);
         }
     }
 }
